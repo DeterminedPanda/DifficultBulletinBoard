@@ -4,12 +4,12 @@ local allTopics = {}
 local mainFrame = DifficultBulletinBoardMainFrame
 local optionFrame = DifficultBulletinBoardOptionFrame
 local string_gfind = string.gmatch or string.gfind
-
 local numberOfPlaceholders = 3
 local topicPlaceholders = {}
+local activeChannels = {}
 
 local function print(string)
-    --DEFAULT_CHAT_FRAME:AddMessage(string)
+    DEFAULT_CHAT_FRAME:AddMessage(string)
 end
 
 local function splitIntoLowerWords(input)
@@ -23,7 +23,168 @@ local function splitIntoLowerWords(input)
     return tags
 end
 
+
+local function getChannelNames()
+    local channelNames = {}
+    local channelData = { GetChannelList() }
+
+    for i = 1, table.getn(channelData), 2 do
+        local channelId = channelData[i]
+        local channelName = channelData[i + 1]
+        local entry = {}
+        entry.id = channelId
+        entry.name = channelName
+        entry.selected = true
+
+        print("Name: " .. entry.name .. " Id: " .. entry.id)
+
+        table.insert(channelNames, entry)
+    end
+
+    return channelNames
+end
+
+
+local function addScrollFrameToOptionFrame()
+    local parentFrame = optionFrame
+
+    local scrollFrame = CreateFrame("ScrollFrame", "DifficultBulletinBoardOptionFrame_ScrollFrame", parentFrame,
+        "UIPanelScrollFrameTemplate")
+    scrollFrame:SetPoint("TOPLEFT", parentFrame, "TOPLEFT", 5, -38)
+    scrollFrame:SetWidth(469)
+    scrollFrame:SetHeight(590)
+
+    local scrollChild = CreateFrame("Frame", "DifficultBulletinBoardOptionFrame_ScrollFrame_ScrollChild", scrollFrame)
+    scrollChild:SetWidth(480)
+    scrollChild:SetHeight(1300)
+    scrollFrame:SetScrollChild(scrollChild)
+end
+
+
+local function addPlaceholderOptionToOptionFrame()
+    local parentFrame = DifficultBulletinBoardOptionFrame_ScrollFrame_ScrollChild
+
+    -- Create the first FontString (label) above the scroll frame
+    local scrollLabel = parentFrame:CreateFontString("DifficultBulletinBoard_Option_PlaceholderOption_FontString",
+        "OVERLAY", "GameFontHighlight")
+    scrollLabel:SetPoint("TOPLEFT", parentFrame, "TOPLEFT", 15, -10) -- Position at the top of the parent frame
+    scrollLabel:SetText("Number of Placeholders per Topic:")
+    scrollLabel:SetFont("Fonts\\FRIZQT__.TTF", 14)
+
+    local placeholderOptionTextBox = CreateFrame("EditBox", "DifficultBulletinBoard_Option_PlaceholderOption_TextBox",
+        parentFrame, "InputBoxTemplate")
+    placeholderOptionTextBox:SetPoint("RIGHT", scrollLabel, "RIGHT", 30, -0)
+    placeholderOptionTextBox:SetWidth(20)
+    placeholderOptionTextBox:SetHeight(20)
+    placeholderOptionTextBox:SetText(numberOfPlaceholders)
+    placeholderOptionTextBox:EnableMouse(true)
+    placeholderOptionTextBox:SetAutoFocus(false)
+end
+
+local lastCheckBox = nil
+local function addChannelOptionToOptionFrame()
+    local parentFrame = DifficultBulletinBoardOptionFrame_ScrollFrame_ScrollChild
+    local placeholderOptionFontString = DifficultBulletinBoard_Option_PlaceholderOption_FontString
+    local yOffset = -30 -- Starting vertical offset for the first checkbox
+
+    local scrollLabel = parentFrame:CreateFontString("DifficultBulletinBoard_Option_ChannelOption_FontString",
+        "OVERLAY", "GameFontHighlight")
+    scrollLabel:SetPoint("LEFT", placeholderOptionFontString, "LEFT", 0, -50) -- Position at the top of the parent frame
+    scrollLabel:SetText("Select the Channels you want to observe:")
+    scrollLabel:SetFont("Fonts\\FRIZQT__.TTF", 14)
+
+    for _, channel in ipairs(activeChannels) do
+        local checkbox = CreateFrame("CheckButton", "$parent_" .. channel.name .. "_Checkbox", parentFrame,
+            "UICheckButtonTemplate")
+        checkbox:SetPoint("LEFT", scrollLabel, "LEFT", 0, yOffset)
+        checkbox:SetWidth(25)
+        checkbox:SetHeight(25)
+        checkbox:SetChecked(channel.selected)
+        local currentChannel = channel
+        checkbox:SetScript("OnClick", function()
+            currentChannel.selected = checkbox:GetChecked()
+        end)
+
+        local topicLabel = parentFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        topicLabel:SetPoint("LEFT", checkbox, "RIGHT", 0, 0)
+        topicLabel:SetText(channel.name)
+        topicLabel:SetFont("Fonts\\FRIZQT__.TTF", 12)
+        topicLabel:SetJustifyH("LEFT")
+        topicLabel:SetWidth(175)
+
+        -- save this so it can be used as a reference point in the following option
+        lastCheckBox = checkbox;
+
+        yOffset = yOffset - 30 -- Adjust the vertical offset for the next row
+    end
+end
+
+local tempTags = {}
+local function addTopicOptionToOptionFrame()
+    local scrollChild = DifficultBulletinBoardOptionFrame_ScrollFrame_ScrollChild
+    local yOffset = -30 -- Starting vertical offset for the first checkbox
+
+    local scrollLabel = scrollChild:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    scrollLabel:SetPoint("LEFT", lastCheckBox, "LEFT", 0, -50)
+    scrollLabel:SetText("Select the Topics you want to observe:")
+    scrollLabel:SetFont("Fonts\\FRIZQT__.TTF", 14)
+
+    for _, topic in ipairs(allTopics) do
+        local checkbox = CreateFrame("CheckButton", "$parent_" .. topic.name .. "_Checkbox", scrollChild,
+            "UICheckButtonTemplate")
+        checkbox:SetPoint("LEFT", scrollLabel, "LEFT", 0, yOffset)
+        checkbox:SetWidth(25)
+        checkbox:SetHeight(25)
+        checkbox:SetChecked(topic.selected)
+
+        local currentTopic = topic
+        checkbox:SetScript("OnClick", function()
+            currentTopic.selected = checkbox:GetChecked()
+        end)
+
+        -- Add a label next to the checkbox displaying the topic
+        local topicLabel = scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        topicLabel:SetPoint("LEFT", checkbox, "RIGHT", 0, 0)
+        topicLabel:SetText(topic.name)
+        topicLabel:SetFont("Fonts\\FRIZQT__.TTF", 12)
+        topicLabel:SetJustifyH("LEFT")
+        topicLabel:SetWidth(175)
+
+        -- Add a text box next to the topic label for tags input
+        local tagsTextBox = CreateFrame("EditBox", "$parent_" .. topic.name .. "_TagsTextBox", scrollChild,
+            "InputBoxTemplate")
+        tagsTextBox:SetPoint("LEFT", topicLabel, "RIGHT", 0, 0)
+        tagsTextBox:SetWidth(230)
+        tagsTextBox:SetHeight(20)
+        tagsTextBox:SetText(table.concat(topic.tags, " "))
+        tagsTextBox:EnableMouse(true)
+        tagsTextBox:SetAutoFocus(false)
+
+        local topicName = topic.name --save a reference for the onTextChanged event
+        tagsTextBox:SetScript("OnTextChanged", function()
+            local enteredText = this:GetText()
+            tempTags[topicName] = splitIntoLowerWords(enteredText)
+        end)
+
+        yOffset = yOffset - 30 -- Adjust the vertical offset for the next row
+    end
+end
+
+local function initializeOptionFrame()
+    addScrollFrameToOptionFrame()
+    addPlaceholderOptionToOptionFrame()
+    addChannelOptionToOptionFrame()
+    addTopicOptionToOptionFrame()
+end
+
+local isOptionFrameInitialized = false
 function DifficultBulletinBoard_ToggleOptionFrame()
+    if not isOptionFrameInitialized then
+        print("test")
+        initializeOptionFrame()
+        isOptionFrameInitialized = true
+    end
+
     if optionFrame then
         if optionFrame:IsShown() then
             print("Hiding frame")
@@ -77,27 +238,22 @@ end
 local function addScrollFrameToMainFrame()
     local parentFrame = mainFrame
 
-    -- Create the ScrollFrame
-    local scrollFrame = CreateFrame("ScrollFrame", parentFrame:GetName() .. "DifficultBulletinBoardMainFrame_ScrollFrame",
-        parentFrame, "UIPanelScrollFrameTemplate")
+    local scrollFrame = CreateFrame("ScrollFrame", "DifficultBulletinBoardMainFrame_ScrollFrame", parentFrame,
+        "UIPanelScrollFrameTemplate")
     scrollFrame:EnableMouseWheel(true)
-
-    -- Set ScrollFrame anchors
     scrollFrame:SetPoint("TOPLEFT", parentFrame, "TOPLEFT", 0, -38)
     scrollFrame:SetPoint("BOTTOMRIGHT", parentFrame, "BOTTOMRIGHT", -26, 10)
 
-    -- Create the ScrollChild (content frame)
     local scrollChild = CreateFrame("Frame", "DifficultBulletinBoardMainFrame_ScrollFrame_ScrollChild", scrollFrame)
     scrollChild:SetHeight(2000)
     scrollChild:SetWidth(980)
 
-    -- Attach the ScrollChild to the ScrollFrame
     scrollFrame:SetScrollChild(scrollChild)
 end
 
 
 -- function to create the placeholders and font strings for a topic
-local function createTopicList()
+local function addTopicsToMainFrame()
     -- initial Y-offset for the first header and placeholder
     local yOffset = 0
 
@@ -131,23 +287,22 @@ local function createTopicList()
                 -- Set the text of the button
                 local buttonText = nameButton:CreateFontString(nil, "OVERLAY", "GameFontNormal")
                 buttonText:SetText("-")
-                buttonText:SetPoint("LEFT", nameButton, "LEFT", 5, 0) -- Align text to the left with a small offset
+                buttonText:SetPoint("LEFT", nameButton, "LEFT", 5, 0)
                 buttonText:SetFont("Fonts\\FRIZQT__.TTF", 12)
-                buttonText:SetTextColor(1, 1, 1)                      -- Normal color (e.g., white)
+                buttonText:SetTextColor(1, 1, 1)
                 nameButton:SetFontString(buttonText)
 
                 -- Set scripts for hover behavior
                 nameButton:SetScript("OnEnter", function()
-                    buttonText:SetFont("Fonts\\FRIZQT__.TTF", 12) -- Highlight font
-                    buttonText:SetTextColor(1, 1, 0)              -- Highlight color (e.g., yellow)
+                    buttonText:SetFont("Fonts\\FRIZQT__.TTF", 12)
+                    buttonText:SetTextColor(1, 1, 0)
                 end)
 
                 nameButton:SetScript("OnLeave", function()
-                    buttonText:SetFont("Fonts\\FRIZQT__.TTF", 12) -- Normal font
-                    buttonText:SetTextColor(1, 1, 1)              -- Normal color (e.g., white)
+                    buttonText:SetFont("Fonts\\FRIZQT__.TTF", 12)
+                    buttonText:SetTextColor(1, 1, 1)
                 end)
 
-                -- Add an example OnClick handler
                 nameButton:SetScript("OnClick", function()
                     print("Clicked on: " .. nameButton:GetText())
                     local pressedButton = arg1
@@ -295,8 +450,15 @@ SlashCmdList["DIFFICULTBB"] = function()
     DifficultBulletinBoard_ToggleMainFrame()
 end
 
+
 local function loadSavedVariables()
     DifficultBulletinBoardSavedVariables = DifficultBulletinBoardSavedVariables or {}
+
+    if DifficultBulletinBoardSavedVariables.activeChannels then
+        activeChannels = DifficultBulletinBoardSavedVariables.activeChannels
+    else
+        activeChannels = getChannelNames()
+    end
 
     if DifficultBulletinBoardSavedVariables.numberOfPlaceholders and DifficultBulletinBoardSavedVariables.numberOfPlaceholders ~= "" then
         numberOfPlaceholders = DifficultBulletinBoardSavedVariables.numberOfPlaceholders
@@ -313,108 +475,14 @@ local function loadSavedVariables()
     end
 end
 
-local function addPlaceholderOptionToOptionFrame()
-    local parentFrame = DifficultBulletinBoardOptionFrame
-
-    -- Create the first FontString (label) above the scroll frame
-    local scrollLabel = parentFrame:CreateFontString("DifficultBulletinBoard_Option_PlaceholderOption_FontString",
-        "OVERLAY", "GameFontHighlight")
-    scrollLabel:SetPoint("TOPLEFT", parentFrame, "TOPLEFT", 15, -50) -- Position at the top of the parent frame
-    scrollLabel:SetText("Set the Number of Placeholders for Each Topic:")
-    scrollLabel:SetText("Number of Placeholders per Topic:")
-    scrollLabel:SetFont("Fonts\\FRIZQT__.TTF", 14)
-
-    local placeholderOptionTextBox = CreateFrame("EditBox", "DifficultBulletinBoard_Option_PlaceholderOption_TextBox",
-        parentFrame, "InputBoxTemplate")
-    placeholderOptionTextBox:SetPoint("RIGHT", scrollLabel, "RIGHT", 30, -0)
-    placeholderOptionTextBox:SetWidth(20)
-    placeholderOptionTextBox:SetHeight(20)
-    placeholderOptionTextBox:SetText(numberOfPlaceholders)
-    placeholderOptionTextBox:EnableMouse(true)
-    placeholderOptionTextBox:SetAutoFocus(false)
-end
-
-local function addScrollFrameToOptionFrame()
-    local parentFrame = DifficultBulletinBoardOptionFrame
-    local placeholderOptionTextBox = DifficultBulletinBoard_Option_PlaceholderOption_FontString
-
-    -- Create the second FontString (label) below the first label
-    local scrollLabel = parentFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-    scrollLabel:SetPoint("TOPLEFT", placeholderOptionTextBox, "BOTTOMLEFT", 0, -25) -- Position it below the first label
-    scrollLabel:SetText("Select the Topics you want to observe:")
-    scrollLabel:SetFont("Fonts\\FRIZQT__.TTF", 14)
-
-    -- Create the ScrollFrame, positioning it below the second label
-    local scrollFrame = CreateFrame("ScrollFrame", "$parent_ScrollFrame", parentFrame, "UIPanelScrollFrameTemplate")
-    scrollFrame:SetPoint("TOPLEFT", scrollLabel, "BOTTOMLEFT", -10, -10) -- Position it below the second label
-    scrollFrame:SetWidth(460)
-    scrollFrame:SetHeight(520)
-
-    -- Create the child frame inside the scroll frame
-    local scrollChild = CreateFrame("Frame", "$parent_ScrollChild", scrollFrame)
-    scrollChild:SetWidth(480)
-    scrollChild:SetHeight(1300)
-    scrollFrame:SetScrollChild(scrollChild)
-end
-
-local tempTags = {}
-local function createOptions()
-    local scrollChild = DifficultBulletinBoardOptionFrame_ScrollFrame_ScrollChild
-    local yOffset = 0 -- Starting vertical offset for the first checkbox
-
-    for _, topic in ipairs(allTopics) do
-        local checkbox = CreateFrame("CheckButton", "$parent_" .. topic.name .. "_Checkbox", scrollChild,
-            "UICheckButtonTemplate")
-        checkbox:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 10, yOffset)
-        checkbox:SetWidth(25)
-        checkbox:SetHeight(25)
-        checkbox:SetChecked(topic.selected)
-
-        local currentTopic = topic
-        checkbox:SetScript("OnClick", function()
-            currentTopic.selected = checkbox:GetChecked()
-        end)
-
-        -- Add a label next to the checkbox displaying the topic
-        local topicLabel = scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        topicLabel:SetPoint("LEFT", checkbox, "RIGHT", 10, 0)
-        topicLabel:SetText(topic.name)
-        topicLabel:SetFont("Fonts\\FRIZQT__.TTF", 12)
-        topicLabel:SetJustifyH("LEFT")
-        topicLabel:SetWidth(175)
-
-        -- Add a text box next to the topic label for tags input
-        local tagsTextBox = CreateFrame("EditBox", "$parent_" .. topic.name .. "_TagsTextBox", scrollChild,
-            "InputBoxTemplate")
-        tagsTextBox:SetPoint("LEFT", topicLabel, "RIGHT", 10, 0)
-        tagsTextBox:SetWidth(200)
-        tagsTextBox:SetHeight(20)
-        tagsTextBox:SetText(table.concat(topic.tags, " "))
-        tagsTextBox:EnableMouse(true)
-        tagsTextBox:SetAutoFocus(false)
-
-        local topicName = topic.name --save a reference for the onTextChanged event
-        tagsTextBox:SetScript("OnTextChanged", function()
-            local enteredText = this:GetText()
-            tempTags[topicName] = splitIntoLowerWords(enteredText)
-        end)
-
-        yOffset = yOffset - 30 -- Adjust the vertical offset for the next row
-    end
-end
 
 local function initializeAddon(event, arg1)
     if event == "ADDON_LOADED" and arg1 == "DifficultBulletinBoard" then
         loadSavedVariables()
 
-        -- create option frame first so the user can update his options in case he put in some invalid data that might result in the addon crashing
-        addPlaceholderOptionToOptionFrame()
-        addScrollFrameToOptionFrame()
-        createOptions()
-
-        --create main frame afterwards
+        --create main frame
         addScrollFrameToMainFrame()
-        createTopicList()
+        addTopicsToMainFrame()
     end
 end
 
@@ -436,6 +504,7 @@ end
 function DifficultBulletinBoard_ResetVariablesAndReload()
     DifficultBulletinBoardSavedVariables.numberOfPlaceholders = defaultNumberOfPlaceholders
     DifficultBulletinBoardSavedVariables.activeTopics = defaultTopics
+    DifficultBulletinBoardSavedVariables.activeChannels = getChannelNames()
     ReloadUI();
 end
 
