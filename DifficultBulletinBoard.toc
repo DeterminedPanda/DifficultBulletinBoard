@@ -4,10 +4,9 @@
 ## SavedVariables: DifficultBulletinBoardSavedVariables
 ## Author: Difficult
 
-icon.tga
-resize.tga
 DifficultBulletinBoardDefaults.lua
 DifficultBulletinBoardVars.lua
+DifficultBulletinBoardUtils.lua
 DifficultBulletinBoardVersionCheck.lua
 DifficultBulletinBoardMinimapButton.xml
 DifficultBulletinBoardOptionFrame.xml

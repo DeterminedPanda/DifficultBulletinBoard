@@ -719,15 +719,6 @@ local function createTopicListWithNameMessageDateColumns(contentFrame, topicList
     }
 
     for i = 1, numberOfPlaceholders do
-     -- Create a unique Icon texture for this placeholder
-     local icon = contentFrame:CreateTexture(
-       "$parent_" .. topic.name .. "Placeholder" .. i .. "_Icon",
-       "ARTWORK"
-     )
-     icon:SetHeight(14)
-     icon:SetWidth(14)
-     -- Removed initial icon anchor; will anchor to nameButton after creation
-     icon:SetPoint("RIGHT", contentFrame, "RIGHT", -2, topicYOffset - 2)
 
      local nameButton =
       CreateFrame(
@@ -736,12 +727,10 @@ local function createTopicListWithNameMessageDateColumns(contentFrame, topicList
        contentFrame,
        nil
       )
-     nameButton:SetPoint("TOPLEFT", contentFrame, "TOPLEFT", 10, topicYOffset)
+     nameButton:SetPoint("TOPLEFT", contentFrame, "TOPLEFT", 5, topicYOffset)
      nameButton:SetWidth(40)
      nameButton:SetHeight(10)
      -- Anchor icon to the left of the name button with 1px gap
-     icon:ClearAllPoints()
-     icon:SetPoint("RIGHT", nameButton, "LEFT", 3, 0)
      
      -- Add this line to extend clickable area to the right
      nameButton:SetHitRectInsets(0, -45, 0, 0)
@@ -750,7 +739,7 @@ local function createTopicListWithNameMessageDateColumns(contentFrame, topicList
      buttonText:SetText("-")
      buttonText:SetPoint("LEFT", nameButton, "LEFT", 5, 0)
      buttonText:SetFont("Fonts\\FRIZQT__.TTF", DifficultBulletinBoardVars.fontSize - 1)
-     buttonText:SetTextColor(1, 1, 1)
+     buttonText:SetTextColor(0.8, 0.8, 0.8)
      nameButton:SetFontString(buttonText)
 
      nameButton:SetScript("OnEnter", function()
@@ -759,8 +748,12 @@ local function createTopicListWithNameMessageDateColumns(contentFrame, topicList
      end)
 
      nameButton:SetScript("OnLeave", function()
-      buttonText:SetFont("Fonts\\FRIZQT__.TTF", DifficultBulletinBoardVars.fontSize - 1)
-      buttonText:SetTextColor(1, 1, 1)
+        buttonText:SetFont("Fonts\\FRIZQT__.TTF", DifficultBulletinBoardVars.fontSize - 1)
+        buttonText:SetTextColor(0.8, 0.8, 0.8)
+        local class = DifficultBulletinBoardVars.GetPlayerClassFromDatabase(nameButton:GetText())
+        DEFAULT_CHAT_FRAME:AddMessage(class)
+        local r, g, b = DifficultBulletinBoard.GetClassColorFromClassName(class)
+        buttonText:SetTextColor(r, g, b)
      end)
 
      local messageFrame =

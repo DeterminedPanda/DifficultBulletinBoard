@@ -21,7 +21,7 @@ DifficultBulletinBoardDefaults.defaultMessageExpirationTime = "300"
 DifficultBulletinBoardDefaults.defaultNumberOfGroupPlaceholders = 3
 
 DifficultBulletinBoardDefaults.defaultGroupTopics = {
-    { name = "Custom Topic",                  selected = false, tags = {} },
+    { name = "Custom Topic",                  selected = true, tags = {} },
     { name = "Upper Karazhan Halls",          selected = true, tags = { "kara40", "ukh"} },
     { name = "Naxxramas",                     selected = true, tags = { "naxxramas", "naxx" } },
     { name = "Temple of Ahn'Qiraj",           selected = true, tags = { "ahn'qiraj", "ahnqiraj", "aq40", "aq" } },

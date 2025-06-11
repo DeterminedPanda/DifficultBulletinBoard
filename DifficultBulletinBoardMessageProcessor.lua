@@ -122,30 +122,6 @@ local function topicPlaceholdersContainsCharacterName(topicPlaceholders, topicNa
     return false, nil
 end
 
-local function getClassIconFromClassName(class) 
-    if class == "Druid" then
-        return "Interface\\AddOns\\DifficultBulletinBoard\\icons\\druid_class_icon"
-    elseif class == "Hunter" then
-        return "Interface\\AddOns\\DifficultBulletinBoard\\icons\\hunter_class_icon"
-    elseif class == "Mage" then
-        return "Interface\\AddOns\\DifficultBulletinBoard\\icons\\mage_class_icon"
-    elseif class == "Paladin" then
-        return "Interface\\AddOns\\DifficultBulletinBoard\\icons\\paladin_class_icon"
-    elseif class == "Priest" then
-        return "Interface\\AddOns\\DifficultBulletinBoard\\icons\\priest_class_icon"
-    elseif class == "Rogue" then
-        return "Interface\\AddOns\\DifficultBulletinBoard\\icons\\rogue_class_icon"
-    elseif class == "Shaman" then
-        return "Interface\\AddOns\\DifficultBulletinBoard\\icons\\shaman_class_icon"
-    elseif class == "Warlock" then
-        return "Interface\\AddOns\\DifficultBulletinBoard\\icons\\warlock_class_icon"
-    elseif class == "Warrior" then
-        return "Interface\\AddOns\\DifficultBulletinBoard\\icons\\warrior_class_icon"
-    else
-        return nil
-    end
-end
-
 -- Updates the specified placeholder for a topic with new name, message, and timestamp,
 -- then moves the updated entry to the top of the list, shifting other entries down.
 local function UpdateTopicEntryAndPromoteToTop(topicPlaceholders, topic, numberOfPlaceholders, channelName, name, message, index)
@@ -165,6 +141,8 @@ local function UpdateTopicEntryAndPromoteToTop(topicPlaceholders, topic, numberO
         topicData[i].timeFontString:SetText(topicData[i - 1].timeFontString:GetText())
         topicData[i].creationTimestamp = topicData[i - 1].creationTimestamp
         topicData[i].icon:SetTexture(topicData[i - 1].icon:GetTexture())
+        local r, g, b, a = topicData[i - 1].nameButton:GetFontString():GetTextColor()
+        topicData[i].nameButton:GetFontString():SetTextColor(r, g, b, a)
     end
 
     -- Place the updated entry's data at the top
@@ -176,7 +154,9 @@ local function UpdateTopicEntryAndPromoteToTop(topicPlaceholders, topic, numberO
     topicData[1].timeFontString:SetText(timestamp)
     topicData[1].creationTimestamp = date("%H:%M:%S")
     local class = DifficultBulletinBoardVars.GetPlayerClassFromDatabase(name)
-    topicData[1].icon:SetTexture(getClassIconFromClassName(class))
+    topicData[1].icon:SetTexture(DifficultBulletinBoard.GetClassIconFromClassName(class))
+    local r, g, b = DifficultBulletinBoard.GetClassColorFromClassName(class)
+    topicData[1].nameButton:GetFontString():SetTextColor(r, g, b)
 
     -- Tooltip handlers are now dynamic and don't need manual updates
     
@@ -253,6 +233,8 @@ local function AddNewTopicEntryAndShiftOthers(topicPlaceholders, topic, numberOf
         if currentFontString.nameButton and type(currentFontString.nameButton.SetText) == "function" and
            previousFontString.nameButton and type(previousFontString.nameButton.GetText) == "function" then
             currentFontString.nameButton:SetText(previousFontString.nameButton:GetText())
+            local r, g, b, a = previousFontString.nameButton:GetFontString():GetTextColor()
+            currentFontString.nameButton:GetFontString():SetTextColor(r, g, b, a)
         end
         
         if currentFontString.messageFontString and type(currentFontString.messageFontString.SetText) == "function" and
@@ -293,7 +275,9 @@ local function AddNewTopicEntryAndShiftOthers(topicPlaceholders, topic, numberOf
     local class = DifficultBulletinBoardVars.GetPlayerClassFromDatabase(name)
     
     if firstFontString.icon and type(firstFontString.icon.SetTexture) == "function" then
-        firstFontString.icon:SetTexture(getClassIconFromClassName(class))
+        firstFontString.icon:SetTexture(DifficultBulletinBoard.GetClassIconFromClassName(class))
+        local r, g, b = DifficultBulletinBoard.GetClassColorFromClassName(class)
+        firstFontString.nameButton:GetFontString():SetTextColor(r, g, b)
     end
 
     -- Show a RaidWarning for enabled notifications. dont show it for the Group Logs
@@ -338,12 +322,12 @@ local function AddNewSystemTopicEntryAndShiftOthers(topicPlaceholders, topic, me
 
             -- Update the current placeholder with the previous placeholder's data safely
             if currentFontString.messageFontString and type(currentFontString.messageFontString.SetText) == "function" and
-               previousFontString.messageFontString and type(previousFontString.messageFontString.GetText) == "function" then
+                previousFontString.messageFontString and type(previousFontString.messageFontString.GetText) == "function" then
                 currentFontString.messageFontString:SetText(previousFontString.messageFontString:GetText())
             end
             
             if currentFontString.timeFontString and type(currentFontString.timeFontString.SetText) == "function" and
-               previousFontString.timeFontString and type(previousFontString.timeFontString.GetText) == "function" then
+                previousFontString.timeFontString and type(previousFontString.timeFontString.GetText) == "function" then
                 currentFontString.timeFontString:SetText(previousFontString.timeFontString:GetText())
             end
             
@@ -553,7 +537,10 @@ function DifficultBulletinBoard.OnChatMessage(arg1, arg2, arg9)
             
             local class = DifficultBulletinBoardVars.GetPlayerClassFromDatabase(characterName)
             if entries[1] and entries[1].icon and type(entries[1].icon.SetTexture) == "function" then
-                entries[1].icon:SetTexture(getClassIconFromClassName(class))
+                entries[1].icon:SetTexture(DifficultBulletinBoard.GetClassIconFromClassName(class))
+                local r, g, b = DifficultBulletinBoard.GetClassColorFromClassName(class)
+                entries[1].nameButton:GetFontString():SetTextColor(r, g, b)
+
             end
             
             -- reflow Group Logs placeholders first
