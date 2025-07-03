@@ -201,7 +201,7 @@ end
 -- Helper function to format seconds into MM:SS
 local function secondsToMMSS(totalSeconds)
     local minutes = math.floor(totalSeconds / 60)
-    local seconds = totalSeconds - math.floor(totalSeconds / 60) * 60
+   local seconds = totalSeconds - math.floor(totalSeconds / 60) * 60
 
     -- Return "99:59" if minutes exceed 99
     if minutes > 99 then
@@ -298,7 +298,11 @@ local function AddNewTopicEntryAndShiftOthers(topicPlaceholders, topic, numberOf
 
     -- Show a RaidWarning for enabled notifications. dont show it for the Group Logs
     if topic ~= "Group Logs" and DifficultBulletinBoard.notificationList[topic] == true then
+        if DifficultBulletinBoardVars.notificationSound == "true" then
+            PlaySound("TellMessage")
+        end
         RaidWarningFrame:AddMessage("DBB Notification: " .. message)
+        DEFAULT_CHAT_FRAME:AddMessage("|cFFFFCC00[DBB Notification]|r " .. "|Hplayer:" .. name .. "|h[" .. name .. "]|h" .. " :|cFFB2B2FF" .. message)
     end
     
     -- Apply filter if this is a Groups Logs entry
@@ -992,4 +996,4 @@ function DifficultBulletinBoardMessageProcessor.ExpireMessages(seconds)
             ReflowTopicEntries(entries)
         end
     end
-end 
+end
