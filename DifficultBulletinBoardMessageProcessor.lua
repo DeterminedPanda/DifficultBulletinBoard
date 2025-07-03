@@ -201,7 +201,7 @@ end
 -- Helper function to format seconds into MM:SS
 local function secondsToMMSS(totalSeconds)
     local minutes = math.floor(totalSeconds / 60)
-   local seconds = totalSeconds - math.floor(totalSeconds / 60) * 60
+    local seconds = totalSeconds - math.floor(totalSeconds / 60) * 60
 
     -- Return "99:59" if minutes exceed 99
     if minutes > 99 then
