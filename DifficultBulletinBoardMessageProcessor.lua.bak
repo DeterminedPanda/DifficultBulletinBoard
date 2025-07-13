@@ -20,8 +20,6 @@ local currentGroupsLogsFilter
 local MAX_GROUPS_LOGS_ENTRIES
 local RepackEntries
 local ReflowTopicEntries
-local notificationCache = {}
-local NOTIFICATION_CACHE_DURATION = 2
 
 -- Initialize function to receive references from main frame
 function DifficultBulletinBoardMessageProcessor.Initialize(placeholders, filter, maxEntries, helpers)
@@ -203,7 +201,7 @@ end
 -- Helper function to format seconds into MM:SS
 local function secondsToMMSS(totalSeconds)
     local minutes = math.floor(totalSeconds / 60)
-   local seconds = totalSeconds - math.floor(totalSeconds / 60) * 60
+    local seconds = totalSeconds - math.floor(totalSeconds / 60) * 60
 
     -- Return "99:59" if minutes exceed 99
     if minutes > 99 then
@@ -294,37 +292,13 @@ local function AddNewTopicEntryAndShiftOthers(topicPlaceholders, topic, numberOf
     firstFontString.creationTimestamp = date("%H:%M:%S")
     local class = DifficultBulletinBoardVars.GetPlayerClassFromDatabase(name)
     
-	if firstFontString.icon and type(firstFontString.icon.SetTexture) == "function" then
+    if firstFontString.icon and type(firstFontString.icon.SetTexture) == "function" then
         firstFontString.icon:SetTexture(getClassIconFromClassName(class))
     end
 
     -- Show a RaidWarning for enabled notifications. dont show it for the Group Logs
-    local notificationKey = name .. ":" .. message
-    local currentTime = GetTime()
-
-    -- Simple cache cleanup
-    for key, timestamp in pairs(notificationCache) do
-        if currentTime - timestamp > NOTIFICATION_CACHE_DURATION then
-            notificationCache[key] = nil
-        end
-    end
-    
-    -- Check cache to prevent spam
-    if not notificationCache[notificationKey] then
-        if topic ~= "Group Logs" and DifficultBulletinBoard.notificationList[topic] == true then
-            if DifficultBulletinBoardVars.notificationSound == "true" then
-                PlaySound("TellMessage")
-            end
-            
-            -- Check the new setting to show/hide chat message
-            if DifficultBulletinBoardVars.notificationChatMessage == "true" then
-                RaidWarningFrame:AddMessage("DBB Notification: " .. message)
-                DEFAULT_CHAT_FRAME:AddMessage("|cFFFFCC00[DBB Notification]|r " .. "|Hplayer:" .. name .. "|h[" .. name .. "]|h" .. " :|cFFB2B2FF" .. message)
-            end
-            
-            -- Add to cache
-            notificationCache[notificationKey] = currentTime
-        end
+    if topic ~= "Group Logs" and DifficultBulletinBoard.notificationList[topic] == true then
+        RaidWarningFrame:AddMessage("DBB Notification: " .. message)
     end
     
     -- Apply filter if this is a Groups Logs entry
@@ -1018,4 +992,4 @@ function DifficultBulletinBoardMessageProcessor.ExpireMessages(seconds)
             ReflowTopicEntries(entries)
         end
     end
-end
+end 
