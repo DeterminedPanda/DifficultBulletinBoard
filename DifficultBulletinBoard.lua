@@ -438,8 +438,13 @@ function DifficultBulletinBoard.hookedChatFrameOnEvent(event, chatFrame)
     end
     
     -- Only process chat channel messages
-    if event == "CHAT_MSG_CHANNEL" then
+    if event == "CHAT_MSG_CHANNEL" or event == "CHAT_MSG_GUILD" then
         
+        -- arg9 for CHAT_MSG_GUILD is empty, so overwrite it here
+        if(event == "CHAT_MSG_GUILD" ) then
+            arg9 = "Guild"
+        end
+
         -- Check if we've seen this specific message before (using message-specific key)
          local messageSpecificKey = name .. ":" .. message
          local currentTime = GetTime()
@@ -684,6 +689,7 @@ mainFrame:RegisterEvent("UPDATE_CHAT_WINDOWS")
 mainFrame:RegisterEvent("CHAT_MSG_CHANNEL")
 mainFrame:RegisterEvent("CHAT_MSG_HARDCORE")
 mainFrame:RegisterEvent("CHAT_MSG_SYSTEM")
+mainFrame:RegisterEvent("CHAT_MSG_GUILD")
 mainFrame:SetScript("OnEvent", handleEvent)
 mainFrame:SetScript("OnUpdate", OnUpdate)
 
