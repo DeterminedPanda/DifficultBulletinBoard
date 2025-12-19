@@ -86,6 +86,10 @@ function DifficultBulletinBoard_ToggleMainFrame()
             if DifficultBulletinBoardOptionFrame.HideAllDropdownMenus then
                 DifficultBulletinBoardOptionFrame.HideAllDropdownMenus()
             end
+            -- Check saved instances and auto-collapse them with red color
+            if DifficultBulletinBoardMainFrame.CheckSavedInstancesAndCollapse then
+                DifficultBulletinBoardMainFrame.CheckSavedInstancesAndCollapse()
+            end
             -- Recalculate scroll ranges before showing frame to avoid flicker
             if DifficultBulletinBoardMainFrame.RefreshAllScrollRanges then
                 DifficultBulletinBoardMainFrame.RefreshAllScrollRanges()
