@@ -53,6 +53,7 @@ local hcMessagesButton = DifficultBulletinBoardMainFrameHCMessagesButton
 local groupTopicPlaceholders = {}
 local groupTopicHeaders = {}  -- registry for group topic headers for dynamic reflow
 local groupTopicCollapsed = {} -- track collapse state for each topic
+local groupTopicSavedInstances = {} -- track which topics are saved instances (red color when collapsed)
 local groupsLogsPlaceholders = {} -- New container for Groups Logs entries
 local professionTopicPlaceholders = {}
 local professionTopicHeaders = {}  -- registry for profession topic headers for dynamic reflow
@@ -74,6 +75,53 @@ local function applyGroupsLogsFilter(searchText)
     if DifficultBulletinBoardMessageProcessor and DifficultBulletinBoardMessageProcessor.ApplyGroupsLogsFilter then
         DifficultBulletinBoardMessageProcessor.ApplyGroupsLogsFilter(searchText)
     end
+end
+
+-- Check saved instances and auto-collapse matching group topics
+function DifficultBulletinBoardMainFrame.CheckSavedInstancesAndCollapse()
+    -- Get the number of saved instances
+    local numSavedInstances = GetNumSavedInstances()
+    if not numSavedInstances or numSavedInstances == 0 then
+        return
+    end
+
+    -- Clear previous saved instance tracking
+    for k in pairs(groupTopicSavedInstances) do
+        groupTopicSavedInstances[k] = nil
+    end
+
+    -- Build a list of saved instance names (lowercase for matching)
+    local savedInstanceNames = {}
+    for i = 1, numSavedInstances do
+        local instanceName = GetSavedInstanceInfo(i)
+        if instanceName then
+            -- Store the lowercase version for case-insensitive matching
+            savedInstanceNames[string.lower(instanceName)] = true
+        end
+    end
+
+    -- Check each group topic to see if it matches a saved instance
+    for _, topic in ipairs(DifficultBulletinBoardVars.allGroupTopics) do
+        if topic.selected then
+            local topicNameLower = string.lower(topic.name)
+
+            -- Check if this topic name matches any saved instance
+            if savedInstanceNames[topicNameLower] then
+                groupTopicSavedInstances[topic.name] = true
+                groupTopicCollapsed[topic.name] = true
+
+                -- Update the header if it exists
+                local header = groupTopicHeaders[topic.name]
+                if header then
+                    header:SetText("[+] " .. topic.name)
+                    header:SetTextColor(1.0, 0.2, 0.2, 1.0)  -- red color for saved instances
+                end
+            end
+        end
+    end
+
+    -- Trigger reflow to apply the collapse state
+    DifficultBulletinBoardMainFrame.ReflowGroupsTab()
 end
 
 -- Function to get current filter text for message processor
@@ -622,7 +670,7 @@ local function createTopicListWithNameMessageDateColumns(contentFrame, topicList
     headerButton:SetScript("OnClick", function()
         -- Toggle collapse state using captured name
         topicCollapsed[collapseTopicName] = not topicCollapsed[collapseTopicName]
-        
+
         -- Save the new state to saved variables
         if not DifficultBulletinBoardSavedVariables then
             DifficultBulletinBoardSavedVariables = {}
@@ -630,7 +678,7 @@ local function createTopicListWithNameMessageDateColumns(contentFrame, topicList
         if not DifficultBulletinBoardSavedVariables.collapsedHeaders then
             DifficultBulletinBoardSavedVariables.collapsedHeaders = {groups = {}, professions = {}, hardcore = {}}
         end
-        
+
         -- Determine which category to save to
         if topicPlaceholders == groupTopicPlaceholders then
             if not DifficultBulletinBoardSavedVariables.collapsedHeaders.groups then
@@ -643,14 +691,19 @@ local function createTopicListWithNameMessageDateColumns(contentFrame, topicList
             end
             DifficultBulletinBoardSavedVariables.collapsedHeaders.professions[collapseTopicName] = topicCollapsed[collapseTopicName]
         end
-        
+
         -- Update header text and color to reflect new collapse state
         if topicCollapsed[collapseTopicName] then
             header:SetText("[+] " .. collapseTopicName)
-            header:SetTextColor(0.6, 0.6, 0.7, 1.0)  -- dimmed color when collapsed
+            -- Use red color if this is a saved instance, otherwise use grey
+            if topicPlaceholders == groupTopicPlaceholders and groupTopicSavedInstances[collapseTopicName] then
+                header:SetTextColor(1.0, 0.2, 0.2, 1.0)  -- red color for saved instances
+            else
+                header:SetTextColor(0.6, 0.6, 0.7, 1.0)  -- dimmed color when collapsed
+            end
         else
             header:SetText("[-] " .. collapseTopicName)
-            header:SetTextColor(0.9, 0.9, 1.0, 1.0)  -- default bright color when expanded
+            header:SetTextColor(1.0, 1.0, 1.0, 1.0)  -- white color when expanded
         end
         reflowFunction()
     end)
@@ -664,9 +717,14 @@ local function createTopicListWithNameMessageDateColumns(contentFrame, topicList
     headerButton:SetScript("OnLeave", function()
         -- Revert header color based on collapse state
         if topicCollapsed[collapseTopicName] then
-            header:SetTextColor(0.6, 0.6, 0.7, 1.0)
+            -- Use red color if this is a saved instance, otherwise use grey
+            if topicPlaceholders == groupTopicPlaceholders and groupTopicSavedInstances[collapseTopicName] then
+                header:SetTextColor(1.0, 0.2, 0.2, 1.0)  -- red color for saved instances
+            else
+                header:SetTextColor(0.6, 0.6, 0.7, 1.0)  -- dimmed color when collapsed
+            end
         else
-            header:SetTextColor(0.9, 0.9, 1.0, 1.0)
+            header:SetTextColor(1.0, 1.0, 1.0, 1.0)  -- white color when expanded
         end
     end)
 
