@@ -189,24 +189,29 @@ local function topicPlaceholdersContainsCharacterName(topicPlaceholders, topicNa
     return false, nil
 end
 
-local function getClassIconFromClassName(class) 
-    if class == "Druid" then
+local function getClassIconFromClassName(class)
+    if not class then return nil end
+    
+    -- Convert to uppercase for comparison (pfUI returns uppercase like "MAGE", "WARRIOR")
+    local classUpper = string.upper(class)
+    
+    if classUpper == "DRUID" then
         return "Interface\\AddOns\\DifficultBulletinBoard\\icons\\druid_class_icon"
-    elseif class == "Hunter" then
+    elseif classUpper == "HUNTER" then
         return "Interface\\AddOns\\DifficultBulletinBoard\\icons\\hunter_class_icon"
-    elseif class == "Mage" then
+    elseif classUpper == "MAGE" then
         return "Interface\\AddOns\\DifficultBulletinBoard\\icons\\mage_class_icon"
-    elseif class == "Paladin" then
+    elseif classUpper == "PALADIN" then
         return "Interface\\AddOns\\DifficultBulletinBoard\\icons\\paladin_class_icon"
-    elseif class == "Priest" then
+    elseif classUpper == "PRIEST" then
         return "Interface\\AddOns\\DifficultBulletinBoard\\icons\\priest_class_icon"
-    elseif class == "Rogue" then
+    elseif classUpper == "ROGUE" then
         return "Interface\\AddOns\\DifficultBulletinBoard\\icons\\rogue_class_icon"
-    elseif class == "Shaman" then
+    elseif classUpper == "SHAMAN" then
         return "Interface\\AddOns\\DifficultBulletinBoard\\icons\\shaman_class_icon"
-    elseif class == "Warlock" then
+    elseif classUpper == "WARLOCK" then
         return "Interface\\AddOns\\DifficultBulletinBoard\\icons\\warlock_class_icon"
-    elseif class == "Warrior" then
+    elseif classUpper == "WARRIOR" then
         return "Interface\\AddOns\\DifficultBulletinBoard\\icons\\warrior_class_icon"
     else
         return nil
@@ -255,7 +260,8 @@ local function UpdateTopicEntryAndPromoteToTop(topicPlaceholders, topic, numberO
     topicData[1].timeFontString:SetText(timestamp)
     topicData[1].creationTimestamp = date("%H:%M:%S")
     local class = DifficultBulletinBoardVars.GetPlayerClassFromDatabase(name)
-    topicData[1].icon:SetTexture(getClassIconFromClassName(class))
+    local iconPath = getClassIconFromClassName(class)
+    topicData[1].icon:SetTexture(iconPath)
 
     -- Tooltip handlers are now dynamic and don't need manual updates
     
@@ -410,9 +416,10 @@ local function AddNewTopicEntryAndShiftOthers(topicPlaceholders, topic, numberOf
     
     firstFontString.creationTimestamp = date("%H:%M:%S")
     local class = DifficultBulletinBoardVars.GetPlayerClassFromDatabase(name)
+    local iconPath = getClassIconFromClassName(class)
     
 	if firstFontString.icon and type(firstFontString.icon.SetTexture) == "function" then
-        firstFontString.icon:SetTexture(getClassIconFromClassName(class))
+        firstFontString.icon:SetTexture(iconPath)
     end
 
     -- Show a RaidWarning for enabled notifications. dont show it for the Group Logs
@@ -761,8 +768,10 @@ function DifficultBulletinBoard.OnChatMessage(arg1, arg2, arg9)
             entries[1].creationTimestamp = date("%H:%M:%S")
             
             local class = DifficultBulletinBoardVars.GetPlayerClassFromDatabase(characterName)
+            local iconPath = getClassIconFromClassName(class)
+            
             if entries[1] and entries[1].icon and type(entries[1].icon.SetTexture) == "function" then
-                entries[1].icon:SetTexture(getClassIconFromClassName(class))
+                entries[1].icon:SetTexture(iconPath)
             end
             
             -- reflow Group Logs placeholders first

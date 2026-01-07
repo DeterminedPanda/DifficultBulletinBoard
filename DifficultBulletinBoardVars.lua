@@ -21,34 +21,80 @@ DifficultBulletinBoardVars.allGroupTopics = {}
 DifficultBulletinBoardVars.allProfessionTopics = {}
 DifficultBulletinBoardVars.allHardcoreTopics = {}
 
-DifficultBulletinBoardSavedVariables.playerList = DifficultBulletinBoardSavedVariables.playerList or {}
 DifficultBulletinBoardSavedVariables.keywordBlacklist = DifficultBulletinBoardSavedVariables.keywordBlacklist or ""
 
 
 
 
--- Retrieves a player's class from the saved database
+-- Debug flag to track if we've already shown addon detection status
+local addon_detection_shown = false
+
+-- Retrieves a player's class from pfUI or CensusPlus database if available
 function DifficultBulletinBoardVars.GetPlayerClassFromDatabase(name)
-    local realmName = GetRealmName()
-
-    -- Add or update the player entry
-    if DifficultBulletinBoardSavedVariables.playerList[realmName][name] then
-        return DifficultBulletinBoardSavedVariables.playerList[realmName][name].class
-    else
-        return nil
+    -- Show detection message once on first call
+    if not addon_detection_shown then
+        local hasPfUI = pfUI_playerDB ~= nil
+        local hasCensus = CensusPlus_Database and CensusPlus_Database["Servers"] ~= nil
+        
+        if hasPfUI and hasCensus then
+            DEFAULT_CHAT_FRAME:AddMessage("|cFF00FF00[DBB]|r pfUI and CensusPlus detected! Class icons enabled.")
+        elseif hasPfUI then
+            DEFAULT_CHAT_FRAME:AddMessage("|cFF00FF00[DBB]|r pfUI detected! Class icons enabled.")
+        elseif hasCensus then
+            DEFAULT_CHAT_FRAME:AddMessage("|cFF00FF00[DBB]|r CensusPlus detected! Class icons enabled.")
+        else
+            DEFAULT_CHAT_FRAME:AddMessage("|cFFFFAA00[DBB]|r pfUI or CensusPlus not detected. Class icons disabled.")
+        end
+        
+        addon_detection_shown = true
     end
-end
-
--- Adds a player to the class database
-function DifficultBulletinBoardVars.AddPlayerToDatabase(name, class)
-    local realmName = GetRealmName()
-
-    -- Add or update the player entry
-    DifficultBulletinBoardSavedVariables.playerList[realmName][name] = {
-        class = class
-    }
-
-
+    
+    -- Try pfUI first (most efficient, O(1) lookup)
+    if pfUI_playerDB and pfUI_playerDB[name] and pfUI_playerDB[name].class then
+        return pfUI_playerDB[name].class
+    end
+    
+    -- If pfUI doesn't have the player, try CensusPlus (more complete data)
+    if CensusPlus_Database and CensusPlus_Database["Servers"] then
+        -- Get realm name with locale prefix
+        local realmName = GetRealmName()
+        local locale = GetLocale()
+        local localePrefix = ""
+        
+        -- CensusPlus uses locale prefixes
+        if locale == "enUS" then
+            localePrefix = "US"
+        elseif locale == "enGB" or locale == "frFR" or locale == "deDE" or locale == "esES" then
+            localePrefix = "EU"
+        end
+        
+        local fullRealmName = localePrefix .. realmName
+        
+        -- Try with locale prefix first, fallback to realm name without prefix
+        local realmDatabase = CensusPlus_Database["Servers"][fullRealmName] or CensusPlus_Database["Servers"][realmName]
+        
+        if realmDatabase then
+            -- CensusPlus structure: Servers[realm][faction][race][class][name]
+            -- We need to search through all factions, races, and classes
+            for factionName, factionData in pairs(realmDatabase) do
+                if type(factionData) == "table" then
+                    for raceName, raceData in pairs(factionData) do
+                        if type(raceData) == "table" then
+                            for className, classData in pairs(raceData) do
+                                if type(classData) == "table" and classData[name] then
+                                    -- Found the player! Return the class name
+                                    return className
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    
+    -- Return nil if player not found in either database
+    return nil
 end
 
 -- Helper function to get saved variable or default
@@ -68,11 +114,13 @@ function DifficultBulletinBoardVars.LoadSavedVariables()
 
     -- Ensure the root and container tables exist
     DifficultBulletinBoardSavedVariables = DifficultBulletinBoardSavedVariables or {}
-    DifficultBulletinBoardSavedVariables.playerList = DifficultBulletinBoardSavedVariables.playerList or {}
     DifficultBulletinBoardSavedVariables.keywordBlacklist = DifficultBulletinBoardSavedVariables.keywordBlacklist or ""
     
-    local realmName = GetRealmName()
-    DifficultBulletinBoardSavedVariables.playerList[realmName] = DifficultBulletinBoardSavedVariables.playerList[realmName] or {}
+    -- Clean up old player database if it exists (migration from old version)
+    if DifficultBulletinBoardSavedVariables.playerList then
+        DifficultBulletinBoardSavedVariables.playerList = nil
+        DEFAULT_CHAT_FRAME:AddMessage("|cFF00FF00[DBB]|r Cleaned up old player database. Class icons will now use pfUI if available.")
+    end
 
     if DifficultBulletinBoardSavedVariables.version then
         local savedVersion = DifficultBulletinBoardSavedVariables.version

@@ -793,8 +793,8 @@ local function createTopicListWithNameMessageDateColumns(contentFrame, topicList
        "$parent_" .. topic.name .. "Placeholder" .. i .. "_Icon",
        "ARTWORK"
      )
-     icon:SetHeight(14)
-     icon:SetWidth(14)
+     icon:SetHeight(13)
+     icon:SetWidth(13)
      -- Removed initial icon anchor; will anchor to nameButton after creation
      icon:SetPoint("RIGHT", contentFrame, "RIGHT", -2, topicYOffset - 2)
 
@@ -810,7 +810,7 @@ local function createTopicListWithNameMessageDateColumns(contentFrame, topicList
      nameButton:SetHeight(10)
      -- Anchor icon to the left of the name button with 1px gap
      icon:ClearAllPoints()
-     icon:SetPoint("RIGHT", nameButton, "LEFT", 3, 0)
+     icon:SetPoint("RIGHT", nameButton, "LEFT", 4, 0)
      
      -- Add this line to extend clickable area to the right
      nameButton:SetHitRectInsets(0, -45, 0, 0)
