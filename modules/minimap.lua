@@ -34,40 +34,58 @@ DBB2:RegisterModule("minimap", function()
   
   -- Dragging functionality
   DBB2.minimapButton.angle = DBB2_Config.minimapAngle or 45
+  DBB2.minimapButton.freePos = DBB2_Config.minimapFreePos or nil
+  DBB2.minimapButton.freeMode = DBB2_Config.minimapFreeMode or false
   
   local function UpdatePosition()
-    local angle = math.rad(DBB2.minimapButton.angle)
-    local x, y
-    local radius = 80
+    DBB2.minimapButton:ClearAllPoints()
     
-    x = math.cos(angle) * radius
-    y = math.sin(angle) * radius
-    
-    DBB2.minimapButton:SetPoint("TOPLEFT", Minimap, "TOPLEFT", 52 - radius + x, y - 52)
+    if DBB2.minimapButton.freeMode and DBB2.minimapButton.freePos then
+      -- Free positioning mode - position relative to UIParent
+      DBB2.minimapButton:SetPoint("CENTER", UIParent, "BOTTOMLEFT", DBB2.minimapButton.freePos.x, DBB2.minimapButton.freePos.y)
+    else
+      -- Locked to minimap circle
+      local angle = math.rad(DBB2.minimapButton.angle)
+      local radius = 80
+      local x = math.cos(angle) * radius
+      local y = math.sin(angle) * radius
+      DBB2.minimapButton:SetPoint("CENTER", Minimap, "CENTER", x, y)
+    end
   end
   
   DBB2.minimapButton:SetScript("OnDragStart", function()
     this:LockHighlight()
     this.isDragging = true
+    this.freeDragging = IsControlKeyDown()
   end)
   
   DBB2.minimapButton:SetScript("OnDragStop", function()
     this:UnlockHighlight()
     this.isDragging = false
+    this.freeDragging = false
     DBB2_Config.minimapAngle = DBB2.minimapButton.angle
+    DBB2_Config.minimapFreePos = DBB2.minimapButton.freePos
+    DBB2_Config.minimapFreeMode = DBB2.minimapButton.freeMode
   end)
   
   DBB2.minimapButton:SetScript("OnUpdate", function()
     if this.isDragging then
       local mx, my = GetCursorPosition()
-      local px, py = Minimap:GetCenter()
       local scale = Minimap:GetEffectiveScale()
-      
       mx = mx / scale
       my = my / scale
       
-      local angle = math.deg(math.atan2(my - py, mx - px))
-      DBB2.minimapButton.angle = angle
+      if this.freeDragging then
+        -- Free drag mode - place anywhere
+        DBB2.minimapButton.freeMode = true
+        DBB2.minimapButton.freePos = { x = mx, y = my }
+      else
+        -- Locked drag mode - rotate around minimap
+        DBB2.minimapButton.freeMode = false
+        local px, py = Minimap:GetCenter()
+        local angle = math.deg(math.atan2(my - py, mx - px))
+        DBB2.minimapButton.angle = angle
+      end
       UpdatePosition()
     end
   end)
@@ -80,6 +98,16 @@ DBB2:RegisterModule("minimap", function()
       else
         DBB2.gui:Show()
       end
+    elseif arg1 == "RightButton" and IsControlKeyDown() then
+      -- Reset position to default (locked mode, 45 degrees)
+      DBB2.minimapButton.angle = 45
+      DBB2.minimapButton.freeMode = false
+      DBB2.minimapButton.freePos = nil
+      DBB2_Config.minimapAngle = 45
+      DBB2_Config.minimapFreeMode = false
+      DBB2_Config.minimapFreePos = nil
+      UpdatePosition()
+      DEFAULT_CHAT_FRAME:AddMessage("|cffaaa7ccDBB2:|r Minimap button position reset.")
     end
   end)
   
@@ -88,7 +116,9 @@ DBB2:RegisterModule("minimap", function()
     DBB2.api.ShowTooltip(this, "LEFT", {
       {"|cffaaa7ccDifficult|cffffffffBulletinBoard", "highlight"},
       "Left-click to toggle window",
-      "Drag to move this button"
+      "Drag to rotate around minimap",
+      "Ctrl + Drag to move freely",
+      "Ctrl + Right-click to reset position"
     })
   end)
   
