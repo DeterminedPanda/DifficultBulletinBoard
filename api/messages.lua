@@ -697,7 +697,10 @@ function DBB2.api.SendNotification(categoryName, sender, message)
   sender = sender or "Unknown"
   message = message or ""
   
-  local notifyText = "|cff00ff00[DBB2]|r " .. categoryName .. " - " .. sender .. ": " .. message
+  -- Get highlight color for notification text
+  local hr, hg, hb = DBB2:GetHighlightColor()
+  local hexColor = string.format("%02x%02x%02x", hr * 255, hg * 255, hb * 255)
+  local notifyText = "|cff" .. hexColor .. "[DBB]|r " .. categoryName .. " - " .. sender .. ": " .. message
   
   if settings.chat then
     -- Use the original AddMessage function to bypass our chat filter hook
@@ -713,8 +716,8 @@ function DBB2.api.SendNotification(categoryName, sender, message)
   
   if settings.raidWarn then
     -- Use UIErrorsFrame for on-screen notification (works without being in a raid)
-    local screenText = "[DBB2] " .. categoryName .. " - " .. sender .. ": " .. message
-    UIErrorsFrame:AddMessage(screenText, 0.0, 1.0, 0.0, 1.0, 3)  -- Green text, 3 second duration
+    local screenText = "[DBB] " .. categoryName .. " - " .. sender .. ": " .. message
+    UIErrorsFrame:AddMessage(screenText, hr, hg, hb, 1.0, 3)  -- Highlight color, 3 second duration
   end
   
   -- Play notification sound if enabled
