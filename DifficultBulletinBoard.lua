@@ -183,10 +183,17 @@ DBB2:SetScript("OnEvent", function()
     local sender = arg2
     local channel = arg9 or "Guild"
     
-    if event == "CHAT_MSG_CHANNEL" and DBB2.api.IsHardcoreChatActive() then
+    -- For channel messages, only capture from whitelisted LFG-relevant channels
+    -- This automatically filters out addon channels like TTRP, XTENSIONXTOOLTIP, etc.
+    if event == "CHAT_MSG_CHANNEL" then
+      if not DBB2.api.IsChannelWhitelisted(channel) then
+        return  -- Not an LFG channel, ignore
+      end
+      
+      -- Ignore World channel when hardcore is active
       local lowerChannel = string.lower(channel or "")
-      if lowerChannel == "world" then
-        return  -- Ignore World channel when hardcore is active
+      if DBB2.api.IsHardcoreChatActive() and lowerChannel == "world" then
+        return
       end
     end
     
@@ -313,3 +320,4 @@ SlashCmdList["DBB"] = function(msg)
     end
   end
 end
+

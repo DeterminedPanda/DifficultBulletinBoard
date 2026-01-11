@@ -149,3 +149,123 @@ function DBB2.api.ClearWorldMessages()
     end
   end
 end
+
+
+-- =====================
+-- CHANNEL WHITELIST API
+-- =====================
+
+-- Only captures messages from known LFG-relevant channels.
+-- This automatically filters out addon data channels (TTRP, XTENSIONXTOOLTIP, etc.)
+-- without needing to maintain a blacklist.
+
+-- Default whitelisted channels (case-insensitive)
+-- These are the standard channels where players look for groups
+DBB2._defaultWhitelistedChannels = {
+  "world",           -- Main LFG channel on most servers
+  "lookingforgroup", -- Blizzard's LFG channel
+  "lfg",             -- Common abbreviation
+  "trade",           -- Sometimes used for LFG
+  "general",         -- Zone general chat
+  "hardcore",        -- Turtle WoW hardcore
+}
+
+-- [ GetWhitelistedChannels ]
+-- Returns the list of whitelisted channel names
+-- return:      [table]         array of lowercase channel names
+function DBB2.api.GetWhitelistedChannels()
+  if not DBB2_Config.whitelistedChannels then
+    -- Copy defaults
+    DBB2_Config.whitelistedChannels = {}
+    for i, ch in ipairs(DBB2._defaultWhitelistedChannels) do
+      DBB2_Config.whitelistedChannels[i] = ch
+    end
+  end
+  return DBB2_Config.whitelistedChannels
+end
+
+-- [ IsChannelWhitelisted ]
+-- Checks if a channel is in the whitelist (LFG-relevant)
+-- 'channelName' [string]       the channel name to check
+-- return:       [boolean]      true if channel should be captured
+function DBB2.api.IsChannelWhitelisted(channelName)
+  if not channelName then return false end
+  local lowerName = string.lower(channelName)
+  local whitelist = DBB2.api.GetWhitelistedChannels()
+  
+  for _, name in ipairs(whitelist) do
+    if string.lower(name) == lowerName then
+      return true
+    end
+  end
+  return false
+end
+
+-- [ AddWhitelistedChannel ]
+-- Adds a channel to the whitelist
+-- 'channelName' [string]       the channel name to whitelist
+-- return:       [boolean]      true if added, false if already exists
+function DBB2.api.AddWhitelistedChannel(channelName)
+  if not channelName or channelName == "" then return false end
+  
+  local lowerName = string.lower(channelName)
+  local whitelist = DBB2.api.GetWhitelistedChannels()
+  
+  -- Check if already exists
+  for _, name in ipairs(whitelist) do
+    if string.lower(name) == lowerName then
+      return false
+    end
+  end
+  
+  table.insert(DBB2_Config.whitelistedChannels, lowerName)
+  return true
+end
+
+-- [ RemoveWhitelistedChannel ]
+-- Removes a channel from the whitelist
+-- 'channelName' [string]       the channel name to remove
+-- return:       [boolean]      true if removed, false if not found
+function DBB2.api.RemoveWhitelistedChannel(channelName)
+  if not channelName then return false end
+  
+  local lowerName = string.lower(channelName)
+  local whitelist = DBB2.api.GetWhitelistedChannels()
+  
+  for i = table.getn(whitelist), 1, -1 do
+    if string.lower(whitelist[i]) == lowerName then
+      table.remove(DBB2_Config.whitelistedChannels, i)
+      return true
+    end
+  end
+  return false
+end
+
+-- [ ResetWhitelistedChannels ]
+-- Resets the whitelist to defaults
+function DBB2.api.ResetWhitelistedChannels()
+  DBB2_Config.whitelistedChannels = {}
+  for i, ch in ipairs(DBB2._defaultWhitelistedChannels) do
+    DBB2_Config.whitelistedChannels[i] = ch
+  end
+end
+
+-- [ GetJoinedChannels ]
+-- Returns a list of channels the player has joined (uses GetChannelList)
+-- return:      [table]         array of {id, name} tables
+function DBB2.api.GetJoinedChannels()
+  local channels = {}
+  -- GetChannelList returns: id1, name1, id2, name2, ...
+  local list = { GetChannelList() }
+  
+  for i = 1, table.getn(list), 2 do
+    local id = list[i]
+    local name = list[i + 1]
+    if id and name then
+      table.insert(channels, { id = id, name = name })
+    end
+  end
+  
+  return channels
+end
+
