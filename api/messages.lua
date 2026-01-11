@@ -687,6 +687,55 @@ function DBB2.api.SetNotificationRaidWarn(enabled)
   end
 end
 
+-- On-screen notification queue system
+DBB2.notificationQueue = {}
+DBB2.notificationActive = false
+DBB2.notificationTimer = 0
+DBB2.NOTIFICATION_DURATION = 3  -- seconds per notification (display time)
+DBB2.NOTIFICATION_FADE_BUFFER = 5  -- extra time for fade out before next
+
+-- Process the notification queue
+local function ProcessNotificationQueue()
+  if DBB2.notificationActive then return end
+  if table.getn(DBB2.notificationQueue) == 0 then return end
+  
+  -- Get next notification from queue
+  local notification = table.remove(DBB2.notificationQueue, 1)
+  
+  -- Show it
+  UIErrorsFrame:AddMessage(notification.text, notification.r, notification.g, notification.b, 1.0, DBB2.NOTIFICATION_DURATION)
+  
+  -- Play sound if enabled
+  if notification.playSound then
+    PlaySoundFile("Interface\\AddOns\\DifficultBulletinBoard\\sound\\duck.wav")
+  end
+  
+  -- Mark as active and set timer (duration + fade buffer)
+  DBB2.notificationActive = true
+  DBB2.notificationTimer = GetTime() + DBB2.NOTIFICATION_DURATION + DBB2.NOTIFICATION_FADE_BUFFER
+end
+
+-- Queue an on-screen notification
+local function QueueScreenNotification(text, r, g, b, playSound)
+  table.insert(DBB2.notificationQueue, {
+    text = text,
+    r = r,
+    g = g,
+    b = b,
+    playSound = playSound
+  })
+  ProcessNotificationQueue()
+end
+
+-- Create a frame to handle the queue timer
+local notificationFrame = CreateFrame("Frame")
+notificationFrame:SetScript("OnUpdate", function()
+  if DBB2.notificationActive and GetTime() >= DBB2.notificationTimer then
+    DBB2.notificationActive = false
+    ProcessNotificationQueue()
+  end
+end)
+
 -- [ SendNotification ]
 -- Sends a notification for a matched category
 function DBB2.api.SendNotification(categoryName, sender, message)
@@ -714,15 +763,16 @@ function DBB2.api.SendNotification(categoryName, sender, message)
     end
   end
   
-  if settings.raidWarn then
-    -- Use UIErrorsFrame for on-screen notification (works without being in a raid)
-    local screenText = "[DBB] " .. categoryName .. " - " .. sender .. ": " .. message
-    UIErrorsFrame:AddMessage(screenText, hr, hg, hb, 1.0, 3)  -- Highlight color, 3 second duration
-  end
-  
-  -- Play notification sound if enabled
+  -- Check if sound should play (only with first notification, not queued ones)
   local soundEnabled = DBB2_Config.notificationSound or 1
-  if soundEnabled == 1 then
+  local playSound = (soundEnabled == 1)
+  
+  if settings.raidWarn then
+    -- Queue on-screen notification
+    local screenText = "[DBB] " .. categoryName .. " - " .. sender .. ": " .. message
+    QueueScreenNotification(screenText, hr, hg, hb, playSound)
+  elseif playSound then
+    -- Play sound immediately if no raid warn (chat only mode)
     PlaySoundFile("Interface\\AddOns\\DifficultBulletinBoard\\sound\\duck.wav")
   end
 end
