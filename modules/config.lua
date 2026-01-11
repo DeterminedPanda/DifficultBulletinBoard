@@ -134,6 +134,20 @@ DBB2:RegisterModule("config", function()
   reloadBtn:SetHeight(buttonHeight)
   reloadBtn.text:SetTextColor(0.7, 0.7, 0.7, 1)
   reloadBtn:SetScript("OnClick", function()
+    -- Save any pending tag changes from category config panels before reload
+    -- This handles the case where user types in a field but doesn't press Enter or lose focus
+    local categoryPanels = {"Groups", "Professions", "Hardcore"}
+    for _, panelName in ipairs(categoryPanels) do
+      local panel = DBB2.gui.configTabs.panels[panelName]
+      if panel and panel.categoryRows then
+        for _, row in ipairs(panel.categoryRows) do
+          if row and row.tagsInput and row.categoryType and row.categoryName then
+            local newTags = DBB2.api.ParseTagsString(row.tagsInput:GetText())
+            DBB2.api.UpdateCategoryTags(row.categoryType, row.categoryName, newTags)
+          end
+        end
+      end
+    end
     ReloadUI()
   end)
   
@@ -165,7 +179,7 @@ DBB2:RegisterModule("config", function()
   versionFrame.version = versionFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
   versionFrame.version:SetFont("Fonts\\FRIZQT__.TTF", DBB2:GetFontSize(9))
   versionFrame.version:SetPoint("TOPRIGHT", versionFrame.name, "BOTTOMRIGHT", 0, -2)
-  versionFrame.version:SetText("v2.00")
+  versionFrame.version:SetText("v2.02")
   versionFrame.version:SetTextColor(0.5, 0.5, 0.5, 1)
   versionFrame.version:SetJustifyH("RIGHT")
   

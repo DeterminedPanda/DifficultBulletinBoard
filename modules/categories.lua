@@ -71,16 +71,40 @@ DBB2:RegisterModule("categories", function()
     DBB2_Config.categories = {}
   end
   
+  -- Helper to check if a table has any array elements (more reliable than table.getn in Lua 5.0)
+  local function hasArrayElements(t)
+    if not t then return false end
+    -- Check if first element exists (all category arrays start at index 1)
+    return t[1] ~= nil
+  end
+  
   -- Initialize categories from saved or defaults
-  if not DBB2_Config.categories.groups or table.getn(DBB2_Config.categories.groups) == 0 then
+  -- Use hasArrayElements instead of table.getn for more reliable detection
+  if not DBB2_Config.categories.groups or not hasArrayElements(DBB2_Config.categories.groups) then
     DBB2_Config.categories.groups = DBB2.api.DeepCopy(defaultGroups)
   end
-  if not DBB2_Config.categories.professions or table.getn(DBB2_Config.categories.professions) == 0 then
+  if not DBB2_Config.categories.professions or not hasArrayElements(DBB2_Config.categories.professions) then
     DBB2_Config.categories.professions = DBB2.api.DeepCopy(defaultProfessions)
   end
-  if not DBB2_Config.categories.hardcore or table.getn(DBB2_Config.categories.hardcore) == 0 then
+  if not DBB2_Config.categories.hardcore or not hasArrayElements(DBB2_Config.categories.hardcore) then
     DBB2_Config.categories.hardcore = DBB2.api.DeepCopy(defaultHardcore)
   end
+  
+  -- Ensure all categories have a tags field (fix for SavedVariables not preserving empty tables)
+  -- Also clean up runtime-only fields that shouldn't be saved (_tagsLower, _tagsLen)
+  local function ensureTagsField(categories)
+    for _, cat in ipairs(categories) do
+      if cat.tags == nil then
+        cat.tags = {}
+      end
+      -- Clean up runtime-only precomputed fields (they'll be regenerated on demand)
+      cat._tagsLower = nil
+      cat._tagsLen = nil
+    end
+  end
+  ensureTagsField(DBB2_Config.categories.groups)
+  ensureTagsField(DBB2_Config.categories.professions)
+  ensureTagsField(DBB2_Config.categories.hardcore)
   
   -- Initialize collapsed states if not present
   if not DBB2_Config.categoryCollapsed then
