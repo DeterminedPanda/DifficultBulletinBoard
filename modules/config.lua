@@ -1,0 +1,1290 @@
+-- DBB2 Config Module
+-- Handles addon configuration UI and settings
+
+DBB2:RegisterModule("config", function()
+  -- Check if GUI exists
+  if not DBB2.gui or not DBB2.gui.tabs or not DBB2.gui.tabs.panels or not DBB2.gui.tabs.panels["Config"] then
+    DEFAULT_CHAT_FRAME:AddMessage("DBB2: ERROR - Config panel not ready")
+    return
+  end
+  
+  local configPanel = DBB2.gui.tabs.panels["Config"]
+  
+  -- Reposition Config panel to fill the content area completely (remove default 2px inset)
+  configPanel:ClearAllPoints()
+  configPanel:SetPoint("TOPLEFT", DBB2.gui.tabs.content, "TOPLEFT", 0, 0)
+  configPanel:SetPoint("BOTTOMRIGHT", DBB2.gui.tabs.content, "BOTTOMRIGHT", 0, 0)
+  
+  -- Create tab system for config (vertical tabs on right side inside content)
+  local configTabs = {"General", "Groups", "Professions", "Hardcore", "Blacklist"}
+  DBB2.gui.configTabs = DBB2.api.CreateTabSystem("DBB2Config", configPanel, configTabs, 90, 14)
+  
+  -- Reposition the tab buttons vertically stacked inside the content area (top-right)
+  local buttonWidth = DBB2:ScaleSize(90)
+  local buttonHeight = DBB2:ScaleSize(14)
+  local buttonSpacing = DBB2:ScaleSize(3)
+  local padding = DBB2:ScaleSize(5)
+  local versionArtHeight = DBB2:ScaleSize(55)  -- Space for version art above buttons
+  
+  for i, tabName in ipairs(configTabs) do
+    local btn = DBB2.gui.configTabs.buttons[tabName]
+    btn:ClearAllPoints()
+    btn:SetWidth(buttonWidth)
+    btn:SetHeight(buttonHeight)
+    btn:SetParent(DBB2.gui.configTabs.content)
+    
+    -- Add extra spacing before Blacklist button (equal to button height)
+    local extraSpacing = 0
+    if tabName == "Blacklist" then
+      extraSpacing = buttonHeight
+    end
+    
+    btn:SetPoint("TOPRIGHT", DBB2.gui.configTabs.content, "TOPRIGHT", -padding, -padding - versionArtHeight - ((i - 1) * (buttonHeight + buttonSpacing)) - extraSpacing)
+  end
+  
+  -- Content area fills the config panel
+  DBB2.gui.configTabs.content:ClearAllPoints()
+  DBB2.gui.configTabs.content:SetPoint("TOPLEFT", configPanel, "TOPLEFT", 0, 0)
+  DBB2.gui.configTabs.content:SetPoint("BOTTOMRIGHT", configPanel, "BOTTOMRIGHT", 0, 0)
+  
+  -- Remove the extra backdrop from config tabs content (parent already has one)
+  if DBB2.gui.configTabs.content.backdrop then
+    DBB2.gui.configTabs.content.backdrop:Hide()
+  end
+  
+  -- Adjust tab panels to not overlap with vertical buttons (extra 5px for separator padding)
+  local separatorPadding = DBB2:ScaleSize(7)
+  for _, tabName in ipairs(configTabs) do
+    local panel = DBB2.gui.configTabs.panels[tabName]
+    panel:ClearAllPoints()
+    panel:SetPoint("TOPLEFT", DBB2.gui.configTabs.content, "TOPLEFT", 0, 0)
+    panel:SetPoint("BOTTOMRIGHT", DBB2.gui.configTabs.content, "BOTTOMRIGHT", -(buttonWidth + padding + 3 + separatorPadding), 0)
+    
+    -- Store the panel name for the OnShow script
+    panel._configTabName = tabName
+    
+    -- Reposition on show to ensure correct sizing
+    local originalOnShow = panel:GetScript("OnShow")
+    panel:SetScript("OnShow", function()
+      this:ClearAllPoints()
+      this:SetPoint("TOPLEFT", DBB2.gui.configTabs.content, "TOPLEFT", 0, 0)
+      this:SetPoint("BOTTOMRIGHT", DBB2.gui.configTabs.content, "BOTTOMRIGHT", -(buttonWidth + padding + 3 + separatorPadding), 0)
+      if originalOnShow then
+        originalOnShow()
+      end
+    end)
+  end
+  
+  -- Vertical separator line between content and right sidebar (5px padding on each side)
+  local separatorLine = DBB2.gui.configTabs.content:CreateTexture(nil, "ARTWORK")
+  separatorLine:SetWidth(1)
+  separatorLine:SetPoint("TOP", DBB2.gui.configTabs.content, "TOPRIGHT", -(buttonWidth + padding + separatorPadding), 0)
+  separatorLine:SetPoint("BOTTOM", DBB2.gui.configTabs.content, "BOTTOMRIGHT", -(buttonWidth + padding + separatorPadding), 0)
+  separatorLine:SetTexture(0.3, 0.3, 0.3, 0.8)
+  
+  -- Reset to Defaults button (dangerous red button at bottom-right)
+  local resetBtn = DBB2.api.CreateButton("DBB2ResetBtn", DBB2.gui.configTabs.content, "Reset Defaults")
+  resetBtn:SetPoint("BOTTOMRIGHT", DBB2.gui.configTabs.content, "BOTTOMRIGHT", -padding, padding)
+  resetBtn:SetWidth(DBB2:ScaleSize(90))
+  resetBtn:SetHeight(buttonHeight)
+  resetBtn.text:SetTextColor(1, 0.3, 0.3, 1)
+  
+  resetBtn:SetScript("OnEnter", function()
+    this.backdrop:SetBackdropBorderColor(1, 0.3, 0.3, 1)
+  end)
+  
+  resetBtn:SetScript("OnLeave", function()
+    this.backdrop:SetBackdropBorderColor(0.3, 0.3, 0.3, 1)
+  end)
+  
+  resetBtn:SetScript("OnClick", function()
+    -- Reset all settings to defaults
+    DBB2_Config.fontOffset = 0
+    DBB2_Config.highlightColor = {r = 0.667, g = 0.655, b = 0.8, a = 1}
+    DBB2_Config.spamFilterSeconds = 150
+    DBB2_Config.messageExpireMinutes = 15
+    DBB2_Config.hideFromChat = 0
+    DBB2_Config.maxMessagesPerCategory = 5
+    DBB2_Config.scrollSpeed = 55
+    DBB2_Config.defaultTab = 0
+    DBB2_Config.notificationSoundVolume = 50
+    -- Reset blacklist to defaults
+    DBB2_Config.blacklist = {
+      enabled = true,
+      players = {},
+      keywords = {"[\\[(][a-z][a-z]?[a-z]?[\\])]", "recruit(ing)?", "<.*>"}
+    }
+    -- Reset GUI position and size to defaults
+    DBB2_Config.position = nil
+    -- Reset categories to defaults (lives in modules namespace, not api)
+    if DBB2.modules.ResetCategoriesToDefaults then
+      DBB2.modules.ResetCategoriesToDefaults()
+    end
+    -- Reload to apply
+    ReloadUI()
+  end)
+  
+  -- Save & Reload button (above Reset Defaults)
+  local reloadBtn = DBB2.api.CreateButton("DBB2ReloadBtn", DBB2.gui.configTabs.content, "Save & Reload")
+  reloadBtn:SetPoint("BOTTOMRIGHT", resetBtn, "TOPRIGHT", 0, buttonSpacing)
+  reloadBtn:SetWidth(DBB2:ScaleSize(90))
+  reloadBtn:SetHeight(buttonHeight)
+  reloadBtn.text:SetTextColor(0.7, 0.7, 0.7, 1)
+  reloadBtn:SetScript("OnClick", function()
+    ReloadUI()
+  end)
+  
+  -- Version art (above the General button)
+  local generalBtn = DBB2.gui.configTabs.buttons["General"]
+  local versionFrame = CreateFrame("Frame", "DBB2VersionArt", DBB2.gui.configTabs.content)
+  versionFrame:SetWidth(DBB2:ScaleSize(90))
+  versionFrame:SetHeight(DBB2:ScaleSize(36))
+  versionFrame:SetPoint("BOTTOMRIGHT", generalBtn, "TOPRIGHT", 0, DBB2:ScaleSize(14))
+  
+  -- "Difficult" text with highlight color (left aligned)
+  local hr, hg, hb = DBB2:GetHighlightColor()
+  versionFrame.difficult = versionFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  versionFrame.difficult:SetFont("Fonts\\FRIZQT__.TTF", DBB2:GetFontSize(11))
+  versionFrame.difficult:SetPoint("TOPLEFT", versionFrame, "TOPLEFT", 0, 0)
+  versionFrame.difficult:SetText("Difficult")
+  versionFrame.difficult:SetTextColor(hr, hg, hb, 1)
+  versionFrame.difficult:SetJustifyH("LEFT")
+  
+  -- "BulletinBoard 2" text in white (right aligned, anchored to frame's right edge)
+  versionFrame.name = versionFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  versionFrame.name:SetFont("Fonts\\FRIZQT__.TTF", DBB2:GetFontSize(11))
+  versionFrame.name:SetPoint("TOPRIGHT", versionFrame, "TOPRIGHT", 0, -(DBB2:GetFontSize(11) + DBB2:ScaleSize(1)))
+  versionFrame.name:SetText("BulletinBoard")
+  versionFrame.name:SetTextColor(1, 1, 1, 1)
+  versionFrame.name:SetJustifyH("RIGHT")
+  
+  -- Version number in gray (right aligned, anchored to frame's right edge)
+  versionFrame.version = versionFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  versionFrame.version:SetFont("Fonts\\FRIZQT__.TTF", DBB2:GetFontSize(9))
+  versionFrame.version:SetPoint("TOPRIGHT", versionFrame.name, "BOTTOMRIGHT", 0, -2)
+  versionFrame.version:SetText("v2.00")
+  versionFrame.version:SetTextColor(0.5, 0.5, 0.5, 1)
+  versionFrame.version:SetJustifyH("RIGHT")
+  
+  -- =====================
+  -- GENERAL TAB
+  -- =====================
+  local generalPanel = DBB2.gui.configTabs.panels["General"]
+  
+  -- Create scroll frame for General tab
+  local generalScroll = DBB2.api.CreateScrollFrame("DBB2GeneralScroll", generalPanel)
+  generalScroll:SetPoint("TOPLEFT", generalPanel, "TOPLEFT", 0, 0)
+  generalScroll:SetPoint("BOTTOMRIGHT", generalPanel, "BOTTOMRIGHT", 0, DBB2:ScaleSize(5))
+  
+  local generalScrollChild = DBB2.api.CreateScrollChild("DBB2GeneralScrollChild", generalScroll)
+  
+  -- Content container with fixed height for all settings
+  local contentHeight = DBB2:ScaleSize(450)  -- Enough for all settings including notifications
+  generalScrollChild:SetHeight(contentHeight)
+  
+  -- Update scroll child width on size change
+  -- Track last width to avoid redundant updates
+  local lastGeneralScrollWidth = 0
+  generalScroll:SetScript("OnUpdate", function()
+    -- Early exit if not visible
+    if not this:IsVisible() then return end
+    
+    local scrollLeft = this:GetLeft()
+    local scrollRight = this:GetRight()
+    if not scrollLeft or not scrollRight then return end
+    
+    local scrollWidth = scrollRight - scrollLeft
+    
+    -- Only update if width actually changed
+    if scrollWidth > 0 and scrollWidth ~= lastGeneralScrollWidth then
+      lastGeneralScrollWidth = scrollWidth
+      generalScrollChild:SetWidth(scrollWidth)
+      this.UpdateScrollState()
+    end
+  end)
+  
+  -- Section title
+  local hr, hg, hb = DBB2:GetHighlightColor()
+  local title = DBB2.api.CreateLabel(generalScrollChild, "Display Settings", 10)
+  title:SetPoint("TOPLEFT", DBB2:ScaleSize(10), -DBB2:ScaleSize(10))
+  title:SetTextColor(hr, hg, hb, 1)
+  
+  -- Default Tab slider (0 = Logs, 1 = Groups, 2 = Professions, 3 = Hardcore)
+  local defaultTabNames = {
+    [0] = "Logs",
+    [1] = "Groups",
+    [2] = "Professions",
+    [3] = "Hardcore"
+  }
+  local currentDefaultTab = DBB2_Config.defaultTab or 0
+  
+  local defaultTabSlider = DBB2.api.CreateSlider("DBB2DefaultTabSlider", generalScrollChild, "Default Tab: " .. defaultTabNames[currentDefaultTab], 0, 3, 1, 9)
+  defaultTabSlider:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -DBB2:ScaleSize(8))
+  defaultTabSlider:SetWidth(DBB2:ScaleSize(250))
+  defaultTabSlider:SetValue(currentDefaultTab)
+  
+  -- Add tooltip on hover
+  defaultTabSlider.slider:SetScript("OnEnter", function()
+    local r, g, b = DBB2:GetHighlightColor()
+    this.backdrop:SetBackdropBorderColor(r, g, b, 1)
+    DBB2.api.ShowTooltip(this, "RIGHT", {
+      {"Default Tab", "highlight"},
+      "The tab shown when opening the GUI.",
+      {"0=Logs, 1=Groups, 2=Professions, 3=Hardcore", "gray"}
+    })
+  end)
+  
+  defaultTabSlider.slider:SetScript("OnLeave", function()
+    this.backdrop:SetBackdropBorderColor(0.2, 0.2, 0.2, 1)
+    DBB2.api.HideTooltip()
+  end)
+  
+  -- Save on change and update label
+  defaultTabSlider.OnValueChanged = function(val)
+    DBB2_Config.defaultTab = val
+    defaultTabSlider.label:SetText("Default Tab: " .. defaultTabNames[val])
+  end
+  
+  -- Font Size Offset slider
+  local fontSlider = DBB2.api.CreateSlider("DBB2FontOffsetSlider", generalScrollChild, "Font Size Offset", -4, 4, 1, 9)
+  fontSlider:SetPoint("TOPLEFT", defaultTabSlider, "BOTTOMLEFT", 0, -DBB2:ScaleSize(11))
+  fontSlider:SetWidth(DBB2:ScaleSize(250))
+  fontSlider:SetValue(DBB2_Config.fontOffset or 0)
+  
+  -- Add tooltip on hover (attach to the slider child frame)
+  fontSlider.slider:SetScript("OnEnter", function()
+    local r, g, b = DBB2:GetHighlightColor()
+    this.backdrop:SetBackdropBorderColor(r, g, b, 1)
+    DBB2.api.ShowTooltip(this, "RIGHT", {
+      {"Font Size Offset", "highlight"},
+      "Adjusts all text sizes.",
+      {"Requires /reload to fully apply.", "gray"}
+    })
+  end)
+  
+  fontSlider.slider:SetScript("OnLeave", function()
+    this.backdrop:SetBackdropBorderColor(0.2, 0.2, 0.2, 1)
+    DBB2.api.HideTooltip()
+  end)
+  
+  -- Save on change (with safety clamping)
+  fontSlider.OnValueChanged = function(val)
+    -- Clamp to safe range
+    if val < -4 then val = -4 end
+    if val > 4 then val = 4 end
+    DBB2_Config.fontOffset = val
+    
+    -- Update resize grip minimum size based on new font offset
+    if DBB2.gui.resizeGrip then
+      local baseMinWidth = 410
+      local baseMinHeight = 275
+      local scaleFactor = 1 + (val * 0.1)
+      local newMinWidth = math.floor(baseMinWidth * scaleFactor + 0.5)
+      local newMinHeight = math.floor(baseMinHeight * scaleFactor + 0.5)
+      DBB2.gui.resizeGrip.minWidth = newMinWidth
+      DBB2.gui.resizeGrip.minHeight = newMinHeight
+      
+      -- Enforce new minimums on current GUI size
+      local currentWidth = DBB2.gui:GetWidth()
+      local currentHeight = DBB2.gui:GetHeight()
+      if currentWidth < newMinWidth then
+        DBB2.gui:SetWidth(newMinWidth)
+      end
+      if currentHeight < newMinHeight then
+        DBB2.gui:SetHeight(newMinHeight)
+      end
+    end
+  end
+  
+  -- Highlight Color picker
+  local colorPicker = DBB2.api.CreateColorPicker("DBB2HighlightColor", generalScrollChild, "Highlight Color", 9)
+  colorPicker:SetPoint("TOPLEFT", fontSlider, "BOTTOMLEFT", 0, -DBB2:ScaleSize(11))
+  colorPicker:SetWidth(DBB2:ScaleSize(250))
+  
+  -- Load saved color
+  local hc = DBB2_Config.highlightColor or {r = 0.2, g = 1, b = 0.8, a = 1}
+  colorPicker:SetColor(hc.r, hc.g, hc.b, hc.a)
+  
+  -- Add tooltip on hover (attach to the button child frame)
+  colorPicker.button:SetScript("OnEnter", function()
+    local r, g, b = DBB2:GetHighlightColor()
+    this.backdrop:SetBackdropBorderColor(r, g, b, 1)
+    DBB2.api.ShowTooltip(this, "RIGHT", {
+      {"Highlight Color", "highlight"},
+      "Used for active tabs, hover effects,",
+      "and accents throughout the UI."
+    })
+  end)
+  
+  colorPicker.button:SetScript("OnLeave", function()
+    this.backdrop:SetBackdropBorderColor(0.3, 0.3, 0.3, 1)
+    DBB2.api.HideTooltip()
+  end)
+  
+  -- Save on change
+  colorPicker.OnColorChanged = function(r, g, b, a)
+    DBB2_Config.highlightColor = {r = r, g = g, b = b, a = a}
+  end
+  
+  -- Miscellaneous section title
+  local miscTitle = DBB2.api.CreateLabel(generalScrollChild, "Miscellaneous", 10)
+  miscTitle:SetPoint("TOPLEFT", colorPicker, "BOTTOMLEFT", 0, -DBB2:ScaleSize(19))
+  miscTitle:SetTextColor(hr, hg, hb, 1)
+  
+  -- Scroll Speed slider
+  local scrollSlider = DBB2.api.CreateSlider("DBB2ScrollSpeedSlider", generalScrollChild, "Scroll Speed", 10, 100, 5, 9)
+  scrollSlider:SetPoint("TOPLEFT", miscTitle, "BOTTOMLEFT", 0, -DBB2:ScaleSize(8))
+  scrollSlider:SetWidth(DBB2:ScaleSize(250))
+  scrollSlider:SetValue(DBB2_Config.scrollSpeed or 55)
+  
+  -- Add tooltip on hover
+  scrollSlider.slider:SetScript("OnEnter", function()
+    local r, g, b = DBB2:GetHighlightColor()
+    this.backdrop:SetBackdropBorderColor(r, g, b, 1)
+    DBB2.api.ShowTooltip(this, "RIGHT", {
+      {"Scroll Speed", "highlight"},
+      "Pixels scrolled per mouse wheel tick.",
+      {"Higher = faster scrolling", "gray"}
+    })
+  end)
+  
+  scrollSlider.slider:SetScript("OnLeave", function()
+    this.backdrop:SetBackdropBorderColor(0.2, 0.2, 0.2, 1)
+    DBB2.api.HideTooltip()
+  end)
+  
+  -- Save on change
+  scrollSlider.OnValueChanged = function(val)
+    DBB2_Config.scrollSpeed = val
+  end
+  
+  -- Notifications section title
+  local notifyTitle = DBB2.api.CreateLabel(generalScrollChild, "Notifications", 10)
+  notifyTitle:SetPoint("TOPLEFT", scrollSlider, "BOTTOMLEFT", 0, -DBB2:ScaleSize(19))
+  notifyTitle:SetTextColor(hr, hg, hb, 1)
+  
+  -- Initialize notification config
+  DBB2.api.InitNotificationConfig()
+  local notifyMode = DBB2.api.GetNotificationMode()
+  
+  -- Notification mode slider (0 = off, 1 = chat, 2 = raid warning, 3 = both)
+  local notifyModeNames = {
+    [0] = "Off",
+    [1] = "Chat",
+    [2] = "Raid Warning",
+    [3] = "Chat & Raid Warning"
+  }
+  
+  local notifySlider = DBB2.api.CreateSlider("DBB2NotifySlider", generalScrollChild, "Mode: " .. notifyModeNames[notifyMode], 0, 3, 1, 9)
+  notifySlider:SetPoint("TOPLEFT", notifyTitle, "BOTTOMLEFT", 0, -DBB2:ScaleSize(8))
+  notifySlider:SetWidth(DBB2:ScaleSize(250))
+  notifySlider:SetValue(notifyMode)
+  
+  -- Add tooltip on hover
+  notifySlider.slider:SetScript("OnEnter", function()
+    local r, g, b = DBB2:GetHighlightColor()
+    this.backdrop:SetBackdropBorderColor(r, g, b, 1)
+    DBB2.api.ShowTooltip(this, "RIGHT", {
+      {"Notification Mode", "highlight"},
+      "Enable notifications per category in",
+      "Groups/Professions/Hardcore tabs.",
+      {"0 = disabled", "gray"}
+    })
+  end)
+  
+  notifySlider.slider:SetScript("OnLeave", function()
+    this.backdrop:SetBackdropBorderColor(0.2, 0.2, 0.2, 1)
+    DBB2.api.HideTooltip()
+  end)
+  
+  notifySlider.OnValueChanged = function(value)
+    DBB2.api.SetNotificationMode(value)
+    notifySlider.label:SetText("Mode: " .. notifyModeNames[value])
+  end
+  
+  -- Notification sound volume slider (0 = off, 10-100 = volume)
+  local soundVolume = DBB2_Config.notificationSoundVolume or 50
+  local soundSlider = DBB2.api.CreateSlider("DBB2SoundSlider", generalScrollChild, "Sound Volume: " .. (soundVolume == 0 and "Off" or soundVolume), 0, 100, 10, 9)
+  soundSlider:SetPoint("TOPLEFT", notifySlider, "BOTTOMLEFT", 0, -DBB2:ScaleSize(11))
+  soundSlider:SetWidth(DBB2:ScaleSize(250))
+  soundSlider:SetValue(soundVolume)
+  
+  -- Add tooltip on hover
+  soundSlider.slider:SetScript("OnEnter", function()
+    local r, g, b = DBB2:GetHighlightColor()
+    this.backdrop:SetBackdropBorderColor(r, g, b, 1)
+    DBB2.api.ShowTooltip(this, "RIGHT", {
+      {"Notification Sound", "highlight"},
+      "Play a sound when notifications trigger.",
+      {"0 = disabled, 10-100 = volume", "gray"}
+    })
+  end)
+  
+  soundSlider.slider:SetScript("OnLeave", function()
+    this.backdrop:SetBackdropBorderColor(0.2, 0.2, 0.2, 1)
+    DBB2.api.HideTooltip()
+  end)
+  
+  soundSlider.OnValueChanged = function(value)
+    DBB2_Config.notificationSoundVolume = value
+    soundSlider.label:SetText("Sound Volume: " .. (value == 0 and "Off" or value))
+  end
+  
+  -- Spam Prevention section title
+  local spamTitle = DBB2.api.CreateLabel(generalScrollChild, "Spam Prevention", 10)
+  spamTitle:SetPoint("TOPLEFT", soundSlider, "BOTTOMLEFT", 0, -DBB2:ScaleSize(19))
+  spamTitle:SetTextColor(hr, hg, hb, 1)
+  
+  -- Message expire slider (0-30 minutes, 0 = disabled)
+  local expireSlider = DBB2.api.CreateSlider("DBB2ExpireSlider", generalScrollChild, "Auto-Remove Old Messages (minutes)", 0, 30, 1, 9)
+  expireSlider:SetPoint("TOPLEFT", spamTitle, "BOTTOMLEFT", 0, -DBB2:ScaleSize(8))
+  expireSlider:SetWidth(DBB2:ScaleSize(250))
+  expireSlider:SetValue(DBB2_Config.messageExpireMinutes or 15)
+  
+  -- Add tooltip on hover
+  expireSlider.slider:SetScript("OnEnter", function()
+    local r, g, b = DBB2:GetHighlightColor()
+    this.backdrop:SetBackdropBorderColor(r, g, b, 1)
+    DBB2.api.ShowTooltip(this, "RIGHT", {
+      {"Auto-Remove Old Messages", "highlight"},
+      "Automatically remove messages",
+      "older than this time.",
+      {"0 = disabled", "gray"}
+    })
+  end)
+  
+  expireSlider.slider:SetScript("OnLeave", function()
+    this.backdrop:SetBackdropBorderColor(0.2, 0.2, 0.2, 1)
+    DBB2.api.HideTooltip()
+  end)
+  
+  -- Save on change
+  expireSlider.OnValueChanged = function(val)
+    DBB2_Config.messageExpireMinutes = val
+  end
+  
+  -- Spam Filter slider (0-300 seconds, 0 = disabled)
+  local spamSlider = DBB2.api.CreateSlider("DBB2SpamFilterSlider", generalScrollChild, "Duplicate Filter (seconds)", 0, 300, 10, 9)
+  spamSlider:SetPoint("TOPLEFT", expireSlider, "BOTTOMLEFT", 0, -DBB2:ScaleSize(11))
+  spamSlider:SetWidth(DBB2:ScaleSize(250))
+  spamSlider:SetValue(DBB2_Config.spamFilterSeconds or 150)
+  
+  -- Add tooltip on hover
+  spamSlider.slider:SetScript("OnEnter", function()
+    local r, g, b = DBB2:GetHighlightColor()
+    this.backdrop:SetBackdropBorderColor(r, g, b, 1)
+    DBB2.api.ShowTooltip(this, "RIGHT", {
+      {"Duplicate Filter", "highlight"},
+      "Hide duplicate messages from the",
+      "same sender within this time.",
+      {"0 = disabled", "gray"}
+    })
+  end)
+  
+  spamSlider.slider:SetScript("OnLeave", function()
+    this.backdrop:SetBackdropBorderColor(0.2, 0.2, 0.2, 1)
+    DBB2.api.HideTooltip()
+  end)
+  
+  -- Save on change
+  spamSlider.OnValueChanged = function(val)
+    DBB2_Config.spamFilterSeconds = val
+  end
+  
+  -- Hide from chat slider (0 = disabled, 1 = selected only, 2 = all categories)
+  local hideFromChatModes = {
+    [0] = "Disabled",
+    [1] = "Selected Only",
+    [2] = "All Categories"
+  }
+  -- Handle legacy boolean values
+  local currentHideMode = DBB2_Config.hideFromChat or 0
+  if currentHideMode == true then currentHideMode = 1 end
+  if currentHideMode == false then currentHideMode = 0 end
+  
+  local hideFromChatSlider = DBB2.api.CreateSlider("DBB2HideFromChatSlider", generalScrollChild, "Hide from Chat: " .. hideFromChatModes[currentHideMode], 0, 2, 1, 9)
+  hideFromChatSlider:SetPoint("TOPLEFT", spamSlider, "BOTTOMLEFT", 0, -DBB2:ScaleSize(11))
+  hideFromChatSlider:SetWidth(DBB2:ScaleSize(250))
+  hideFromChatSlider:SetValue(currentHideMode)
+  
+  -- Add tooltip on hover
+  hideFromChatSlider.slider:SetScript("OnEnter", function()
+    local r, g, b = DBB2:GetHighlightColor()
+    this.backdrop:SetBackdropBorderColor(r, g, b, 1)
+    DBB2.api.ShowTooltip(this, "RIGHT", {
+      {"Hide Captured Messages from Chat", "highlight"},
+      "0 = Disabled (show all in chat)",
+      "1 = Selected Only (hide enabled categories)",
+      "2 = All Categories (hide all LFG spam)",
+      {"Mode 2 gives cleanest chat", "gray"}
+    })
+  end)
+  
+  hideFromChatSlider.slider:SetScript("OnLeave", function()
+    this.backdrop:SetBackdropBorderColor(0.2, 0.2, 0.2, 1)
+    DBB2.api.HideTooltip()
+  end)
+  
+  hideFromChatSlider.OnValueChanged = function(val)
+    DBB2_Config.hideFromChat = val
+    hideFromChatSlider.label:SetText("Hide from Chat: " .. hideFromChatModes[val])
+  end
+  
+  -- Max messages per category slider
+  local maxMsgSlider = DBB2.api.CreateSlider("DBB2MaxMsgSlider", generalScrollChild, "Messages per Category", 0, 10, 1, 9)
+  maxMsgSlider:SetPoint("TOPLEFT", hideFromChatSlider, "BOTTOMLEFT", 0, -DBB2:ScaleSize(11))
+  maxMsgSlider:SetWidth(DBB2:ScaleSize(250))
+  maxMsgSlider:SetValue(DBB2_Config.maxMessagesPerCategory or 5)
+  
+  -- Add tooltip on hover
+  maxMsgSlider.slider:SetScript("OnEnter", function()
+    local r, g, b = DBB2:GetHighlightColor()
+    this.backdrop:SetBackdropBorderColor(r, g, b, 1)
+    DBB2.api.ShowTooltip(this, "RIGHT", {
+      {"Messages per Category", "highlight"},
+      "Max messages shown per category in",
+      "Groups/Professions/Hardcore tabs.",
+      {"0 = unlimited", "gray"}
+    })
+  end)
+  
+  maxMsgSlider.slider:SetScript("OnLeave", function()
+    this.backdrop:SetBackdropBorderColor(0.2, 0.2, 0.2, 1)
+    DBB2.api.HideTooltip()
+  end)
+  
+  -- Save on change
+  maxMsgSlider.OnValueChanged = function(val)
+    DBB2_Config.maxMessagesPerCategory = val
+  end
+  
+  -- =====================
+  -- CATEGORY CONFIG PANELS (Groups, Professions, Hardcore)
+  -- =====================
+  
+  -- Create category config panel (without scroll frame for EditBox compatibility)
+  local function CreateCategoryConfigPanel(panelName, categoryType)
+    local panel = DBB2.gui.configTabs.panels[panelName]
+    
+    -- Section title
+    local hr, hg, hb = DBB2:GetHighlightColor()
+    local title = DBB2.api.CreateLabel(panel, panelName .. " - Edit Tags", 10)
+    title:SetPoint("TOPLEFT", DBB2:ScaleSize(10), -DBB2:ScaleSize(10))
+    title:SetTextColor(hr, hg, hb, 1)
+    
+    local desc = DBB2.api.CreateLabel(panel, "Edit tags to customize which messages match each category.", 9)
+    desc:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -DBB2:ScaleSize(5))
+    desc:SetTextColor(0.5, 0.5, 0.5, 1)
+    
+    -- Legend for checkboxes
+    local legendLabel = DBB2.api.CreateLabel(panel, "[ ] = Enable category   [N] = Notify on match (session only)", 8)
+    legendLabel:SetPoint("TOPLEFT", desc, "BOTTOMLEFT", 0, -DBB2:ScaleSize(3))
+    legendLabel:SetTextColor(0.4, 0.4, 0.4, 1)
+    
+    -- Scrollbar - fill panel height with bottom padding
+    local sliderWidth = DBB2:ScaleSize(7)
+    local slider = CreateFrame("Slider", "DBB2Config" .. panelName .. "Slider", panel)
+    slider:SetOrientation("VERTICAL")
+    slider:SetWidth(sliderWidth)
+    slider:SetPoint("TOPRIGHT", panel, "TOPRIGHT", 0, 0)
+    slider:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", 0, DBB2:ScaleSize(5))
+    slider:EnableMouse(true)
+    slider:SetValueStep(1)
+    slider:SetMinMaxValues(0, 1)
+    slider:SetValue(0)
+    
+    slider:SetThumbTexture("Interface\\BUTTONS\\WHITE8X8")
+    slider.thumb = slider:GetThumbTexture()
+    slider.thumb:SetWidth(sliderWidth)
+    slider.thumb:SetHeight(DBB2:ScaleSize(50))
+    slider.thumb:SetTexture(hr, hg, hb, 0.5)
+    
+    -- Container for rows (clips content) - fill panel below legend with bottom padding
+    local container = CreateFrame("Frame", "DBB2Config" .. panelName .. "Container", panel)
+    container:SetPoint("TOPLEFT", legendLabel, "BOTTOMLEFT", 0, -DBB2:ScaleSize(8))
+    container:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -(sliderWidth + 2), DBB2:ScaleSize(5))
+    
+    panel.container = container
+    panel.slider = slider
+    panel.categoryRows = {}
+    panel.scrollOffset = 0
+    
+    local rowHeight = DBB2:ScaleSize(28)
+    local checkSize = DBB2:ScaleSize(14)
+    local notifyCheckSize = DBB2:ScaleSize(12)
+    local nameWidth = DBB2:ScaleSize(150)
+    
+    -- Helper to get actual container height from rendered positions
+    local function GetContainerHeight()
+      local top = container:GetTop()
+      local bottom = container:GetBottom()
+      if top and bottom then
+        return top - bottom
+      end
+      return 300  -- fallback
+    end
+    
+    -- Update row positions based on scroll offset
+    local function UpdateRowPositions()
+      local containerHeight = GetContainerHeight()
+      
+      for i, row in ipairs(panel.categoryRows) do
+        if row then
+          -- Base position: row 1 at top (yPos=0), row 2 at -rowHeight, etc.
+          -- scrollOffset is 0 at top, positive when scrolled down
+          -- When scrolled down, we ADD scrollOffset to move content UP
+          local baseY = -((i - 1) * rowHeight)
+          local yPos = baseY + (panel.scrollOffset or 0)
+          
+          row:ClearAllPoints()
+          row:SetPoint("TOPLEFT", container, "TOPLEFT", 0, yPos)
+          row:SetPoint("RIGHT", container, "RIGHT", 0, 0)
+          
+          -- Hide if outside visible area
+          -- Row top edge must be at or below 0 (container top)
+          -- Row bottom edge must be at or above -containerHeight (container bottom)
+          local rowTop = yPos
+          local rowBottom = yPos - rowHeight
+          
+          -- Hide if row is above container (rowTop > 0) or below container (rowBottom < -containerHeight)
+          if rowTop > 0 or rowBottom < -containerHeight then
+            row:Hide()
+          else
+            row:Show()
+          end
+        end
+      end
+    end
+    
+    -- Update scrollbar state
+    local function UpdateScrollbar()
+      local categories = DBB2.api.GetCategories(categoryType)
+      local totalHeight = table.getn(categories) * rowHeight
+      local containerHeight = GetContainerHeight()
+      local maxScroll = math.max(0, totalHeight - containerHeight)
+      
+      slider:SetMinMaxValues(0, maxScroll)
+      slider:SetValue(-(panel.scrollOffset or 0))
+      
+      -- Update thumb size
+      if totalHeight > 0 and containerHeight > 0 then
+        local ratio = containerHeight / totalHeight
+        if ratio < 1 then
+          local thumbHeight = math.max(DBB2:ScaleSize(20), containerHeight * ratio)
+          slider.thumb:SetHeight(thumbHeight)
+          slider:Show()
+        else
+          slider:Hide()
+        end
+      else
+        slider:Hide()
+      end
+    end
+    
+    -- Slider value changed
+    slider:SetScript("OnValueChanged", function()
+      panel.scrollOffset = this:GetValue()
+      UpdateRowPositions()
+    end)
+    
+    -- Build category rows
+    local function BuildCategoryRows()
+      local categories = DBB2.api.GetCategories(categoryType)
+      
+      -- Create/update rows
+      for i, cat in ipairs(categories) do
+        local row = panel.categoryRows[i]
+        if not row then
+          -- Create row frame parented to container
+          row = CreateFrame("Frame", nil, container)
+          row:SetHeight(rowHeight)
+          panel.categoryRows[i] = row
+          
+          -- Checkbox for enabled/disabled
+          row.check = DBB2.api.CreateCheckBox("DBB2Config" .. panelName .. "Check" .. i, row)
+          row.check:SetPoint("LEFT", 5, 0)
+          row.check:SetWidth(checkSize)
+          row.check:SetHeight(checkSize)
+          
+          -- Notification checkbox (bell icon style, smaller)
+          row.notifyCheck = DBB2.api.CreateCheckBox("DBB2Config" .. panelName .. "Notify" .. i, row)
+          row.notifyCheck:SetPoint("LEFT", row.check, "RIGHT", 5, 0)
+          row.notifyCheck:SetWidth(notifyCheckSize)
+          row.notifyCheck:SetHeight(notifyCheckSize)
+          
+          -- Add tooltip for notification checkbox
+          row.notifyCheck:SetScript("OnEnter", function()
+            local r, g, b = DBB2:GetHighlightColor()
+            this.backdrop:SetBackdropBorderColor(r, g, b, 1)
+            
+            DBB2.api.ShowTooltip(this, "RIGHT", {
+              {"Notify on Match", "highlight"},
+              "Enable to receive notifications when",
+              "messages match this category.",
+              {"(Session only - resets on logout)", "gray"}
+            })
+          end)
+          
+          row.notifyCheck:SetScript("OnLeave", function()
+            this.backdrop:SetBackdropBorderColor(0.3, 0.3, 0.3, 1)
+            DBB2.api.HideTooltip()
+          end)
+          
+          -- Category name label
+          row.nameLabel = DBB2.api.CreateLabel(row, "", 10)
+          row.nameLabel:SetPoint("LEFT", row.notifyCheck, "RIGHT", 8, 0)
+          row.nameLabel:SetWidth(nameWidth)
+          
+          -- Tags edit box - anchor to right edge so it resizes with container
+          row.tagsInput = CreateFrame("EditBox", "DBB2Config" .. panelName .. "Tags" .. i, row)
+          row.tagsInput:SetPoint("LEFT", row.nameLabel, "RIGHT", 5, 0)
+          row.tagsInput:SetPoint("RIGHT", row, "RIGHT", -DBB2:ScaleSize(25), 0)
+          row.tagsInput:SetHeight(DBB2:ScaleSize(18))
+          row.tagsInput:SetAutoFocus(false)
+          row.tagsInput:EnableMouse(true)
+          row.tagsInput:SetTextInsets(DBB2:ScaleSize(5), DBB2:ScaleSize(5), DBB2:ScaleSize(5), DBB2:ScaleSize(5))
+          row.tagsInput:SetFont("Fonts\\FRIZQT__.TTF", DBB2:GetFontSize(10))
+          row.tagsInput:SetTextColor(1, 1, 1, 1)
+          row.tagsInput:SetJustifyH("LEFT")
+          DBB2:CreateBackdrop(row.tagsInput, nil, true)
+          
+          row.tagsInput:SetScript("OnEscapePressed", function()
+            this:ClearFocus()
+          end)
+          
+          row.tagsInput:SetScript("OnEnter", function()
+            local r, g, b = DBB2:GetHighlightColor()
+            if this.backdrop then
+              this.backdrop:SetBackdropBorderColor(r, g, b, 1)
+            end
+          end)
+          
+          row.tagsInput:SetScript("OnLeave", function()
+            if this.backdrop then
+              this.backdrop:SetBackdropBorderColor(0.3, 0.3, 0.3, 1)
+            end
+          end)
+        end
+        
+        -- Set data
+        row.categoryName = cat.name
+        row.categoryType = categoryType
+        row.nameLabel:SetText(cat.name)
+        row.nameLabel:SetTextColor(1, 1, 1, 1)
+        
+        -- Set checkbox state
+        row.check:SetChecked(cat.selected)
+        
+        -- Set tags text
+        local tagsStr = DBB2.api.TagsToString(cat.tags)
+        row.tagsInput:SetText(tagsStr)
+        
+        -- Checkbox callback
+        row.check.OnChecked = function(checked)
+          DBB2.api.SetCategorySelected(row.categoryType, row.categoryName, checked)
+        end
+        
+        -- Notification checkbox state (session-only)
+        local notifyEnabled = DBB2.api.IsNotificationEnabled(categoryType, cat.name)
+        row.notifyCheck:SetChecked(notifyEnabled)
+        
+        -- Notification checkbox callback
+        row.notifyCheck.OnChecked = function(checked)
+          DBB2.api.SetNotificationEnabled(row.categoryType, row.categoryName, checked)
+        end
+        
+        -- Tags input callbacks
+        row.tagsInput:SetScript("OnEnterPressed", function()
+          local newTags = DBB2.api.ParseTagsString(this:GetText())
+          DBB2.api.UpdateCategoryTags(row.categoryType, row.categoryName, newTags)
+          this:ClearFocus()
+        end)
+        
+        row.tagsInput:SetScript("OnEditFocusLost", function()
+          local newTags = DBB2.api.ParseTagsString(this:GetText())
+          DBB2.api.UpdateCategoryTags(row.categoryType, row.categoryName, newTags)
+        end)
+      end
+      
+      UpdateRowPositions()
+      UpdateScrollbar()
+    end
+    
+    -- Mouse wheel scrolling on container
+    container:EnableMouseWheel(true)
+    container:SetScript("OnMouseWheel", function()
+      local categories = DBB2.api.GetCategories(categoryType)
+      local totalHeight = table.getn(categories) * rowHeight
+      local containerHeight = GetContainerHeight()
+      local maxScroll = math.max(0, totalHeight - containerHeight)
+      
+      -- Use configured scroll speed
+      local scrollSpeed = DBB2_Config.scrollSpeed or 20
+      
+      -- arg1 is positive when scrolling up (wheel away from you)
+      -- arg1 is negative when scrolling down (wheel toward you)
+      -- When scrolling DOWN (arg1 negative), we want to see content BELOW, so scrollOffset increases
+      panel.scrollOffset = (panel.scrollOffset or 0) - (arg1 * scrollSpeed)
+      
+      -- Clamp scroll offset (0 = top, maxScroll = bottom)
+      if panel.scrollOffset < 0 then
+        panel.scrollOffset = 0
+      elseif panel.scrollOffset > maxScroll then
+        panel.scrollOffset = maxScroll
+      end
+      
+      slider:SetValue(panel.scrollOffset)
+      UpdateRowPositions()
+    end)
+    
+    -- Build rows when panel is shown
+    panel:SetScript("OnShow", function()
+      panel.scrollOffset = 0
+      slider:SetValue(0)
+      BuildCategoryRows()
+    end)
+    
+    -- Update when container size changes (window resize)
+    container:SetScript("OnSizeChanged", function()
+      UpdateScrollbar()
+      UpdateRowPositions()
+    end)
+    
+    -- Initial build (delayed to ensure container has size)
+    -- Remove OnUpdate after initialization to stop per-frame calls
+    panel:SetScript("OnUpdate", function()
+      if this.initialized then
+        this:SetScript("OnUpdate", nil)
+        return
+      end
+      local h = GetContainerHeight()
+      if h and h > 10 then
+        this.initialized = true
+        BuildCategoryRows()
+        -- Remove OnUpdate after initialization
+        this:SetScript("OnUpdate", nil)
+      end
+    end)
+  end
+  
+  -- Create config panels for each category type
+  CreateCategoryConfigPanel("Groups", "groups")
+  CreateCategoryConfigPanel("Professions", "professions")
+  CreateCategoryConfigPanel("Hardcore", "hardcore")
+  
+  -- =====================
+  -- BLACKLIST PANEL (simplified with import/export)
+  -- =====================
+  local blacklistPanel = DBB2.gui.configTabs.panels["Blacklist"]
+  
+  -- Initialize blacklist
+  DBB2.api.InitBlacklist()
+  
+  -- Layout constants
+  local blRowHeight = DBB2:ScaleSize(22)
+  local blInputHeight = DBB2:ScaleSize(20)
+  local blBtnWidth = DBB2:ScaleSize(30)
+  local blSpacing = DBB2:ScaleSize(5)
+  local blSectionGap = DBB2:ScaleSize(15)
+  local blPadding = DBB2:ScaleSize(10)
+  
+  -- Scrollbar (will be positioned after rowsContainer is created)
+  local sliderWidth = DBB2:ScaleSize(7)
+  local blSlider = CreateFrame("Slider", "DBB2BlacklistSlider", blacklistPanel)
+  blSlider:SetOrientation("VERTICAL")
+  blSlider:SetWidth(sliderWidth)
+  blSlider:EnableMouse(true)
+  blSlider:SetValueStep(1)
+  blSlider:SetMinMaxValues(0, 1)
+  blSlider:SetValue(0)
+  
+  blSlider:SetThumbTexture("Interface\\BUTTONS\\WHITE8X8")
+  blSlider.thumb = blSlider:GetThumbTexture()
+  blSlider.thumb:SetWidth(sliderWidth)
+  blSlider.thumb:SetHeight(DBB2:ScaleSize(50))
+  blSlider.thumb:SetTexture(hr, hg, hb, 0.5)
+  
+  -- Container (full panel width)
+  local blContainer = CreateFrame("Frame", "DBB2BlacklistContainer", blacklistPanel)
+  blContainer:SetPoint("TOPLEFT", blacklistPanel, "TOPLEFT", 0, 0)
+  blContainer:SetPoint("BOTTOMRIGHT", blacklistPanel, "BOTTOMRIGHT", 0, 0)
+  
+  blacklistPanel.container = blContainer
+  blacklistPanel.slider = blSlider
+  blacklistPanel.scrollOffset = 0
+  blacklistPanel.keywordRows = {}
+  
+  -- Section title
+  local blTitle = DBB2.api.CreateLabel(blContainer, "Blacklist Management", 10)
+  blTitle:SetPoint("TOPLEFT", blPadding, -blPadding)
+  blTitle:SetTextColor(hr, hg, hb, 1)
+  
+  local blDesc = DBB2.api.CreateLabel(blContainer, "Block messages containing specific keywords.", 9)
+  blDesc:SetPoint("TOPLEFT", blTitle, "BOTTOMLEFT", 0, -blSpacing)
+  blDesc:SetTextColor(0.5, 0.5, 0.5, 1)
+  
+  -- Enable/Disable checkbox
+  local blEnabledCheck = DBB2.api.CreateCheckBox("DBB2BlacklistEnabled", blContainer, "Enable Blacklist Filtering", 9)
+  blEnabledCheck:SetPoint("TOPLEFT", blDesc, "BOTTOMLEFT", 0, -DBB2:ScaleSize(10))
+  blEnabledCheck:SetChecked(DBB2.api.IsBlacklistEnabled())
+  blEnabledCheck.OnChecked = function(checked)
+    DBB2.api.SetBlacklistEnabled(checked)
+  end
+  
+  -- =====================
+  -- IMPORT/EXPORT SECTION (first)
+  -- =====================
+  local importExportTitle = DBB2.api.CreateLabel(blContainer, "Import / Export", 10)
+  importExportTitle:SetPoint("TOPLEFT", blEnabledCheck, "BOTTOMLEFT", 0, -blSectionGap)
+  importExportTitle:SetTextColor(hr, hg, hb, 1)
+  
+  local importExportDesc = DBB2.api.CreateLabel(blContainer, "Copy to export, paste and press Enter to import (comma separated)", 9)
+  importExportDesc:SetPoint("TOPLEFT", importExportTitle, "BOTTOMLEFT", 0, -blSpacing)
+  importExportDesc:SetTextColor(0.5, 0.5, 0.5, 1)
+  
+  -- Import/Export text box (account for scrollbar space on right)
+  local importExportBox = DBB2.api.CreateEditBox("DBB2BlacklistImportExport", blContainer)
+  importExportBox:SetPoint("TOPLEFT", importExportDesc, "BOTTOMLEFT", 0, -blSpacing)
+  importExportBox:SetPoint("RIGHT", blContainer, "RIGHT", -(sliderWidth + blPadding + DBB2:ScaleSize(16)), 0)
+  importExportBox:SetHeight(blInputHeight)
+  
+  blacklistPanel.importExportBox = importExportBox
+  
+  -- =====================
+  -- KEYWORDS SECTION
+  -- =====================
+  local keywordsTitle = DBB2.api.CreateLabel(blContainer, "Blacklisted Keywords", 10)
+  keywordsTitle:SetPoint("TOPLEFT", importExportBox, "BOTTOMLEFT", 0, -blSectionGap)
+  keywordsTitle:SetTextColor(hr, hg, hb, 1)
+  
+  -- Helper text for regex patterns
+  local keywordsHelp = DBB2.api.CreateLabel(blContainer, "Supports regex: .* (any), .+ (1+), [a-z], \\d, | (or). See api/regex.lua", 8)
+  keywordsHelp:SetPoint("TOPLEFT", keywordsTitle, "BOTTOMLEFT", 0, -DBB2:ScaleSize(2))
+  keywordsHelp:SetTextColor(0.5, 0.5, 0.5, 1)
+  
+  -- Keyword input box (account for + button and scrollbar space)
+  local keywordInput = DBB2.api.CreateEditBox("DBB2BlacklistKeywordInput", blContainer)
+  keywordInput:SetPoint("TOPLEFT", keywordsHelp, "BOTTOMLEFT", 0, -blSpacing)
+  keywordInput:SetPoint("RIGHT", blContainer, "RIGHT", -(blBtnWidth + blSpacing + sliderWidth + blPadding + DBB2:ScaleSize(16)), 0)
+  keywordInput:SetHeight(blInputHeight)
+  
+  keywordInput.placeholder = keywordInput:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  keywordInput.placeholder:SetFont("Fonts\\FRIZQT__.TTF", DBB2:GetFontSize(9))
+  keywordInput.placeholder:SetPoint("LEFT", DBB2:ScaleSize(6), 0)
+  keywordInput.placeholder:SetText("Enter keyword to block...")
+  keywordInput.placeholder:SetTextColor(0.4, 0.4, 0.4, 1)
+  
+  keywordInput:SetScript("OnEditFocusGained", function()
+    this.placeholder:Hide()
+  end)
+  
+  keywordInput:SetScript("OnEditFocusLost", function()
+    if this:GetText() == "" then
+      this.placeholder:Show()
+    end
+  end)
+  
+  -- Add keyword button
+  local addKeywordBtn = DBB2.api.CreateButton("DBB2AddKeywordBtn", blContainer, "+")
+  addKeywordBtn:SetPoint("LEFT", keywordInput, "RIGHT", blSpacing, 0)
+  addKeywordBtn:SetWidth(blBtnWidth)
+  addKeywordBtn:SetHeight(blInputHeight)
+  
+  -- Rows container (fills remaining space, leaves room for scrollbar and bottom padding)
+  local rowsContainer = CreateFrame("Frame", "DBB2BlacklistRowsContainer", blContainer)
+  rowsContainer:SetPoint("TOPLEFT", keywordInput, "BOTTOMLEFT", 0, -blSpacing)
+  rowsContainer:SetPoint("BOTTOMRIGHT", blacklistPanel, "BOTTOMRIGHT", -(sliderWidth + DBB2:ScaleSize(4)), DBB2:ScaleSize(5))
+  
+  blacklistPanel.rowsContainer = rowsContainer
+  
+  -- Position scrollbar aligned with rows container top, at panel's right edge with bottom padding
+  blSlider:SetPoint("TOP", rowsContainer, "TOP", 0, 0)
+  blSlider:SetPoint("BOTTOMRIGHT", blacklistPanel, "BOTTOMRIGHT", 0, DBB2:ScaleSize(5))
+  
+  -- Helper function to convert keywords array to comma-separated string
+  local function KeywordsToString()
+    local keywords = DBB2.api.GetBlacklistedKeywords()
+    -- table.concat is more efficient than manual concatenation
+    return table.concat(keywords, ",")
+  end
+  
+  -- Helper function to parse comma-separated string to keywords
+  local function StringToKeywords(str)
+    local keywords = {}
+    for kw in string.gfind(str, "([^,]+)") do
+      kw = string.gsub(kw, "^%s*(.-)%s*$", "%1")
+      if kw ~= "" then
+        table.insert(keywords, kw)
+      end
+    end
+    return keywords
+  end
+  
+  -- Update import/export box with current keywords
+  local function UpdateImportExportBox()
+    importExportBox:SetText(KeywordsToString())
+  end
+  
+  -- Pattern descriptions for common/default patterns
+  local patternDescriptions = {
+    ["<.*>"] = "<Guild Name>",
+    ["[\\[(][a-z][a-z]?[a-z]?[\\])]"] = "[PL], (RUS)",
+    ["recruit(ing)?"] = "recruit, recruiting",
+  }
+  
+  -- Helper function to create a blacklist row
+  local function CreateBlacklistRow(index)
+    local row = CreateFrame("Frame", "DBB2KeywordRow" .. index, rowsContainer)
+    row:SetHeight(blRowHeight)
+    
+    row.name = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    row.name:SetFont("Fonts\\FRIZQT__.TTF", DBB2:GetFontSize(10))
+    row.name:SetPoint("LEFT", DBB2:ScaleSize(5), 0)
+    row.name:SetWidth(DBB2:ScaleSize(180))
+    row.name:SetJustifyH("LEFT")
+    row.name:SetTextColor(1, 1, 1, 1)
+    
+    -- Description label (gray, anchored to left of X button)
+    row.desc = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    row.desc:SetFont("Fonts\\FRIZQT__.TTF", DBB2:GetFontSize(8))
+    row.desc:SetJustifyH("RIGHT")
+    row.desc:SetTextColor(0.5, 0.5, 0.5, 1)
+    
+    row.removeBtn = CreateFrame("Button", nil, row)
+    row.removeBtn:SetWidth(DBB2:ScaleSize(16))
+    row.removeBtn:SetHeight(DBB2:ScaleSize(16))
+    row.removeBtn:SetPoint("RIGHT", -DBB2:ScaleSize(58), 0)
+    
+    -- Anchor description to left of remove button
+    row.desc:SetPoint("RIGHT", row.removeBtn, "LEFT", -DBB2:ScaleSize(8), 0)
+    
+    row.removeBtn.text = row.removeBtn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    row.removeBtn.text:SetFont("Fonts\\FRIZQT__.TTF", DBB2:GetFontSize(11))
+    row.removeBtn.text:SetPoint("CENTER", 0, 0)
+    row.removeBtn.text:SetText("x")
+    row.removeBtn.text:SetTextColor(1, 0.3, 0.3, 1)
+    
+    row.removeBtn:SetScript("OnEnter", function()
+      this.text:SetTextColor(1, 0.5, 0.5, 1)
+    end)
+    
+    row.removeBtn:SetScript("OnLeave", function()
+      this.text:SetTextColor(1, 0.3, 0.3, 1)
+    end)
+    
+    return row
+  end
+  
+  -- Helper to get description for a pattern
+  local function GetPatternDescription(pattern)
+    return patternDescriptions[pattern] or ""
+  end
+  
+  -- Calculate total content height
+  local function GetTotalContentHeight()
+    local keywordCount = table.getn(DBB2.api.GetBlacklistedKeywords())
+    return keywordCount * blRowHeight
+  end
+  
+  -- Helper to get actual container height from rendered positions
+  local function GetRowsContainerHeight()
+    local top = rowsContainer:GetTop()
+    local bottom = rowsContainer:GetBottom()
+    if top and bottom then
+      return top - bottom
+    end
+    return 100  -- fallback
+  end
+  
+  -- Update row positions based on scroll offset
+  local function UpdateRowPositions()
+    local containerHeight = GetRowsContainerHeight()
+    local scrollOffset = blacklistPanel.scrollOffset or 0
+    local keywords = DBB2.api.GetBlacklistedKeywords()
+    local keywordCount = table.getn(keywords)
+    
+    for i, row in ipairs(blacklistPanel.keywordRows) do
+      if row then
+        -- Only show rows that have corresponding keywords
+        if i > keywordCount then
+          row:Hide()
+        else
+          local baseY = -((i - 1) * blRowHeight)
+          local yPos = baseY + scrollOffset
+          
+          row:ClearAllPoints()
+          row:SetPoint("TOPLEFT", rowsContainer, "TOPLEFT", 0, yPos)
+          row:SetPoint("RIGHT", rowsContainer, "RIGHT", 0, 0)
+          
+          local rowTop = yPos
+          local rowBottom = yPos - blRowHeight
+          if rowTop > 0 or rowBottom < -containerHeight then
+            row:Hide()
+          else
+            row:Show()
+          end
+        end
+      end
+    end
+  end
+  
+  -- Update scrollbar state
+  local function UpdateBlacklistScrollbar()
+    local containerHeight = GetRowsContainerHeight()
+    local totalHeight = GetTotalContentHeight()
+    local maxScroll = math.max(0, totalHeight - containerHeight)
+    
+    blSlider:SetMinMaxValues(0, maxScroll)
+    blSlider:SetValue(blacklistPanel.scrollOffset or 0)
+    
+    if totalHeight > 0 and containerHeight > 0 then
+      local ratio = containerHeight / totalHeight
+      if ratio < 1 then
+        local thumbHeight = math.max(DBB2:ScaleSize(20), containerHeight * ratio)
+        blSlider.thumb:SetHeight(thumbHeight)
+        blSlider:Show()
+      else
+        blSlider:Hide()
+      end
+    else
+      blSlider:Hide()
+    end
+  end
+  
+  -- Function to rebuild keyword list
+  local function RebuildKeywordList()
+    for _, row in ipairs(blacklistPanel.keywordRows) do
+      row:Hide()
+    end
+    
+    local keywords = DBB2.api.GetBlacklistedKeywords()
+    
+    for i, keyword in ipairs(keywords) do
+      local row = blacklistPanel.keywordRows[i]
+      if not row then
+        row = CreateBlacklistRow(i)
+        blacklistPanel.keywordRows[i] = row
+      end
+      
+      row.value = keyword
+      row.name:SetText(keyword)
+      row.desc:SetText(GetPatternDescription(keyword))
+      
+      -- Capture keyword value directly to avoid closure issues with loop variable
+      local keywordToRemove = keyword
+      row.removeBtn:SetScript("OnClick", function()
+        DBB2.api.RemoveKeywordFromBlacklist(keywordToRemove)
+        RebuildKeywordList()
+        UpdateImportExportBox()
+      end)
+    end
+    
+    UpdateBlacklistScrollbar()
+    UpdateRowPositions()
+    UpdateImportExportBox()
+  end
+  
+  -- Add keyword button click
+  addKeywordBtn:SetScript("OnClick", function()
+    local kw = keywordInput:GetText()
+    if kw and kw ~= "" then
+      DBB2.api.AddKeywordToBlacklist(kw)
+      keywordInput:SetText("")
+      keywordInput.placeholder:Show()
+      RebuildKeywordList()
+    end
+  end)
+  
+  keywordInput:SetScript("OnEnterPressed", function()
+    local kw = this:GetText()
+    if kw and kw ~= "" then
+      DBB2.api.AddKeywordToBlacklist(kw)
+      this:SetText("")
+      this.placeholder:Show()
+      RebuildKeywordList()
+    end
+    this:ClearFocus()
+  end)
+  
+  -- Import/Export box handlers
+  importExportBox:SetScript("OnEnterPressed", function()
+    local str = this:GetText()
+    local newKeywords = StringToKeywords(str)
+    
+    -- Clear existing keywords by replacing the table
+    DBB2_Config.blacklist.keywords = {}
+    
+    -- Add new keywords in order
+    for _, kw in ipairs(newKeywords) do
+      DBB2.api.AddKeywordToBlacklist(kw)
+    end
+    
+    this:ClearFocus()
+    RebuildKeywordList()
+  end)
+  
+  importExportBox:SetScript("OnEditFocusLost", function()
+    UpdateImportExportBox()
+  end)
+  
+  -- Slider value changed
+  blSlider:SetScript("OnValueChanged", function()
+    blacklistPanel.scrollOffset = this:GetValue()
+    UpdateRowPositions()
+  end)
+  
+  -- Mouse wheel scrolling on rows container
+  rowsContainer:EnableMouseWheel(true)
+  rowsContainer:SetScript("OnMouseWheel", function()
+    local containerHeight = GetRowsContainerHeight()
+    local totalHeight = GetTotalContentHeight()
+    local maxScroll = math.max(0, totalHeight - containerHeight)
+    
+    local scrollSpeed = DBB2_Config.scrollSpeed or 20
+    blacklistPanel.scrollOffset = (blacklistPanel.scrollOffset or 0) - (arg1 * scrollSpeed)
+    
+    if blacklistPanel.scrollOffset < 0 then
+      blacklistPanel.scrollOffset = 0
+    elseif blacklistPanel.scrollOffset > maxScroll then
+      blacklistPanel.scrollOffset = maxScroll
+    end
+    
+    blSlider:SetValue(blacklistPanel.scrollOffset)
+    UpdateRowPositions()
+  end)
+  
+  -- Update on container size change (window resize)
+  rowsContainer:SetScript("OnSizeChanged", function()
+    UpdateBlacklistScrollbar()
+    UpdateRowPositions()
+  end)
+  
+  -- Rebuild lists when panel is shown
+  blacklistPanel:SetScript("OnShow", function()
+    blacklistPanel.scrollOffset = 0
+    blSlider:SetValue(0)
+    
+    blEnabledCheck:SetChecked(DBB2.api.IsBlacklistEnabled())
+    
+    RebuildKeywordList()
+  end)
+  
+  -- Initial setup (delayed)
+  -- Remove OnUpdate after initialization to stop per-frame calls
+  blacklistPanel:SetScript("OnUpdate", function()
+    if this.initialized then
+      this:SetScript("OnUpdate", nil)
+      return
+    end
+    local h = GetRowsContainerHeight()
+    if h and h > 10 then
+      this.initialized = true
+      RebuildKeywordList()
+      -- Remove OnUpdate after initialization
+      this:SetScript("OnUpdate", nil)
+    end
+  end)
+  
+  -- Set default tab
+  DBB2.gui.configTabs.SwitchTab("General")
+end)

@@ -1,18 +1,20 @@
 ## Interface: 11200
-## Title: Difficult Bulletin Board
-## Notes: Bulletin Board for Turtle WoW
-## SavedVariables: DifficultBulletinBoardSavedVariables
-## Author: Difficult
+## Title: |cffaaa7ccDifficult|cffffffffBulletinBoard
+## Author: YourName
+## Notes: Group finder based on chat messages
+## Version: 2.00
+## SavedVariablesPerCharacter: DBB2_Config
 
-icon.tga
-resize.tga
-DifficultBulletinBoardDefaults.lua
-DifficultBulletinBoardVars.lua
-DifficultBulletinBoardVersionCheck.lua
-DifficultBulletinBoardMinimapButton.xml
-DifficultBulletinBoardOptionFrame.xml
-DifficultBulletinBoardMainFrame.xml
-DifficultBulletinBoardOptionFrame.lua
-DifficultBulletinBoardMessageProcessor.lua
-DifficultBulletinBoardMainFrame.lua
 DifficultBulletinBoard.lua
+api\debug.lua
+api\utility.lua
+api\regex.lua
+api\categories.lua
+api\lockouts.lua
+api\messages.lua
+api\tooltip.lua
+api\gui.lua
+modules\categories.lua
+modules\gui.lua
+modules\config.lua
+modules\minimap.lua
