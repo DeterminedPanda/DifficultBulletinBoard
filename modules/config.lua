@@ -108,7 +108,9 @@ DBB2:RegisterModule("config", function()
     DBB2_Config.maxMessagesPerCategory = 5
     DBB2_Config.scrollSpeed = 55
     DBB2_Config.defaultTab = 0
-    DBB2_Config.notificationSoundVolume = 50
+    DBB2_Config.notificationSound = 1
+    -- Reset notifications to defaults (mode 0 = off)
+    DBB2_Config.notifications = { mode = 0 }
     -- Reset blacklist to defaults
     DBB2_Config.blacklist = {
       enabled = true,
@@ -434,12 +436,13 @@ DBB2:RegisterModule("config", function()
     notifySlider.label:SetText("Mode: " .. notifyModeNames[value])
   end
   
-  -- Notification sound volume slider (0 = off, 10-100 = volume)
-  local soundVolume = DBB2_Config.notificationSoundVolume or 50
-  local soundSlider = DBB2.api.CreateSlider("DBB2SoundSlider", generalScrollChild, "Sound Volume: " .. (soundVolume == 0 and "Off" or soundVolume), 0, 100, 10, 9)
+  -- Notification sound toggle (0 = off, 1 = on)
+  local soundEnabled = DBB2_Config.notificationSound or 1
+  local soundNames = { [0] = "Off", [1] = "On" }
+  local soundSlider = DBB2.api.CreateSlider("DBB2SoundSlider", generalScrollChild, "Sound: " .. soundNames[soundEnabled], 0, 1, 1, 9)
   soundSlider:SetPoint("TOPLEFT", notifySlider, "BOTTOMLEFT", 0, -DBB2:ScaleSize(11))
   soundSlider:SetWidth(DBB2:ScaleSize(250))
-  soundSlider:SetValue(soundVolume)
+  soundSlider:SetValue(soundEnabled)
   
   -- Add tooltip on hover
   soundSlider.slider:SetScript("OnEnter", function()
@@ -447,8 +450,7 @@ DBB2:RegisterModule("config", function()
     this.backdrop:SetBackdropBorderColor(r, g, b, 1)
     DBB2.api.ShowTooltip(this, "RIGHT", {
       {"Notification Sound", "highlight"},
-      "Play a sound when notifications trigger.",
-      {"0 = disabled, 10-100 = volume", "gray"}
+      "Play a sound when notifications trigger."
     })
   end)
   
@@ -458,8 +460,8 @@ DBB2:RegisterModule("config", function()
   end)
   
   soundSlider.OnValueChanged = function(value)
-    DBB2_Config.notificationSoundVolume = value
-    soundSlider.label:SetText("Sound Volume: " .. (value == 0 and "Off" or value))
+    DBB2_Config.notificationSound = value
+    soundSlider.label:SetText("Sound: " .. soundNames[value])
   end
   
   -- Spam Prevention section title
@@ -609,7 +611,7 @@ DBB2:RegisterModule("config", function()
     desc:SetTextColor(0.5, 0.5, 0.5, 1)
     
     -- Legend for checkboxes
-    local legendLabel = DBB2.api.CreateLabel(panel, "[ ] = Enable category   [N] = Notify on match (session only)", 8)
+    local legendLabel = DBB2.api.CreateLabel(panel, "[ ] = Enable category", 8)
     legendLabel:SetPoint("TOPLEFT", desc, "BOTTOMLEFT", 0, -DBB2:ScaleSize(3))
     legendLabel:SetTextColor(0.4, 0.4, 0.4, 1)
     
@@ -643,7 +645,6 @@ DBB2:RegisterModule("config", function()
     
     local rowHeight = DBB2:ScaleSize(28)
     local checkSize = DBB2:ScaleSize(14)
-    local notifyCheckSize = DBB2:ScaleSize(12)
     local nameWidth = DBB2:ScaleSize(150)
     
     -- Helper to get actual container height from rendered positions
@@ -738,33 +739,9 @@ DBB2:RegisterModule("config", function()
           row.check:SetWidth(checkSize)
           row.check:SetHeight(checkSize)
           
-          -- Notification checkbox (bell icon style, smaller)
-          row.notifyCheck = DBB2.api.CreateCheckBox("DBB2Config" .. panelName .. "Notify" .. i, row)
-          row.notifyCheck:SetPoint("LEFT", row.check, "RIGHT", 5, 0)
-          row.notifyCheck:SetWidth(notifyCheckSize)
-          row.notifyCheck:SetHeight(notifyCheckSize)
-          
-          -- Add tooltip for notification checkbox
-          row.notifyCheck:SetScript("OnEnter", function()
-            local r, g, b = DBB2:GetHighlightColor()
-            this.backdrop:SetBackdropBorderColor(r, g, b, 1)
-            
-            DBB2.api.ShowTooltip(this, "RIGHT", {
-              {"Notify on Match", "highlight"},
-              "Enable to receive notifications when",
-              "messages match this category.",
-              {"(Session only - resets on logout)", "gray"}
-            })
-          end)
-          
-          row.notifyCheck:SetScript("OnLeave", function()
-            this.backdrop:SetBackdropBorderColor(0.3, 0.3, 0.3, 1)
-            DBB2.api.HideTooltip()
-          end)
-          
           -- Category name label
           row.nameLabel = DBB2.api.CreateLabel(row, "", 10)
-          row.nameLabel:SetPoint("LEFT", row.notifyCheck, "RIGHT", 8, 0)
+          row.nameLabel:SetPoint("LEFT", row.check, "RIGHT", 8, 0)
           row.nameLabel:SetWidth(nameWidth)
           
           -- Tags edit box - anchor to right edge so it resizes with container
@@ -814,15 +791,6 @@ DBB2:RegisterModule("config", function()
         -- Checkbox callback
         row.check.OnChecked = function(checked)
           DBB2.api.SetCategorySelected(row.categoryType, row.categoryName, checked)
-        end
-        
-        -- Notification checkbox state (session-only)
-        local notifyEnabled = DBB2.api.IsNotificationEnabled(categoryType, cat.name)
-        row.notifyCheck:SetChecked(notifyEnabled)
-        
-        -- Notification checkbox callback
-        row.notifyCheck.OnChecked = function(checked)
-          DBB2.api.SetNotificationEnabled(row.categoryType, row.categoryName, checked)
         end
         
         -- Tags input callbacks

@@ -660,7 +660,7 @@ DBB2:RegisterModule("gui", function()
               catFrame:SetWidth(scrollchild:GetWidth() - DBB2:ScaleSize(13))
               panel.categoryFrames[cat.name] = catFrame
               
-              -- Clickable header button
+              -- Clickable header button (for collapse only)
               catFrame.headerBtn = CreateFrame("Button", nil, catFrame)
               catFrame.headerBtn:SetPoint("TOPLEFT", 0, 0)
               catFrame.headerBtn:SetPoint("TOPRIGHT", 0, 0)
@@ -680,20 +680,77 @@ DBB2:RegisterModule("gui", function()
               catFrame.header:SetPoint("LEFT", catFrame.collapseIndicator, "RIGHT", 3, 0)
               catFrame.header:SetTextColor(hr, hg, hb, 1)
               
+              -- Bell button for notifications (right after header text)
+              local bellSize = DBB2:ScaleSize(14)
+              catFrame.bellBtn = CreateFrame("Button", nil, catFrame)
+              catFrame.bellBtn:SetPoint("LEFT", catFrame.header, "RIGHT", 3, 0)
+              catFrame.bellBtn:SetWidth(bellSize)
+              catFrame.bellBtn:SetHeight(bellSize)
+              catFrame.bellBtn:SetFrameLevel(catFrame.headerBtn:GetFrameLevel() + 1)
+              catFrame.bellBtn:EnableMouse(true)
+              
+              catFrame.bellIcon = catFrame.bellBtn:CreateTexture(nil, "OVERLAY")
+              catFrame.bellIcon:SetTexture("Interface\\AddOns\\DifficultBulletinBoard\\img\\bell")
+              catFrame.bellIcon:SetAllPoints()
+              catFrame.bellIcon:SetVertexColor(1, 1, 1, 1)
+              catFrame.bellBtn:Hide()
+              
+              -- Store references for bell click handler
+              catFrame.bellBtn.categoryName = cat.name
+              catFrame.bellBtn.categoryType = categoryType
+              catFrame.bellBtn.catFrame = catFrame
+              
+              catFrame.bellBtn:SetScript("OnClick", function()
+                local isEnabled = DBB2.api.IsNotificationEnabled(this.categoryType, this.categoryName)
+                DBB2.api.SetNotificationEnabled(this.categoryType, this.categoryName, not isEnabled)
+                panel.UpdateCategories()
+              end)
+              
+              catFrame.bellBtn:SetScript("OnEnter", function()
+                -- Brighten the bell on hover
+                this.catFrame.bellIcon:SetVertexColor(1, 1, 1, 1)
+              end)
+              
+              catFrame.bellBtn:SetScript("OnLeave", function()
+                -- Restore bell state based on notification status
+                local isEnabled = DBB2.api.IsNotificationEnabled(this.categoryType, this.categoryName)
+                if isEnabled then
+                  this.catFrame.bellIcon:SetVertexColor(1, 1, 1, 1)
+                  this:Show()
+                else
+                  -- Hide if header is not hovered
+                  if not MouseIsOver(this.catFrame.headerBtn) then
+                    this:Hide()
+                  else
+                    -- Still hovering header, keep dimmed
+                    this.catFrame.bellIcon:SetVertexColor(1, 1, 1, 0.5)
+                  end
+                end
+              end)
+              
               -- Store references for click handler
               catFrame.categoryName = cat.name
               catFrame.categoryType = categoryType
               
-              -- Click handler
+              -- Click handler (collapse only)
               catFrame.headerBtn:SetScript("OnClick", function()
                 DBB2.api.ToggleCategoryCollapsed(catFrame.categoryType, catFrame.categoryName)
                 panel.UpdateCategories()
               end)
               
-              -- Hover effect
+              -- Hover effect - show bell on hover (dimmed) only if notifications mode is not off
               catFrame.headerBtn:SetScript("OnEnter", function()
                 catFrame.header:SetTextColor(1, 1, 1, 1)
                 catFrame.collapseIndicator:SetTextColor(1, 1, 1, 1)
+                -- Show bell (dimmed) on hover only if notification mode is not off
+                local notifyMode = DBB2.api.GetNotificationMode()
+                if notifyMode > 0 then
+                  catFrame.bellBtn:Show()
+                  local isEnabled = DBB2.api.IsNotificationEnabled(catFrame.categoryType, catFrame.categoryName)
+                  if not isEnabled then
+                    catFrame.bellIcon:SetVertexColor(1, 1, 1, 0.5)
+                  end
+                end
                 -- Show lockout tooltip if locked
                 if catFrame.isLocked and catFrame.lockoutInfo then
                   local remaining = catFrame.lockoutInfo.resetTime - time()
@@ -719,6 +776,11 @@ DBB2:RegisterModule("gui", function()
                 else
                   catFrame.header:SetTextColor(0.5, 0.5, 0.5, 1)
                   catFrame.collapseIndicator:SetTextColor(0.5, 0.5, 0.5, 1)
+                end
+                -- Hide bell if not enabled and not hovering bell itself
+                local isEnabled = DBB2.api.IsNotificationEnabled(catFrame.categoryType, catFrame.categoryName)
+                if not isEnabled and not MouseIsOver(catFrame.bellBtn) then
+                  catFrame.bellBtn:Hide()
                 end
                 DBB2.api.HideTooltip()
               end)
@@ -761,6 +823,20 @@ DBB2:RegisterModule("gui", function()
               catFrame.header:SetTextColor(0.5, 0.5, 0.5, 1)
               catFrame.collapseIndicator:SetTextColor(0.5, 0.5, 0.5, 1)
             end
+            
+            -- Show/hide bell button based on notification state and mode
+            local notifyMode = DBB2.api.GetNotificationMode()
+            local notifyEnabled = DBB2.api.IsNotificationEnabled(categoryType, cat.name)
+            if notifyMode > 0 and notifyEnabled then
+              catFrame.bellBtn:Show()
+              catFrame.bellIcon:SetVertexColor(1, 1, 1, 1)
+            else
+              catFrame.bellBtn:Hide()
+              catFrame.bellIcon:SetVertexColor(1, 1, 1, 0.5)
+            end
+            -- Update bell button references (in case category was reused)
+            catFrame.bellBtn.categoryName = cat.name
+            catFrame.bellBtn.categoryType = categoryType
             
             -- Position category frame
             catFrame:ClearAllPoints()

@@ -596,7 +596,7 @@ end
 function DBB2.api.InitNotificationConfig()
   if not DBB2_Config.notifications then
     DBB2_Config.notifications = {
-      mode = 3  -- Default: both chat and raid warning
+      mode = 0  -- Default: off
     }
   end
   -- Migrate old config format (chat/raidWarn booleans) to new mode format
@@ -618,7 +618,7 @@ function DBB2.api.InitNotificationConfig()
   end
   -- Ensure mode is valid
   if not DBB2_Config.notifications.mode or DBB2_Config.notifications.mode < 0 or DBB2_Config.notifications.mode > 3 then
-    DBB2_Config.notifications.mode = 3
+    DBB2_Config.notifications.mode = 0
   end
 end
 
@@ -718,8 +718,8 @@ function DBB2.api.SendNotification(categoryName, sender, message)
   end
   
   -- Play notification sound if enabled
-  local soundVolume = DBB2_Config.notificationSoundVolume or 50
-  if soundVolume > 0 then
+  local soundEnabled = DBB2_Config.notificationSound or 1
+  if soundEnabled == 1 then
     PlaySoundFile("Interface\\AddOns\\DifficultBulletinBoard\\sound\\duck.wav")
   end
 end
