@@ -41,7 +41,7 @@
 
 ## Settings
 
-<img width="813" height="455" alt="settings" src="https://github.com/user-attachments/assets/dd3df64e-57a6-4ff0-9795-2108c3ec82b0" />
+<img width="815" height="457" alt="settings" src="https://github.com/user-attachments/assets/e82e0273-2089-4959-8263-1fbb0c231657" />
 
 
 
