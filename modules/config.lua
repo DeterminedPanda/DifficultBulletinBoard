@@ -100,6 +100,7 @@ DBB2:RegisterModule("config", function()
   resetBtn:SetScript("OnClick", function()
     -- Reset all settings to defaults
     DBB2_Config.fontOffset = 0
+    DBB2_Config.backgroundColor = {r = 0.08, g = 0.08, b = 0.10, a = 0.85}
     DBB2_Config.highlightColor = {r = 0.667, g = 0.655, b = 0.8, a = 1}
     DBB2_Config.spamFilterSeconds = 150
     DBB2_Config.messageExpireMinutes = 15
@@ -296,9 +297,39 @@ DBB2:RegisterModule("config", function()
     end
   end
   
+  -- Background Color picker
+  local bgColorPicker = DBB2.api.CreateColorPicker("DBB2BackgroundColor", generalScrollChild, "Background Color", 9)
+  bgColorPicker:SetPoint("TOPLEFT", fontSlider, "BOTTOMLEFT", 0, -DBB2:ScaleSize(11))
+  bgColorPicker:SetWidth(DBB2:ScaleSize(250))
+  
+  -- Load saved background color
+  local bgc = DBB2_Config.backgroundColor or {r = 0.08, g = 0.08, b = 0.10, a = 0.85}
+  bgColorPicker:SetColor(bgc.r, bgc.g, bgc.b, bgc.a)
+  
+  -- Add tooltip on hover
+  bgColorPicker.button:SetScript("OnEnter", function()
+    local r, g, b = DBB2:GetHighlightColor()
+    this.backdrop:SetBackdropBorderColor(r, g, b, 1)
+    DBB2.api.ShowTooltip(this, "RIGHT", {
+      {"Background Color", "highlight"},
+      "The main background color of the UI.",
+      {"Requires /reload to fully apply.", "gray"}
+    })
+  end)
+  
+  bgColorPicker.button:SetScript("OnLeave", function()
+    this.backdrop:SetBackdropBorderColor(0.3, 0.3, 0.3, 1)
+    DBB2.api.HideTooltip()
+  end)
+  
+  -- Save on change
+  bgColorPicker.OnColorChanged = function(r, g, b, a)
+    DBB2_Config.backgroundColor = {r = r, g = g, b = b, a = a}
+  end
+  
   -- Highlight Color picker
   local colorPicker = DBB2.api.CreateColorPicker("DBB2HighlightColor", generalScrollChild, "Highlight Color", 9)
-  colorPicker:SetPoint("TOPLEFT", fontSlider, "BOTTOMLEFT", 0, -DBB2:ScaleSize(11))
+  colorPicker:SetPoint("TOPLEFT", bgColorPicker, "BOTTOMLEFT", 0, -DBB2:ScaleSize(11))
   colorPicker:SetWidth(DBB2:ScaleSize(250))
   
   -- Load saved color
@@ -312,7 +343,8 @@ DBB2:RegisterModule("config", function()
     DBB2.api.ShowTooltip(this, "RIGHT", {
       {"Highlight Color", "highlight"},
       "Used for active tabs, hover effects,",
-      "and accents throughout the UI."
+      "and accents throughout the UI.",
+      {"Requires /reload to fully apply.", "gray"}
     })
   end)
   

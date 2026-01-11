@@ -436,7 +436,8 @@ function DBB2.api.CreateTabSystem(name, parent, tabs, buttonWidth, buttonHeight)
   DBB2:CreateBackdrop(tabSystem.content)
   
   if tabSystem.content.backdrop then
-    tabSystem.content.backdrop:SetBackdropColor(0.09, 0.09, 0.11, 1)
+    local bgColor = DBB2_Config.backgroundColor or {r = 0.08, g = 0.08, b = 0.10, a = 0.85}
+    tabSystem.content.backdrop:SetBackdropColor(bgColor.r, bgColor.g, bgColor.b, bgColor.a or 0.85)
   end
 
   -- Create tab buttons and panels

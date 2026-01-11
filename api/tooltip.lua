@@ -11,8 +11,8 @@ function DBB2.api.InitTooltip()
   tooltip:SetFrameLevel(100)
   tooltip:Hide()
   
-  -- Create backdrop matching main GUI
-  DBB2:CreateBackdrop(tooltip, nil, nil, 0.95)
+  -- Create backdrop matching main GUI (but use fixed color, not configurable)
+  DBB2:CreateBackdrop(tooltip, nil, nil, 0.95, true)
   
   -- Lines storage
   tooltip.lines = {}

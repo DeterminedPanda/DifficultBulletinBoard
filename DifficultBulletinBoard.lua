@@ -38,11 +38,19 @@ DBB2.backdrop_shadow = {
 }
 
 -- Helper function to create backdrop
-function DBB2:CreateBackdrop(frame, inset, legacy, transp)
+-- useFixedBg: if true, uses the default dark charcoal instead of configurable color
+function DBB2:CreateBackdrop(frame, inset, legacy, transp, useFixedBg)
   local border = 1
   
-  -- Soft dark charcoal background (easier on eyes than pure black)
-  local br, bg, bb, ba = 0.08, 0.08, 0.10, 1  -- Background: dark charcoal
+  -- Use configurable background color (with fallback to default dark charcoal)
+  -- Unless useFixedBg is true, then always use the default
+  local br, bg, bb, ba
+  if useFixedBg then
+    br, bg, bb, ba = 0.08, 0.08, 0.10, 0.85
+  else
+    local bgColor = DBB2_Config.backgroundColor or {r = 0.08, g = 0.08, b = 0.10, a = 0.85}
+    br, bg, bb, ba = bgColor.r, bgColor.g, bgColor.b, bgColor.a or 0.85
+  end
   local er, eg, eb, ea = 0.25, 0.25, 0.25, 1  -- Border: subtle gray
   
   -- Override transparency if specified
@@ -92,6 +100,7 @@ DBB2:SetScript("OnEvent", function()
       DBB2_Config.position = {}
       DBB2_Config.fontOffset = 0  -- Font size offset (-4 to +4)
       DBB2_Config.highlightColor = {r = 0.667, g = 0.655, b = 0.8, a = 1}  -- Default highlight color (#aaa7cc)
+      DBB2_Config.backgroundColor = {r = 0.08, g = 0.08, b = 0.10, a = 0.85}  -- Default background color (dark charcoal)
       DBB2_Config.spamFilterSeconds = 150  -- Duplicate message filter time
       DBB2_Config.messageExpireMinutes = 15  -- Auto-remove messages older than X minutes (0 = disabled)
       DBB2_Config.hideFromChat = 0  -- Hide captured messages from chat (0=off, 1=selected, 2=all)
@@ -113,6 +122,11 @@ DBB2:SetScript("OnEvent", function()
     -- Ensure highlightColor exists for existing configs
     if DBB2_Config.highlightColor == nil then
       DBB2_Config.highlightColor = {r = 0.667, g = 0.655, b = 0.8, a = 1}
+    end
+    
+    -- Ensure backgroundColor exists for existing configs
+    if DBB2_Config.backgroundColor == nil then
+      DBB2_Config.backgroundColor = {r = 0.08, g = 0.08, b = 0.10, a = 0.85}
     end
     
     -- Ensure spamFilterSeconds exists for existing configs
