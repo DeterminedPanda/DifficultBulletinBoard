@@ -73,16 +73,33 @@ DBB2:RegisterModule("gui", function()
     this:GetParent():Hide()
   end)
   
-  -- Config button - in header area between borders
+  -- Local time display - in header area between borders
+  DBB2.gui.serverTime = CreateFrame("Frame", "DBB2ServerTime", DBB2.gui)
+  DBB2.gui.serverTime:SetPoint("RIGHT", DBB2.gui.close, "LEFT", -DBB2:ScaleSize(5), 0)
+  DBB2.gui.serverTime:SetWidth(DBB2:ScaleSize(65))
+  DBB2.gui.serverTime:SetHeight(closeSize)
+  DBB2:CreateBackdrop(DBB2.gui.serverTime)
+
+  DBB2.gui.serverTime.text = DBB2.gui.serverTime:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  DBB2.gui.serverTime.text:SetFont("Fonts\\FRIZQT__.TTF", DBB2:GetFontSize(10))
+  DBB2.gui.serverTime.text:SetPoint("CENTER", 0, 0)
+  DBB2.gui.serverTime.text:SetTextColor(0.7, 0.7, 0.7, 1)
+
+  -- Update local time every frame
+  DBB2.gui.serverTime:SetScript("OnUpdate", function()
+    this.text:SetText(date("%H:%M:%S"))
+  end)
+
+  -- Config button - in header area, repositioned to left of server time
   DBB2.gui.configBtn = DBB2.api.CreateButton("DBB2ConfigBtn", DBB2.gui, "Config")
-  DBB2.gui.configBtn:SetPoint("RIGHT", DBB2.gui.close, "LEFT", -DBB2:ScaleSize(5), 0)
+  DBB2.gui.configBtn:SetPoint("RIGHT", DBB2.gui.serverTime, "LEFT", -DBB2:ScaleSize(5), 0)
   DBB2.gui.configBtn:SetWidth(DBB2:ScaleSize(50))
   DBB2.gui.configBtn:SetHeight(closeSize)
   DBB2.gui.configBtn.text:SetTextColor(0.7, 0.7, 0.7, 1)  -- Match inactive tab color
   DBB2.gui.configBtn:SetScript("OnClick", function()
     DBB2.gui.tabs.SwitchTab("Config")
   end)
-  
+
   -- Override hover scripts to respect active state
   DBB2.gui.configBtn:SetScript("OnEnter", function()
     if DBB2.gui.tabs.activeTab ~= "Config" then
