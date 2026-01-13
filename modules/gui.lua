@@ -144,20 +144,66 @@ DBB2:RegisterModule("gui", function()
   local filterPadding = DBB2:ScaleSize(5)
   
   -- Filter input with placeholder
+  -- Leave space for current time, aligned with timestamps
+  local timeColumnWidth = DBB2:ScaleSize(55) + DBB2:ScaleSize(13)
   DBB2.gui.filterInput = DBB2.api.CreateEditBox("DBB2FilterInput", logsPanel)
   DBB2.gui.filterInput:SetPoint("TOPLEFT", logsPanel, "TOPLEFT", 0, 0)
-  DBB2.gui.filterInput:SetPoint("TOPRIGHT", logsPanel, "TOPRIGHT", 0, 0)
+  DBB2.gui.filterInput:SetPoint("TOPRIGHT", logsPanel, "TOPRIGHT", -timeColumnWidth, 0)
   DBB2.gui.filterInput:SetHeight(filterHeight)
   
-  -- Hide full border, add bottom-only border line
+  -- Current time display (aligned with timestamps below)
+  -- Use same offset as message rows for perfect alignment
+  local timeRightOffset = DBB2:ScaleSize(13) + 2
+  DBB2.gui.currentTimeText = logsPanel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  DBB2.gui.currentTimeText:SetFont("Fonts\\FRIZQT__.TTF", DBB2:GetFontSize(10))
+  DBB2.gui.currentTimeText:SetPoint("RIGHT", logsPanel, "TOPRIGHT", -timeRightOffset, -(filterHeight / 2))
+  DBB2.gui.currentTimeText:SetWidth(DBB2:ScaleSize(55))
+  DBB2.gui.currentTimeText:SetJustifyH("LEFT")
+  DBB2.gui.currentTimeText:SetTextColor(0.5, 0.5, 0.5, 1)
+  DBB2.gui.currentTimeText:SetText(date("%H:%M:%S"))
+  
+  -- Hide by default (controlled by config)
+  if not DBB2_Config.showCurrentTime then
+    DBB2.gui.currentTimeText:Hide()
+  end
+  
+  -- Global time update frame (updates all panels at once for smooth tab transitions)
+  -- Only create once, on the main GUI frame so it always runs
+  if not DBB2.gui.globalTimeFrame then
+    DBB2.gui.globalTimeFrame = CreateFrame("Frame", nil, DBB2.gui)
+    DBB2.gui.globalTimeFrame.elapsed = 0
+    DBB2.gui.globalTimeFrame:SetScript("OnUpdate", function()
+      this.elapsed = this.elapsed + arg1
+      if this.elapsed >= 1 then
+        this.elapsed = 0
+        if DBB2_Config.showCurrentTime then
+          local timeStr = date("%H:%M:%S")
+          -- Update Logs panel
+          if DBB2.gui.currentTimeText then
+            DBB2.gui.currentTimeText:SetText(timeStr)
+          end
+          -- Update categorized panels (Groups, Professions, Hardcore)
+          local panels = {"Groups", "Professions", "Hardcore"}
+          for _, panelName in ipairs(panels) do
+            local panel = DBB2.gui.tabs.panels[panelName]
+            if panel and panel.currentTimeText then
+              panel.currentTimeText:SetText(timeStr)
+            end
+          end
+        end
+      end
+    end)
+  end
+  
+  -- Hide full border, add bottom-only border line (spans full width including time area)
   if DBB2.gui.filterInput.backdrop then
     DBB2.gui.filterInput.backdrop:SetBackdropBorderColor(0, 0, 0, 0)
   end
-  DBB2.gui.filterInput.bottomBorder = DBB2.gui.filterInput:CreateTexture(nil, "BORDER")
+  DBB2.gui.filterInput.bottomBorder = logsPanel:CreateTexture(nil, "BORDER")
   DBB2.gui.filterInput.bottomBorder:SetTexture("Interface\\BUTTONS\\WHITE8X8")
   DBB2.gui.filterInput.bottomBorder:SetHeight(1)
   DBB2.gui.filterInput.bottomBorder:SetPoint("BOTTOMLEFT", DBB2.gui.filterInput, "BOTTOMLEFT", 0, 0)
-  DBB2.gui.filterInput.bottomBorder:SetPoint("BOTTOMRIGHT", DBB2.gui.filterInput, "BOTTOMRIGHT", 0, 0)
+  DBB2.gui.filterInput.bottomBorder:SetPoint("BOTTOMRIGHT", logsPanel, "TOPRIGHT", 0, -filterHeight)
   DBB2.gui.filterInput.bottomBorder:SetVertexColor(0.25, 0.25, 0.25, 1)
   
   -- Override hover scripts for bottom border highlight
@@ -275,7 +321,7 @@ DBB2:RegisterModule("gui", function()
   for i = 1, MAX_ROWS do
     local row = DBB2.api.CreateMessageRow("DBB2MsgRow" .. i, DBB2.gui.scrollchild, DEFAULT_ROW_HEIGHT)
     row:SetPoint("TOPLEFT", DBB2.gui.scrollchild, "TOPLEFT", 5, -((i-1) * ROW_HEIGHT))
-    row:SetPoint("RIGHT", DBB2.gui.scrollchild, "RIGHT", -DBB2:ScaleSize(13), 0)  -- scrollbar + padding
+    row:SetPoint("RIGHT", DBB2.gui.scrollchild, "RIGHT", -DBB2:ScaleSize(13), 0)
     row:Hide()
     DBB2.gui.messageRows[i] = row
   end
@@ -426,20 +472,37 @@ DBB2:RegisterModule("gui", function()
     local filterPadding = DBB2:ScaleSize(5)
     
     -- Filter input with placeholder
+    -- Leave space for current time, aligned with timestamps
+    local timeColumnWidth = DBB2:ScaleSize(55) + DBB2:ScaleSize(13)
     panel.filterInput = DBB2.api.CreateEditBox("DBB2" .. panelName .. "FilterInput", panel)
     panel.filterInput:SetPoint("TOPLEFT", panel, "TOPLEFT", 0, 0)
-    panel.filterInput:SetPoint("TOPRIGHT", panel, "TOPRIGHT", 0, 0)
+    panel.filterInput:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -timeColumnWidth, 0)
     panel.filterInput:SetHeight(filterHeight)
     
-    -- Hide full border, add bottom-only border line
+    -- Current time display (aligned with timestamps below)
+    local timeRightOffset = DBB2:ScaleSize(13) + 2
+    panel.currentTimeText = panel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    panel.currentTimeText:SetFont("Fonts\\FRIZQT__.TTF", DBB2:GetFontSize(10))
+    panel.currentTimeText:SetPoint("RIGHT", panel, "TOPRIGHT", -timeRightOffset, -(filterHeight / 2))
+    panel.currentTimeText:SetWidth(DBB2:ScaleSize(55))
+    panel.currentTimeText:SetJustifyH("LEFT")
+    panel.currentTimeText:SetTextColor(0.5, 0.5, 0.5, 1)
+    panel.currentTimeText:SetText(date("%H:%M:%S"))
+    
+    -- Hide by default (controlled by config)
+    if not DBB2_Config.showCurrentTime then
+      panel.currentTimeText:Hide()
+    end
+    
+    -- Hide full border, add bottom-only border line (spans full width including time area)
     if panel.filterInput.backdrop then
       panel.filterInput.backdrop:SetBackdropBorderColor(0, 0, 0, 0)
     end
-    panel.filterInput.bottomBorder = panel.filterInput:CreateTexture(nil, "BORDER")
+    panel.filterInput.bottomBorder = panel:CreateTexture(nil, "BORDER")
     panel.filterInput.bottomBorder:SetTexture("Interface\\BUTTONS\\WHITE8X8")
     panel.filterInput.bottomBorder:SetHeight(1)
     panel.filterInput.bottomBorder:SetPoint("BOTTOMLEFT", panel.filterInput, "BOTTOMLEFT", 0, 0)
-    panel.filterInput.bottomBorder:SetPoint("BOTTOMRIGHT", panel.filterInput, "BOTTOMRIGHT", 0, 0)
+    panel.filterInput.bottomBorder:SetPoint("BOTTOMRIGHT", panel, "TOPRIGHT", 0, -filterHeight)
     panel.filterInput.bottomBorder:SetVertexColor(0.25, 0.25, 0.25, 1)
     
     -- Override hover scripts for bottom border highlight

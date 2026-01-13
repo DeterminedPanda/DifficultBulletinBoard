@@ -109,6 +109,7 @@ DBB2:RegisterModule("config", function()
     DBB2_Config.scrollSpeed = 55
     DBB2_Config.defaultTab = 0
     DBB2_Config.notificationSound = 1
+    DBB2_Config.showCurrentTime = false
     -- Reset notifications to defaults (mode 0 = off)
     DBB2_Config.notifications = { mode = 0 }
     -- Reset blacklist to defaults
@@ -179,7 +180,7 @@ DBB2:RegisterModule("config", function()
   versionFrame.version = versionFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
   versionFrame.version:SetFont("Fonts\\FRIZQT__.TTF", DBB2:GetFontSize(9))
   versionFrame.version:SetPoint("TOPRIGHT", versionFrame.name, "BOTTOMRIGHT", 0, -2)
-  versionFrame.version:SetText("v2.02")
+  versionFrame.version:SetText("v2.03")
   versionFrame.version:SetTextColor(0.5, 0.5, 0.5, 1)
   versionFrame.version:SetJustifyH("RIGHT")
   
@@ -374,9 +375,57 @@ DBB2:RegisterModule("config", function()
     DBB2_Config.highlightColor = {r = r, g = g, b = b, a = a}
   end
   
+  -- Show Current Time toggle (0 = off, 1 = on)
+  local showTimeEnabled = DBB2_Config.showCurrentTime and 1 or 0
+  local showTimeNames = { [0] = "Off", [1] = "On" }
+  local showTimeSlider = DBB2.api.CreateSlider("DBB2ShowTimeSlider", generalScrollChild, "Show Current Time: " .. showTimeNames[showTimeEnabled], 0, 1, 1, 9)
+  showTimeSlider:SetPoint("TOPLEFT", colorPicker, "BOTTOMLEFT", 0, -DBB2:ScaleSize(11))
+  showTimeSlider:SetWidth(DBB2:ScaleSize(250))
+  showTimeSlider:SetValue(showTimeEnabled)
+  
+  -- Add tooltip on hover
+  showTimeSlider.slider:SetScript("OnEnter", function()
+    local r, g, b = DBB2:GetHighlightColor()
+    this.backdrop:SetBackdropBorderColor(r, g, b, 1)
+    DBB2.api.ShowTooltip(this, "RIGHT", {
+      {"Show Current Time", "highlight"},
+      "Display current time above timestamps."
+    })
+  end)
+  
+  showTimeSlider.slider:SetScript("OnLeave", function()
+    this.backdrop:SetBackdropBorderColor(0.2, 0.2, 0.2, 1)
+    DBB2.api.HideTooltip()
+  end)
+  
+  showTimeSlider.OnValueChanged = function(value)
+    DBB2_Config.showCurrentTime = (value == 1)
+    showTimeSlider.label:SetText("Show Current Time: " .. showTimeNames[value])
+    -- Update visibility immediately for all panels
+    local panels = {"Logs", "Groups", "Professions", "Hardcore"}
+    for _, panelName in ipairs(panels) do
+      local panel = DBB2.gui.tabs.panels[panelName]
+      if panel and panel.currentTimeText then
+        if value == 1 then
+          panel.currentTimeText:Show()
+        else
+          panel.currentTimeText:Hide()
+        end
+      end
+    end
+    -- Also update the main gui reference (Logs panel)
+    if DBB2.gui.currentTimeText then
+      if value == 1 then
+        DBB2.gui.currentTimeText:Show()
+      else
+        DBB2.gui.currentTimeText:Hide()
+      end
+    end
+  end
+  
   -- Miscellaneous section title
   local miscTitle = DBB2.api.CreateLabel(generalScrollChild, "Miscellaneous", 10)
-  miscTitle:SetPoint("TOPLEFT", colorPicker, "BOTTOMLEFT", 0, -DBB2:ScaleSize(19))
+  miscTitle:SetPoint("TOPLEFT", showTimeSlider, "BOTTOMLEFT", 0, -DBB2:ScaleSize(19))
   miscTitle:SetTextColor(hr, hg, hb, 1)
   
   -- Scroll Speed slider
