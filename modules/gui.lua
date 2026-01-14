@@ -672,17 +672,14 @@ DBB2:RegisterModule("gui", function()
           local isCollapsed = DBB2.api.IsCategoryCollapsed(categoryType, cat.name)
           
           -- Check if this category is locked (only for Groups tab)
+          -- Locked categories display with red [Saved] tag but function normally
+          -- (can be expanded/collapsed, notifications work, etc.)
           local isLocked = false
           local lockoutInfo = nil
           if categoryType == "groups" and DBB2.api.IsCategoryLocked then
             isLocked = DBB2.api.IsCategoryLocked(cat.name)
             if isLocked then
               lockoutInfo = DBB2.api.GetCategoryLockout(cat.name)
-              -- Auto-collapse locked categories
-              if not DBB2.api.IsCategoryCollapsed(categoryType, cat.name) then
-                DBB2.api.SetCategoryCollapsed(categoryType, cat.name, true)
-                isCollapsed = true
-              end
             end
           end
           
