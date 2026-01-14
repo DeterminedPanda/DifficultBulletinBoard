@@ -729,7 +729,7 @@ DBB2:RegisterModule("gui", function()
               
               -- Collapse indicator
               catFrame.collapseIndicator = catFrame.headerBtn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-              catFrame.collapseIndicator:SetFont("Fonts\\FRIZQT__.TTF", DBB2:GetFontSize(10))
+              catFrame.collapseIndicator:SetFont("Fonts\\FRIZQT__.TTF", DBB2:GetFontSize(14))
               catFrame.collapseIndicator:SetPoint("LEFT", 5, 0)
               catFrame.collapseIndicator:SetWidth(DBB2:ScaleSize(12))
               catFrame.collapseIndicator:SetText("+")
@@ -826,16 +826,27 @@ DBB2:RegisterModule("gui", function()
               catFrame.headerBtn:SetScript("OnLeave", function()
                 -- Restore appropriate color based on current state (stored on frame)
                 local hr, hg, hb = DBB2:GetHighlightColor()
-                if catFrame.isLocked then
-                  -- Locked: red color
-                  catFrame.header:SetTextColor(0.8, 0.3, 0.3, 1)
+                -- Check if collapsed (+ means collapsed)
+                local isCollapsed = catFrame.collapseIndicator:GetText() == "+"
+                
+                -- Collapse indicator: always red when collapsed
+                if isCollapsed then
+                  catFrame.collapseIndicator:SetTextColor(0.8, 0.3, 0.3, 1)
+                elseif catFrame.isLocked then
                   catFrame.collapseIndicator:SetTextColor(0.8, 0.3, 0.3, 1)
                 elseif catFrame.currentMsgCount and catFrame.currentMsgCount > 0 then
-                  catFrame.header:SetTextColor(hr, hg, hb, 1)
                   catFrame.collapseIndicator:SetTextColor(hr, hg, hb, 1)
                 else
-                  catFrame.header:SetTextColor(0.5, 0.5, 0.5, 1)
                   catFrame.collapseIndicator:SetTextColor(0.5, 0.5, 0.5, 1)
+                end
+                
+                -- Header color based on locked/message state (not collapse state)
+                if catFrame.isLocked then
+                  catFrame.header:SetTextColor(0.8, 0.3, 0.3, 1)
+                elseif catFrame.currentMsgCount and catFrame.currentMsgCount > 0 then
+                  catFrame.header:SetTextColor(hr, hg, hb, 1)
+                else
+                  catFrame.header:SetTextColor(0.5, 0.5, 0.5, 1)
                 end
                 -- Hide bell if not enabled and not hovering bell itself
                 local isEnabled = DBB2.api.IsNotificationEnabled(catFrame.categoryType, catFrame.categoryName)
@@ -853,6 +864,7 @@ DBB2:RegisterModule("gui", function()
             -- Update collapse indicator
             if isCollapsed then
               catFrame.collapseIndicator:SetText("+")
+              catFrame.collapseIndicator:SetTextColor(0.8, 0.3, 0.3, 1)  -- Red when collapsed
             else
               catFrame.collapseIndicator:SetText("-")
             end
@@ -873,15 +885,21 @@ DBB2:RegisterModule("gui", function()
               headerText = headerText .. " |cffff6666[Saved]|r"
               catFrame.header:SetText(headerText)
               catFrame.header:SetTextColor(0.8, 0.3, 0.3, 1)
-              catFrame.collapseIndicator:SetTextColor(0.8, 0.3, 0.3, 1)
+              if not isCollapsed then
+                catFrame.collapseIndicator:SetTextColor(0.8, 0.3, 0.3, 1)
+              end
             elseif displayCount > 0 then
               catFrame.header:SetText(headerText)
               catFrame.header:SetTextColor(hr, hg, hb, 1)
-              catFrame.collapseIndicator:SetTextColor(hr, hg, hb, 1)
+              if not isCollapsed then
+                catFrame.collapseIndicator:SetTextColor(hr, hg, hb, 1)
+              end
             else
               catFrame.header:SetText(headerText)
               catFrame.header:SetTextColor(0.5, 0.5, 0.5, 1)
-              catFrame.collapseIndicator:SetTextColor(0.5, 0.5, 0.5, 1)
+              if not isCollapsed then
+                catFrame.collapseIndicator:SetTextColor(0.5, 0.5, 0.5, 1)
+              end
             end
             
             -- Show/hide bell button based on notification state and mode
