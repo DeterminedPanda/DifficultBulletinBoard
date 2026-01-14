@@ -180,7 +180,7 @@ DBB2:RegisterModule("config", function()
   versionFrame.version = versionFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
   versionFrame.version:SetFont("Fonts\\FRIZQT__.TTF", DBB2:GetFontSize(9))
   versionFrame.version:SetPoint("TOPRIGHT", versionFrame.name, "BOTTOMRIGHT", 0, -2)
-  versionFrame.version:SetText("v2.03")
+  versionFrame.version:SetText("v2.04")
   versionFrame.version:SetTextColor(0.5, 0.5, 0.5, 1)
   versionFrame.version:SetJustifyH("RIGHT")
   
