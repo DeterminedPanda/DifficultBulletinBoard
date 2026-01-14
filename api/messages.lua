@@ -81,6 +81,57 @@ function DBB2.api.IsSystemMessage(message)
   return false
 end
 
+-- [ IsFilterableChannel ]
+-- Checks if a formatted chat message is from a channel that should be filtered
+-- Filterable channels: World, Hardcore, Trade
+-- World/Trade channel format: "[X] [PlayerName]: message" (X = channel number)
+-- Hardcore channel format: "[H] [PlayerName]: message"
+-- Uses GetChannelName API to resolve channel number to name
+-- 'message'    [string]        the formatted message from chat frame
+-- return:      [boolean]       true if from a filterable channel
+function DBB2.api.IsFilterableChannel(message)
+  if not message then return false end
+  
+  local lowerMsg = string_lower(message)
+  
+  -- Check for Hardcore channel: "[H] " prefix (Turtle WoW specific)
+  if string_find(lowerMsg, "^%[h%]") then
+    return true
+  end
+  
+  -- Check for channel number format: "[5] " at the start
+  -- Extract the channel number and use GetChannelName to get actual name
+  local _, _, channelNum = string_find(message, "^%[(%d+)%]")
+  if channelNum then
+    -- GetChannelName returns: id, name (we need the second return value)
+    local _, channelName = GetChannelName(tonumber(channelNum))
+    if channelName then
+      local lowerChannel = string_lower(channelName)
+      -- Filter World, Hardcore, and Trade channels
+      if lowerChannel == "world" or lowerChannel == "hardcore" or lowerChannel == "trade" then
+        return true
+      end
+    end
+  end
+  
+  return false
+end
+
+-- [ IsOwnMessage ]
+-- Checks if a message was sent by the player themselves
+-- 'sender'     [string]        the sender name extracted from the message
+-- return:      [boolean]       true if the sender is the player
+function DBB2.api.IsOwnMessage(sender)
+  if not sender then return false end
+  
+  -- Get the player's name
+  local playerName = UnitName("player")
+  if not playerName then return false end
+  
+  -- Compare case-insensitively
+  return string_lower(sender) == string_lower(playerName)
+end
+
 -- [ ShouldHideFromChat ]
 -- Checks if a message should be hidden from normal chat
 -- hideFromChat modes: 0 = disabled, 1 = enabled (selected only), 2 = enabled (all categories)
@@ -88,9 +139,23 @@ end
 -- Mode 2: Hide messages matching any category (even disabled ones)
 -- Also hides blacklisted messages and duplicates when enabled
 -- IMPORTANT: Never hides system messages (like /who results) even if they match category patterns
+-- IMPORTANT: Only filters messages from World, Hardcore, or Trade channels
+-- IMPORTANT: Never filters the player's own messages
 function DBB2.api.ShouldHideFromChat(message, sender)
   local mode = DBB2_Config.hideFromChat or 0
   if mode == 0 or mode == false then
+    return false
+  end
+  
+  -- CRITICAL: Never filter the player's own messages
+  -- This ensures the player always sees what they typed
+  if DBB2.api.IsOwnMessage(sender) then
+    return false
+  end
+  
+  -- CRITICAL: Only filter messages from filterable channels (World, Hardcore, Trade)
+  -- Guild chat, party chat, whispers, etc. should never be filtered
+  if not DBB2.api.IsFilterableChannel(message) then
     return false
   end
   
@@ -197,19 +262,25 @@ function DBB2.api.SetupChatFilter()
             -- Remove hyperlinks |H[player:NAME]|h[NAME]|h -> NAME
             cleanMsg = string_gsub(cleanMsg, "|H[^|]*|h([^|]*)|h", "%1")
             
-            -- Try to extract sender name from message format: [Channel] [Sender]: message
-            -- or just [Sender]: message
+            -- Try to extract sender name from message format
+            -- World format: "[5] [Sender]: message" (number = channel)
+            -- Hardcore format: "[H] [Sender]: message"
+            -- Guild format: "[Sender]: message"
             local sender = nil
-            -- Pattern: look for [Name] followed by : or just Name:
-            local _, _, extractedSender = string_find(cleanMsg, "%[([^%]]+)%]%s*:")
+            
+            -- First try to match channel + sender format: [Channel/Number] [Sender]:
+            -- This handles "[5] [Name]:" and "[H] [Name]:"
+            local _, _, extractedSender = string_find(cleanMsg, "^%[[^%]]+%]%s*%[([^%]]+)%]%s*:")
             if extractedSender then
               sender = extractedSender
             else
-              -- Try pattern without brackets: Name:
-              _, _, extractedSender = string_find(cleanMsg, "^([^:]+):")
+              -- Try simple [Sender]: format (guild chat, etc.)
+              _, _, extractedSender = string_find(cleanMsg, "^%[([^%]]+)%]%s*:")
               if extractedSender then
-                -- Clean up any channel prefix like "5. World"
-                sender = string_gsub(extractedSender, "^%d+%.%s*%w+%s*", "")
+                -- Make sure we didn't grab a channel number like "5" or "H"
+                if not string_find(extractedSender, "^%d+$") and extractedSender ~= "H" then
+                  sender = extractedSender
+                end
               end
             end
             
