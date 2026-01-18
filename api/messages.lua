@@ -84,9 +84,11 @@ end
 -- [ IsFilterableChannel ]
 -- Checks if a formatted chat message is from a channel that should be filtered
 -- Filterable channels: World, Hardcore, Trade
--- World/Trade channel format: "[X] [PlayerName]: message" (X = channel number)
+-- Custom channel format: "[X] [PlayerName]: message" (X = channel number only)
+-- Built-in channel format: "[X. ChannelName] [PlayerName]: message" (number + dot + name)
+-- Trade can also be "[2. Trade - City]" format
 -- Hardcore channel format: "[H] [PlayerName]: message"
--- Uses GetChannelName API to resolve channel number to name
+-- Uses GetChannelName API to resolve channel number to name for custom channels
 -- 'message'    [string]        the formatted message from chat frame
 -- return:      [boolean]       true if from a filterable channel
 function DBB2.api.IsFilterableChannel(message)
@@ -99,8 +101,25 @@ function DBB2.api.IsFilterableChannel(message)
     return true
   end
   
-  -- Check for channel number format: "[5] " at the start
-  -- Extract the channel number and use GetChannelName to get actual name
+  -- Check for built-in channel format containing "trade", "world", or "hardcore"
+  -- Examples: "[2. Trade]", "[2. Trade - Orgrimmar]", "[1. General - Durotar]"
+  -- Simply check if the message starts with a channel bracket containing our keywords
+  if string_find(lowerMsg, "^%[%d+%.") then
+    -- Message starts with "[X." format - check for our target channels
+    if string_find(lowerMsg, "^%[%d+%.%s*trade") then
+      return true
+    end
+    if string_find(lowerMsg, "^%[%d+%.%s*world") then
+      return true
+    end
+    if string_find(lowerMsg, "^%[%d+%.%s*hardcore") then
+      return true
+    end
+  end
+  
+  -- Check for custom channel format: "[5]" at the start (number only, no dot)
+  -- This format is used by custom channels like World on private servers
+  -- Also handles built-in channels after color code stripping (e.g., Trade shows as [2])
   local _, _, channelNum = string_find(message, "^%[(%d+)%]")
   if channelNum then
     -- GetChannelName returns: id, name (we need the second return value)
@@ -108,7 +127,8 @@ function DBB2.api.IsFilterableChannel(message)
     if channelName then
       local lowerChannel = string_lower(channelName)
       -- Filter World, Hardcore, and Trade channels
-      if lowerChannel == "world" or lowerChannel == "hardcore" or lowerChannel == "trade" then
+      -- Use string_find because channel names can include zone (e.g., "Trade - City")
+      if string_find(lowerChannel, "^world") or string_find(lowerChannel, "^hardcore") or string_find(lowerChannel, "^trade") then
         return true
       end
     end
