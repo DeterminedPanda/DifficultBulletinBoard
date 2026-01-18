@@ -182,7 +182,7 @@ function DBB2.api.ShouldHideFromChat(message, sender)
     local categories = DBB2.api.GetCategories(categoryType)
     if categories then
       for _, cat in ipairs(categories) do
-        if DBB2.api.MatchMessageToCategory(message, cat, ignoreSelected) then
+        if DBB2.api.MatchMessageToCategory(message, cat, ignoreSelected, categoryType) then
           matchesCategory = true
           break
         end
@@ -860,7 +860,7 @@ function DBB2.api.CheckAndNotify(message, sender)
     if categories then
       for _, cat in ipairs(categories) do
         if cat.selected and DBB2.api.IsNotificationEnabled(categoryType, cat.name) then
-          if DBB2.api.MatchMessageToCategory(message, cat) then
+          if DBB2.api.MatchMessageToCategory(message, cat, nil, categoryType) then
             DBB2.api.SendNotification(cat.name, sender, message)
             return  -- Only notify once per message
           end

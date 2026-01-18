@@ -309,6 +309,16 @@ SlashCmdList["DBB2DEBUG"] = function(msg)
   end
 end
 
+-- Slash command to test filter tags
+SLASH_DBB2TESTFILTER1 = "/dbb2testfilter"
+SlashCmdList["DBB2TESTFILTER"] = function(msg)
+  if DBB2.api and DBB2.api.TestFilterTags then
+    DBB2.api.TestFilterTags(msg)
+  else
+    DEFAULT_CHAT_FRAME:AddMessage("|cffff0000[DBB2]|r Filter test API not loaded")
+  end
+end
+
 -- Slash command to toggle GUI
 SLASH_DBB1 = "/dbb"
 SlashCmdList["DBB"] = function(msg)

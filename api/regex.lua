@@ -564,3 +564,11 @@ function DBB2.api.regex.Escape(str)
   if not str then return "" end
   return string_gsub(str, "([%(%)%.%%%+%-%*%?%[%]%^%$|\\<>])", "\\%1")
 end
+
+-- Convenience wrapper for regex matching (exposed at api level)
+-- 'text'    [string] the text to search in
+-- 'pattern' [string] the regex pattern
+-- return:   [boolean] true if pattern matches anywhere in text
+function DBB2.api.MatchRegex(text, pattern)
+  return DBB2.api.regex.Match(text, pattern, true)
+end

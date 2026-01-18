@@ -140,12 +140,20 @@ DBB2:RegisterModule("config", function()
     local categoryPanels = {"Groups", "Professions", "Hardcore"}
     for _, panelName in ipairs(categoryPanels) do
       local panel = DBB2.gui.configTabs.panels[panelName]
-      if panel and panel.categoryRows then
-        for _, row in ipairs(panel.categoryRows) do
-          if row and row.tagsInput and row.categoryType and row.categoryName then
-            local newTags = DBB2.api.ParseTagsString(row.tagsInput:GetText())
-            DBB2.api.UpdateCategoryTags(row.categoryType, row.categoryName, newTags)
+      if panel then
+        -- Save category tags
+        if panel.categoryRows then
+          for _, row in ipairs(panel.categoryRows) do
+            if row and row.tagsInput and row.categoryType and row.categoryName then
+              local newTags = DBB2.api.ParseTagsString(row.tagsInput:GetText())
+              DBB2.api.UpdateCategoryTags(row.categoryType, row.categoryName, newTags)
+            end
           end
+        end
+        -- Save filter tags (Groups and Professions only)
+        if panel.filterTagsInput and panel.filterCategoryType then
+          local newTags = DBB2.api.ParseTagsString(panel.filterTagsInput:GetText())
+          DBB2.api.UpdateFilterTags(panel.filterCategoryType, newTags)
         end
       end
     end
@@ -180,7 +188,7 @@ DBB2:RegisterModule("config", function()
   versionFrame.version = versionFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
   versionFrame.version:SetFont("Fonts\\FRIZQT__.TTF", DBB2:GetFontSize(9))
   versionFrame.version:SetPoint("TOPRIGHT", versionFrame.name, "BOTTOMRIGHT", 0, -2)
-  versionFrame.version:SetText("v2.05")
+  versionFrame.version:SetText("v2.06")
   versionFrame.version:SetTextColor(0.5, 0.5, 0.5, 1)
   versionFrame.version:SetJustifyH("RIGHT")
   
@@ -663,6 +671,11 @@ DBB2:RegisterModule("config", function()
   local function CreateCategoryConfigPanel(panelName, categoryType)
     local panel = DBB2.gui.configTabs.panels[panelName]
     
+    -- Common sizing constants (defined early so filter section can use them)
+    local rowHeight = DBB2:ScaleSize(28)
+    local checkSize = DBB2:ScaleSize(14)
+    local nameWidth = DBB2:ScaleSize(150)
+    
     -- Section title
     local hr, hg, hb = DBB2:GetHighlightColor()
     local title = DBB2.api.CreateLabel(panel, panelName .. " - Edit Tags", 10)
@@ -677,6 +690,100 @@ DBB2:RegisterModule("config", function()
     local legendLabel = DBB2.api.CreateLabel(panel, "[ ] = Enable category", 8)
     legendLabel:SetPoint("TOPLEFT", desc, "BOTTOMLEFT", 0, -DBB2:ScaleSize(3))
     legendLabel:SetTextColor(0.4, 0.4, 0.4, 1)
+    
+    -- Track the last anchor element for container positioning
+    local containerAnchor = legendLabel
+    local containerAnchorOffset = -DBB2:ScaleSize(8)
+    
+    -- Filter Tags section (only for Groups and Professions)
+    if categoryType == "groups" or categoryType == "professions" then
+      -- Calculate right offset to match category rows (scrollbar width + 2 + row padding)
+      local sliderWidth = DBB2:ScaleSize(7)
+      local filterRightOffset = (sliderWidth + 2) + DBB2:ScaleSize(25)
+      
+      -- Create a row frame for filter tags to match category row styling
+      local filterRow = CreateFrame("Frame", "DBB2Config" .. panelName .. "FilterRow", panel)
+      filterRow:SetHeight(rowHeight)
+      filterRow:SetPoint("TOPLEFT", legendLabel, "BOTTOMLEFT", 0, -DBB2:ScaleSize(8))
+      filterRow:SetPoint("RIGHT", panel, "RIGHT", -(sliderWidth + 2), 0)
+      
+      -- Checkbox for enabled/disabled (same style as category checkboxes)
+      local filterCheck = DBB2.api.CreateCheckBox("DBB2Config" .. panelName .. "FilterEnabled", filterRow)
+      filterCheck:SetPoint("LEFT", 5, 0)
+      filterCheck:SetWidth(checkSize)
+      filterCheck:SetHeight(checkSize)
+      filterCheck:SetChecked(DBB2.api.IsFilterTagsEnabled(categoryType))
+      filterCheck.OnChecked = function(checked)
+        DBB2.api.SetFilterTagsEnabled(categoryType, checked)
+      end
+      
+      -- Filter label (same width and style as category name labels)
+      local filterLabel = DBB2.api.CreateLabel(filterRow, "Filter Tags", 10)
+      filterLabel:SetPoint("LEFT", filterCheck, "RIGHT", 8, 0)
+      filterLabel:SetWidth(nameWidth)
+      filterLabel:SetTextColor(hr, hg, hb, 0.9)
+      
+      -- Filter tags input (same style as category tags input)
+      local filterTagsInput = CreateFrame("EditBox", "DBB2Config" .. panelName .. "FilterTags", filterRow)
+      filterTagsInput:SetPoint("LEFT", filterLabel, "RIGHT", 5, 0)
+      filterTagsInput:SetPoint("RIGHT", filterRow, "RIGHT", -DBB2:ScaleSize(25), 0)
+      filterTagsInput:SetHeight(DBB2:ScaleSize(18))
+      filterTagsInput:SetAutoFocus(false)
+      filterTagsInput:EnableMouse(true)
+      filterTagsInput:SetTextInsets(DBB2:ScaleSize(5), DBB2:ScaleSize(5), DBB2:ScaleSize(5), DBB2:ScaleSize(5))
+      filterTagsInput:SetFont("Fonts\\FRIZQT__.TTF", DBB2:GetFontSize(10))
+      filterTagsInput:SetTextColor(1, 1, 1, 1)
+      filterTagsInput:SetJustifyH("LEFT")
+      DBB2:CreateBackdrop(filterTagsInput, nil, true)
+      
+      -- Load current filter tags
+      local filterConfig = DBB2.api.GetFilterTags(categoryType)
+      if filterConfig and filterConfig.tags then
+        filterTagsInput:SetText(DBB2.api.TagsToString(filterConfig.tags))
+      end
+      
+      filterTagsInput:SetScript("OnEscapePressed", function()
+        this:ClearFocus()
+      end)
+      
+      filterTagsInput:SetScript("OnEnterPressed", function()
+        local newTags = DBB2.api.ParseTagsString(this:GetText())
+        DBB2.api.UpdateFilterTags(categoryType, newTags)
+        this:ClearFocus()
+      end)
+      
+      filterTagsInput:SetScript("OnEditFocusLost", function()
+        local newTags = DBB2.api.ParseTagsString(this:GetText())
+        DBB2.api.UpdateFilterTags(categoryType, newTags)
+      end)
+      
+      filterTagsInput:SetScript("OnEnter", function()
+        if this.backdrop then
+          this.backdrop:SetBackdropBorderColor(hr, hg, hb, 1)
+        end
+        DBB2.api.ShowTooltip(this, "RIGHT", {
+          {"Filter Tags", "highlight"},
+          "Messages must contain one of these",
+          "tags IN ADDITION to category tags.",
+          {"Disable checkbox to match all.", "gray"}
+        })
+      end)
+      
+      filterTagsInput:SetScript("OnLeave", function()
+        if this.backdrop then
+          this.backdrop:SetBackdropBorderColor(0.3, 0.3, 0.3, 1)
+        end
+        DBB2.api.HideTooltip()
+      end)
+      
+      -- Store reference for Save & Reload
+      panel.filterTagsInput = filterTagsInput
+      panel.filterCategoryType = categoryType
+      
+      -- Update container anchor to be below filter row
+      containerAnchor = filterRow
+      containerAnchorOffset = -DBB2:ScaleSize(5)
+    end
     
     -- Scrollbar - fill panel height with bottom padding
     local sliderWidth = DBB2:ScaleSize(7)
@@ -696,19 +803,15 @@ DBB2:RegisterModule("config", function()
     slider.thumb:SetHeight(DBB2:ScaleSize(50))
     slider.thumb:SetTexture(hr, hg, hb, 0.5)
     
-    -- Container for rows (clips content) - fill panel below legend with bottom padding
+    -- Container for rows (clips content) - fill panel below filter section with bottom padding
     local container = CreateFrame("Frame", "DBB2Config" .. panelName .. "Container", panel)
-    container:SetPoint("TOPLEFT", legendLabel, "BOTTOMLEFT", 0, -DBB2:ScaleSize(8))
+    container:SetPoint("TOPLEFT", containerAnchor, "BOTTOMLEFT", 0, containerAnchorOffset)
     container:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -(sliderWidth + 2), DBB2:ScaleSize(5))
     
     panel.container = container
     panel.slider = slider
     panel.categoryRows = {}
     panel.scrollOffset = 0
-    
-    local rowHeight = DBB2:ScaleSize(28)
-    local checkSize = DBB2:ScaleSize(14)
-    local nameWidth = DBB2:ScaleSize(150)
     
     -- Helper to get actual container height from rendered positions
     local function GetContainerHeight()

@@ -238,6 +238,166 @@ function DBB2.api.ToggleCategoryCollapsed(categoryType, categoryName)
   return not isCollapsed
 end
 
+-- =====================================================
+-- FILTER TAGS API
+-- =====================================================
+-- Filter tags are additional tags that must ALSO match (in addition to category tags)
+-- when enabled. This allows filtering for specific message types like LFG/LFM for groups
+-- or LFW/WTB/WTS for professions.
+
+-- [ GetFilterTags ]
+-- Returns filter tags config for a category type
+-- 'categoryType' [string] "groups" or "professions"
+-- return:        [table]  { enabled = bool, tags = {...} }
+function DBB2.api.GetFilterTags(categoryType)
+  if not categoryType then return nil end
+  if not DBB2_Config.filterTags then return nil end
+  return DBB2_Config.filterTags[categoryType]
+end
+
+-- [ IsFilterTagsEnabled ]
+-- Returns whether filter tags are enabled for a category type
+-- 'categoryType' [string] "groups" or "professions"
+-- return:        [boolean]
+function DBB2.api.IsFilterTagsEnabled(categoryType)
+  local filter = DBB2.api.GetFilterTags(categoryType)
+  if not filter then return false end
+  return filter.enabled or false
+end
+
+-- [ SetFilterTagsEnabled ]
+-- Enables or disables filter tags for a category type
+-- 'categoryType' [string]  "groups" or "professions"
+-- 'enabled'      [boolean] enabled state
+-- return:        [boolean] true if set successfully
+function DBB2.api.SetFilterTagsEnabled(categoryType, enabled)
+  if not categoryType then return false end
+  if not DBB2_Config.filterTags then
+    DBB2_Config.filterTags = {}
+  end
+  if not DBB2_Config.filterTags[categoryType] then
+    DBB2_Config.filterTags[categoryType] = { enabled = false, tags = {} }
+  end
+  DBB2_Config.filterTags[categoryType].enabled = enabled and true or false
+  return true
+end
+
+-- [ UpdateFilterTags ]
+-- Updates filter tags for a category type
+-- 'categoryType' [string] "groups" or "professions"
+-- 'newTags'      [table]  array of tag strings
+-- return:        [boolean] true if updated
+function DBB2.api.UpdateFilterTags(categoryType, newTags)
+  if not categoryType then return false end
+  if not DBB2_Config.filterTags then
+    DBB2_Config.filterTags = {}
+  end
+  if not DBB2_Config.filterTags[categoryType] then
+    DBB2_Config.filterTags[categoryType] = { enabled = false, tags = {} }
+  end
+  DBB2_Config.filterTags[categoryType].tags = newTags or {}
+  return true
+end
+
+-- [ MatchFilterTags ]
+-- Checks if a message matches any of the filter tags for a category type
+-- Uses regex matching via DBB2.api.MatchRegex for patterns containing special chars
+-- 'message'      [string] the message text
+-- 'categoryType' [string] "groups" or "professions"
+-- return:        [boolean] true if matches (or if filter is disabled)
+function DBB2.api.MatchFilterTags(message, categoryType)
+  -- If filter is disabled, always return true (no filtering)
+  if not DBB2.api.IsFilterTagsEnabled(categoryType) then
+    return true
+  end
+  
+  local filter = DBB2.api.GetFilterTags(categoryType)
+  if not filter or not filter.tags then
+    return true  -- No tags defined, pass through
+  end
+  
+  -- Quick check: any tags at all?
+  local hasAnyTags = false
+  for _ in ipairs(filter.tags) do
+    hasAnyTags = true
+    break
+  end
+  if not hasAnyTags then
+    return true  -- No tags, pass through
+  end
+  
+  local lowerMsg = string_lower(message or "")
+  if lowerMsg == "" then return false end
+  
+  local msgLen = string_len(lowerMsg)
+  
+  for _, tag in ipairs(filter.tags) do
+    local lowerTag = string_lower(tag)
+    local tagLen = string_len(lowerTag)
+    
+    -- Check if tag contains regex special characters
+    local isRegex = string_find(lowerTag, "[%[%]%.%*%+%?%^%$%(%)%%]")
+    
+    if isRegex then
+      -- Use regex matching
+      if DBB2.api.MatchRegex(lowerMsg, lowerTag) then
+        return true
+      end
+    else
+      -- Plain text matching with word boundaries
+      local startPos = 1
+      while true do
+        local foundPos = string_find(lowerMsg, lowerTag, startPos, true)
+        if not foundPos then
+          break
+        end
+        
+        -- Check word boundaries
+        local charBefore = ""
+        if foundPos > 1 then
+          charBefore = string_sub(lowerMsg, foundPos - 1, foundPos - 1)
+        end
+        
+        local afterPos = foundPos + tagLen
+        local charAfter = ""
+        if afterPos <= msgLen then
+          charAfter = string_sub(lowerMsg, afterPos, afterPos)
+        end
+        
+        local validBefore = (foundPos == 1) or not string_find(charBefore, "[%w]")
+        local validAfter = (afterPos > msgLen) or not string_find(charAfter, "[%w]")
+        
+        -- Also allow digits after (like LF1M, LF2M)
+        if not validAfter and string_find(charAfter, "%d") then
+          local digitEndPos = afterPos
+          while digitEndPos <= msgLen and string_find(string_sub(lowerMsg, digitEndPos, digitEndPos), "%d") do
+            digitEndPos = digitEndPos + 1
+          end
+          -- Check for 'M' after digits (for patterns like LF1M, LF2M)
+          if digitEndPos <= msgLen then
+            local afterDigits = string_sub(lowerMsg, digitEndPos, digitEndPos)
+            if string_lower(afterDigits) == "m" then
+              digitEndPos = digitEndPos + 1
+            end
+          end
+          -- Check boundary after digits/M
+          if digitEndPos > msgLen or not string_find(string_sub(lowerMsg, digitEndPos, digitEndPos), "[%w]") then
+            validAfter = true
+          end
+        end
+        
+        if validBefore and validAfter then
+          return true
+        end
+        
+        startPos = foundPos + 1
+      end
+    end
+  end
+  
+  return false
+end
+
 -- [ GetCategories ]
 -- Returns categories for a given type
 -- 'categoryType' [string] "groups", "professions", or "hardcore"
@@ -379,11 +539,13 @@ end
 -- Returns true if message contains any of the category's tags as whole words
 -- Also matches tags followed by 1-2 digits (e.g., "zg15", "ony12") for raid group sizes
 -- Special case: "aq" tag only matches with "40" suffix to distinguish from aq20 (Ruins)
+-- If filter tags are enabled for the category type, message must ALSO match a filter tag
 -- 'message'       [string]  the message text
 -- 'category'      [table]   category object with .selected and .tags
 -- 'ignoreSelected' [boolean] if true, skip the .selected check (for mode 2 filtering)
+-- 'categoryType'  [string]  optional - "groups", "professions", or "hardcore" for filter tag checking
 -- return:         [boolean] true if matches
-function DBB2.api.MatchMessageToCategory(message, category, ignoreSelected)
+function DBB2.api.MatchMessageToCategory(message, category, ignoreSelected, categoryType)
   if not category then
     return false
   end
@@ -406,6 +568,14 @@ function DBB2.api.MatchMessageToCategory(message, category, ignoreSelected)
   
   local lowerMsg = string_lower(message or "")
   if lowerMsg == "" then return false end
+  
+  -- Check filter tags first (if enabled for this category type)
+  -- This is an AND condition - message must match BOTH filter tags AND category tags
+  if categoryType and (categoryType == "groups" or categoryType == "professions") then
+    if not DBB2.api.MatchFilterTags(message, categoryType) then
+      return false
+    end
+  end
   
   -- Ensure pre-computed lowercase tags exist
   EnsureTagsPrecomputed(category)
@@ -549,23 +719,23 @@ function DBB2.api.CategorizeMessage(message, ignoreSelected)
   if not message then return result end
   if not DBB2_Config.categories then return result end
   
-  -- Check groups
+  -- Check groups (pass categoryType for filter tag checking)
   for _, cat in ipairs(DBB2_Config.categories.groups or {}) do
-    if DBB2.api.MatchMessageToCategory(message, cat, ignoreSelected) then
+    if DBB2.api.MatchMessageToCategory(message, cat, ignoreSelected, "groups") then
       table_insert(result.groups, cat.name)
     end
   end
   
-  -- Check professions
+  -- Check professions (pass categoryType for filter tag checking)
   for _, cat in ipairs(DBB2_Config.categories.professions or {}) do
-    if DBB2.api.MatchMessageToCategory(message, cat, ignoreSelected) then
+    if DBB2.api.MatchMessageToCategory(message, cat, ignoreSelected, "professions") then
       table_insert(result.professions, cat.name)
     end
   end
   
-  -- Check hardcore
+  -- Check hardcore (no filter tags for hardcore)
   for _, cat in ipairs(DBB2_Config.categories.hardcore or {}) do
-    if DBB2.api.MatchMessageToCategory(message, cat, ignoreSelected) then
+    if DBB2.api.MatchMessageToCategory(message, cat, ignoreSelected, "hardcore") then
       table_insert(result.hardcore, cat.name)
       result.isHardcore = true
     end

@@ -5,6 +5,19 @@
 -- This module provides default data and the ResetCategoriesToDefaults function.
 
 DBB2:RegisterModule("categories", function()
+  -- Default filter tags for category types (must match in addition to category tags when enabled)
+  -- These are global filters that apply to all categories within a type
+  local defaultFilterTags = {
+    groups = {
+      enabled = false,
+      tags = { "LF", "LFG", "LFM", "LF[0-9][0-9]?M" }
+    },
+    professions = {
+      enabled = false,
+      tags = { "LF", "LFW", "WTB", "WTS" }
+    }
+  }
+  
   -- Default category definitions
   local defaultGroups = {
     { name = "Custom Topic",                  selected = false, tags = {} },
@@ -71,6 +84,17 @@ DBB2:RegisterModule("categories", function()
     DBB2_Config.categories = {}
   end
   
+  -- Initialize filter tags config
+  if not DBB2_Config.filterTags then
+    DBB2_Config.filterTags = {}
+  end
+  if not DBB2_Config.filterTags.groups then
+    DBB2_Config.filterTags.groups = DBB2.api.DeepCopy(defaultFilterTags.groups)
+  end
+  if not DBB2_Config.filterTags.professions then
+    DBB2_Config.filterTags.professions = DBB2.api.DeepCopy(defaultFilterTags.professions)
+  end
+  
   -- Helper to check if a table has any array elements (more reliable than table.getn in Lua 5.0)
   local function hasArrayElements(t)
     if not t then return false end
@@ -121,5 +145,9 @@ DBB2:RegisterModule("categories", function()
     DBB2_Config.categories.groups = DBB2.api.DeepCopy(defaultGroups)
     DBB2_Config.categories.professions = DBB2.api.DeepCopy(defaultProfessions)
     DBB2_Config.categories.hardcore = DBB2.api.DeepCopy(defaultHardcore)
+    DBB2_Config.filterTags = {
+      groups = DBB2.api.DeepCopy(defaultFilterTags.groups),
+      professions = DBB2.api.DeepCopy(defaultFilterTags.professions)
+    }
   end
 end)
