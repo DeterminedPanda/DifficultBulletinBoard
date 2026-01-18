@@ -353,6 +353,10 @@ end
 -- BLACKLIST API
 -- =====================
 
+-- Default blacklist keywords (used by InitBlacklist and reset functions)
+-- NOTE: Auto-reset on version change is handled in modules/categories.lua via CATEGORY_VERSION
+DBB2.DEFAULT_BLACKLIST_KEYWORDS = {"recruit*", "<*>", "[???]", "[??]"}
+
 -- [ InitBlacklist ]
 -- Initializes blacklist config if not present
 function DBB2.api.InitBlacklist()
@@ -361,7 +365,7 @@ function DBB2.api.InitBlacklist()
       enabled = true,
       hideFromChat = true,  -- Hide blacklisted messages from chat (enabled by default)
       players = {},
-      keywords = {"[\\[(][a-z][a-z]?[a-z]?[\\])]", "recruit(ing)?", "<.*>"}
+      keywords = DBB2.api.DeepCopy(DBB2.DEFAULT_BLACKLIST_KEYWORDS)
     }
   end
   -- Ensure all fields exist
@@ -375,7 +379,7 @@ function DBB2.api.InitBlacklist()
     DBB2_Config.blacklist.players = {}
   end
   if not DBB2_Config.blacklist.keywords then
-    DBB2_Config.blacklist.keywords = {"[\\[(][a-z][a-z]?[a-z]?[\\])]", "recruit(ing)?", "<.*>"}
+    DBB2_Config.blacklist.keywords = DBB2.api.DeepCopy(DBB2.DEFAULT_BLACKLIST_KEYWORDS)
   end
 end
 
@@ -488,66 +492,15 @@ function DBB2.api.RemoveKeywordFromBlacklist(keyword)
   return false
 end
 
--- [ WildcardToPattern ]
--- Converts a simple wildcard pattern to a Lua pattern
--- Supports: ? = single character, * = any characters (including none)
--- 'wildcard'   [string]        the wildcard pattern
--- return:      [string]        Lua pattern string
-function DBB2.api.WildcardToPattern(wildcard)
-  if not wildcard then return "" end
-  
-  -- Escape Lua pattern special characters (except ? and * which we handle)
-  local pattern = wildcard
-  pattern = string_gsub(pattern, "%%", "%%%%")
-  pattern = string_gsub(pattern, "%^", "%%^")
-  pattern = string_gsub(pattern, "%$", "%%$")
-  pattern = string_gsub(pattern, "%(", "%%(")
-  pattern = string_gsub(pattern, "%)", "%%)")
-  pattern = string_gsub(pattern, "%.", "%%.")
-  pattern = string_gsub(pattern, "%[", "%%[")
-  pattern = string_gsub(pattern, "%]", "%%]")
-  pattern = string_gsub(pattern, "%+", "%%+")
-  pattern = string_gsub(pattern, "%-", "%%-")
-  
-  -- Convert wildcards: ? -> single char (any), * -> any chars (including spaces)
-  pattern = string_gsub(pattern, "%*", ".*")
-  pattern = string_gsub(pattern, "%?", ".")
-  
-  return pattern
-end
-
--- [ MatchWildcard ]
--- Checks if text matches a wildcard pattern
--- 'text'       [string]        the text to check
--- 'wildcard'   [string]        the wildcard pattern (supports ? and *)
--- return:      [boolean]       true if matches
-function DBB2.api.MatchWildcard(text, wildcard)
-  if not text or not wildcard then return false end
-  
-  -- If no wildcards, do plain text search (faster)
-  if not string_find(wildcard, "[%?%*]") then
-    return string_find(text, wildcard, 1, true) ~= nil
-  end
-  
-  local pattern = DBB2.api.WildcardToPattern(wildcard)
-  return string_find(text, pattern) ~= nil
-end
-
--- [ IsKeywordRegexPattern ]
--- Checks if a keyword contains regex special characters (meaning it's a regex pattern)
--- Plain keywords get word boundary treatment, regex patterns are used as-is
+-- [ IsKeywordWildcardPattern ]
+-- Checks if a keyword contains wildcard special characters (meaning it's a pattern)
+-- Plain keywords get word boundary treatment, wildcard patterns are used as-is
 -- 'keyword'    [string]        the keyword to check
--- return:      [boolean]       true if keyword contains regex syntax
-function DBB2.api.IsKeywordRegexPattern(keyword)
+-- return:      [boolean]       true if keyword contains wildcard syntax
+function DBB2.api.IsKeywordWildcardPattern(keyword)
   if not keyword then return false end
-  -- Check for common regex metacharacters that indicate intentional regex usage
-  -- These are: . * + ? [ ] ( ) | ^ $ \ < >
-  -- Note: We check for patterns that are unlikely in plain text
-  if string_find(keyword, "[%[%]%(%)%|%^%$\\<>]") then
-    return true
-  end
-  -- Check for .* .+ .? which are common regex patterns
-  if string_find(keyword, "%.[%*%+%?]") then
+  -- Check for wildcard metacharacters: * ? [ ] { } \
+  if string_find(keyword, "[%*%?%[%]%{%}\\]") then
     return true
   end
   return false
@@ -608,8 +561,8 @@ end
 -- Checks if a message contains any blacklisted keyword
 -- Plain keywords: matched with word boundaries (won't match inside other words)
 --   e.g., "na" matches "na", "na!", "na?" but NOT "naxx"
--- Regex keywords: matched as-is using regex API (for advanced patterns)
---   e.g., "na.*" would match "naxx" if you want loose matching
+-- Wildcard keywords: matched using wildcard API (for pattern matching)
+--   e.g., "na*" would match "naxx" if you want loose matching
 -- Returns: matched (boolean), matchedKeywords (table of matched keyword strings)
 function DBB2.api.IsMessageBlacklistedByKeyword(message)
   DBB2.api.InitBlacklist()
@@ -622,10 +575,10 @@ function DBB2.api.IsMessageBlacklistedByKeyword(message)
   for _, keyword in ipairs(DBB2_Config.blacklist.keywords) do
     local matched = false
     
-    if DBB2.api.IsKeywordRegexPattern(keyword) then
-      -- Regex pattern: use regex API for matching (case-insensitive)
-      if DBB2.api.regex and DBB2.api.regex.Match then
-        matched = DBB2.api.regex.Match(message, keyword, true)
+    if DBB2.api.IsKeywordWildcardPattern(keyword) then
+      -- Wildcard pattern: use wildcards API for matching (case-insensitive)
+      if DBB2.api.wildcards and DBB2.api.wildcards.Match then
+        matched = DBB2.api.wildcards.Match(message, keyword, true)
       end
     else
       -- Plain keyword: use word boundary matching

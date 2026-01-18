@@ -1,5 +1,4 @@
 -- Create main addon namespace
-DEFAULT_CHAT_FRAME:AddMessage("DBB2: Main file loading...")
 DBB2 = CreateFrame("Frame", nil, UIParent)
 DBB2:RegisterEvent("ADDON_LOADED")
 DBB2:RegisterEvent("CHAT_MSG_CHANNEL")

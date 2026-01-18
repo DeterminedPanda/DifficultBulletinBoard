@@ -4,13 +4,24 @@
 -- NOTE: Category API functions are in api/categories.lua
 -- This module provides default data and the ResetCategoriesToDefaults function.
 
+-- =====================================================
+-- CATEGORY VERSION - INCREMENT THIS WHEN YOU CHANGE DEFAULT TAGS
+-- =====================================================
+-- When you modify any default tags below, bump this number.
+-- On next login, users will get ALL tag-related settings auto-reset to new defaults:
+--   - Category tags (groups, professions, hardcore)
+--   - Filter tags (LF/LFG/LFM, LFW/WTB/WTS)
+--   - Blacklist keywords
+-- This only happens ONCE per version bump, so users won't lose custom changes repeatedly.
+local CATEGORY_VERSION = 4
+
 DBB2:RegisterModule("categories", function()
   -- Default filter tags for category types (must match in addition to category tags when enabled)
   -- These are global filters that apply to all categories within a type
   local defaultFilterTags = {
     groups = {
       enabled = false,
-      tags = { "LF", "LFG", "LFM", "LF[0-9][0-9]?M" }
+      tags = { "LF", "LFG", "LFM", "LF*M" }
     },
     professions = {
       enabled = false,
@@ -135,8 +146,33 @@ DBB2:RegisterModule("categories", function()
     DBB2_Config.categoryCollapsed = {}
   end
   
+  -- =====================================================
+  -- AUTO-RESET ON VERSION CHANGE
+  -- =====================================================
+  -- Check if category version has changed - if so, auto-reset ALL tag-related settings
+  -- This ensures users get updated tags when you modify defaults, but only once
+  local savedVersion = DBB2_Config.categoryVersion or 0
+  if savedVersion < CATEGORY_VERSION then
+    -- Reset categories to new defaults
+    DBB2_Config.categories.groups = DBB2.api.DeepCopy(defaultGroups)
+    DBB2_Config.categories.professions = DBB2.api.DeepCopy(defaultProfessions)
+    DBB2_Config.categories.hardcore = DBB2.api.DeepCopy(defaultHardcore)
+    -- Reset filter tags to new defaults
+    DBB2_Config.filterTags = {
+      groups = DBB2.api.DeepCopy(defaultFilterTags.groups),
+      professions = DBB2.api.DeepCopy(defaultFilterTags.professions)
+    }
+    -- Reset blacklist keywords to new defaults (preserves enabled state and player list)
+    if DBB2_Config.blacklist then
+      DBB2_Config.blacklist.keywords = DBB2.api.DeepCopy(DBB2.DEFAULT_BLACKLIST_KEYWORDS)
+    end
+    -- Update stored version so this only happens once
+    DBB2_Config.categoryVersion = CATEGORY_VERSION
+    DEFAULT_CHAT_FRAME:AddMessage("|cff33ffccDBB2:|r Tags updated to v" .. CATEGORY_VERSION .. " defaults.")
+  end
+  
   -- [ ResetCategoriesToDefaults ]
-  -- Resets all categories to default values
+  -- Resets all tag-related settings to default values (categories, filter tags, blacklist keywords)
   -- NOTE: This function lives in DBB2.modules (not DBB2.api) because it needs
   -- access to the default tables defined in this module. API functions in
   -- api/categories.lua operate on the saved config data, while this function
@@ -149,5 +185,9 @@ DBB2:RegisterModule("categories", function()
       groups = DBB2.api.DeepCopy(defaultFilterTags.groups),
       professions = DBB2.api.DeepCopy(defaultFilterTags.professions)
     }
+    -- Reset blacklist keywords (preserves enabled state and player list)
+    if DBB2_Config.blacklist then
+      DBB2_Config.blacklist.keywords = DBB2.api.DeepCopy(DBB2.DEFAULT_BLACKLIST_KEYWORDS)
+    end
   end
 end)

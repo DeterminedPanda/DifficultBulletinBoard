@@ -7,7 +7,7 @@
 
 DifficultBulletinBoard.lua
 api\utility.lua
-api\regex.lua
+api\wildcards.lua
 api\categories.lua
 api\lockouts.lua
 api\messages.lua

@@ -117,7 +117,7 @@ DBB2:RegisterModule("config", function()
       enabled = true,
       hideFromChat = true,
       players = {},
-      keywords = {"[\\[(][a-z][a-z]?[a-z]?[\\])]", "recruit(ing)?", "<.*>"}
+      keywords = {"recruit*", "<*>", "[???]", "[??]"}
     }
     -- Reset GUI position and size to defaults
     DBB2_Config.position = nil
@@ -189,7 +189,7 @@ DBB2:RegisterModule("config", function()
   versionFrame.version = versionFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
   versionFrame.version:SetFont("Fonts\\FRIZQT__.TTF", DBB2:GetFontSize(9))
   versionFrame.version:SetPoint("TOPRIGHT", versionFrame.name, "BOTTOMRIGHT", 0, -2)
-  versionFrame.version:SetText("v2.06")
+  versionFrame.version:SetText("v2.07")
   versionFrame.version:SetTextColor(0.5, 0.5, 0.5, 1)
   versionFrame.version:SetJustifyH("RIGHT")
   
@@ -1149,8 +1149,8 @@ DBB2:RegisterModule("config", function()
   keywordsTitle:SetPoint("TOPLEFT", importExportBox, "BOTTOMLEFT", 0, -blSectionGap)
   keywordsTitle:SetTextColor(hr, hg, hb, 1)
   
-  -- Helper text for regex patterns
-  local keywordsHelp = DBB2.api.CreateLabel(blContainer, "Supports regex: .* (any), .+ (1+), [a-z], \\d, | (or). See api/regex.lua", 8)
+  -- Helper text for wildcard patterns
+  local keywordsHelp = DBB2.api.CreateLabel(blContainer, "Supports wildcards: * (any), ? (one char), [a-z], {a,b}. See api/wildcards.lua", 8)
   keywordsHelp:SetPoint("TOPLEFT", keywordsTitle, "BOTTOMLEFT", 0, -DBB2:ScaleSize(2))
   keywordsHelp:SetTextColor(0.5, 0.5, 0.5, 1)
   
@@ -1219,9 +1219,10 @@ DBB2:RegisterModule("config", function()
   
   -- Pattern descriptions for common/default patterns
   local patternDescriptions = {
-    ["<.*>"] = "<Guild Name>",
-    ["[\\[(][a-z][a-z]?[a-z]?[\\])]"] = "[PL], (RUS)",
-    ["recruit(ing)?"] = "recruit, recruiting",
+    ["<*>"] = "<Guild Name>",
+    ["[??]"] = "[pl], [it]",
+    ["[???]"] = "[pol], [ita]",
+    ["recruit*"] = "recruit, recruiting",
   }
   
   -- Helper function to create a blacklist row

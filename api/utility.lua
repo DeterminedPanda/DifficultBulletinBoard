@@ -186,6 +186,7 @@ end
 
 -- [ IsChannelWhitelisted ]
 -- Checks if a channel is in the whitelist (LFG-relevant)
+-- Uses prefix matching to handle channels with city suffixes (e.g., "Trade - Orgrimmar")
 -- 'channelName' [string]       the channel name to check
 -- return:       [boolean]      true if channel should be captured
 function DBB2.api.IsChannelWhitelisted(channelName)
@@ -194,8 +195,16 @@ function DBB2.api.IsChannelWhitelisted(channelName)
   local whitelist = DBB2.api.GetWhitelistedChannels()
   
   for _, name in ipairs(whitelist) do
-    if string.lower(name) == lowerName then
-      return true
+    local lowerWhitelist = string.lower(name)
+    local whitelistLen = string.len(lowerWhitelist)
+    -- Use prefix matching: "trade - orgrimmar" starts with "trade"
+    -- Check if channel name starts with whitelist entry (plain string comparison)
+    if string.sub(lowerName, 1, whitelistLen) == lowerWhitelist then
+      -- Ensure it's a word boundary (next char is space, dash, or end of string)
+      local nextChar = string.sub(lowerName, whitelistLen + 1, whitelistLen + 1)
+      if nextChar == "" or nextChar == " " or nextChar == "-" then
+        return true
+      end
     end
   end
   return false

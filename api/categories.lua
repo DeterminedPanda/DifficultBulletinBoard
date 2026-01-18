@@ -301,7 +301,7 @@ end
 
 -- [ MatchFilterTags ]
 -- Checks if a message matches any of the filter tags for a category type
--- Uses regex matching via DBB2.api.MatchRegex for patterns containing special chars
+-- Uses wildcard matching via DBB2.api.MatchWildcard for patterns containing special chars
 -- 'message'      [string] the message text
 -- 'categoryType' [string] "groups" or "professions"
 -- return:        [boolean] true if matches (or if filter is disabled)
@@ -335,12 +335,12 @@ function DBB2.api.MatchFilterTags(message, categoryType)
     local lowerTag = string_lower(tag)
     local tagLen = string_len(lowerTag)
     
-    -- Check if tag contains regex special characters
-    local isRegex = string_find(lowerTag, "[%[%]%.%*%+%?%^%$%(%)%%]")
+    -- Check if tag contains wildcard special characters
+    local isWildcard = string_find(lowerTag, "[%*%?%[%]%{%}\\]")
     
-    if isRegex then
-      -- Use regex matching
-      if DBB2.api.MatchRegex(lowerMsg, lowerTag) then
+    if isWildcard then
+      -- Use wildcard matching
+      if DBB2.api.MatchWildcard(lowerMsg, lowerTag) then
         return true
       end
     else
