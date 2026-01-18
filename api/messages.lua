@@ -137,13 +137,17 @@ end
 -- hideFromChat modes: 0 = disabled, 1 = enabled (selected only), 2 = enabled (all categories)
 -- Mode 1: Hide messages matching selected categories only
 -- Mode 2: Hide messages matching any category (even disabled ones)
--- Also hides blacklisted messages and duplicates when enabled
+-- Also hides blacklisted messages when blacklist.hideFromChat is enabled (independent of hideFromChat mode)
+-- Also hides duplicates when hideFromChat is enabled
 -- IMPORTANT: Never hides system messages (like /who results) even if they match category patterns
 -- IMPORTANT: Only filters messages from World, Hardcore, or Trade channels
 -- IMPORTANT: Never filters the player's own messages
 function DBB2.api.ShouldHideFromChat(message, sender)
   local mode = DBB2_Config.hideFromChat or 0
-  if mode == 0 or mode == false then
+  local hideBlacklisted = DBB2.api.IsBlacklistHideFromChatEnabled()
+  
+  -- If both hideFromChat and hideBlacklisted are disabled, nothing to filter
+  if (mode == 0 or mode == false) and not hideBlacklisted then
     return false
   end
   
@@ -165,12 +169,17 @@ function DBB2.api.ShouldHideFromChat(message, sender)
     return false
   end
   
-  -- Check blacklist first (always hide blacklisted when hideFromChat is enabled)
-  if DBB2.api.IsMessageBlacklisted then
+  -- Check blacklist (hide if blacklist.hideFromChat is enabled, independent of hideFromChat mode)
+  if hideBlacklisted and DBB2.api.IsMessageBlacklisted then
     local blocked = DBB2.api.IsMessageBlacklisted(message, sender)
     if blocked then
       return true
     end
+  end
+  
+  -- If hideFromChat mode is disabled, don't check categories or duplicates
+  if mode == 0 or mode == false then
+    return false
   end
   
   -- Check if message matches categories
@@ -252,7 +261,11 @@ function DBB2.api.SetupChatFilter()
           end
           
           -- Check if this message should be filtered
-          if msg and DBB2_Config and DBB2_Config.hideFromChat and DBB2_Config.hideFromChat ~= 0 then
+          -- Filter runs if hideFromChat is enabled OR hideBlacklistedFromChat is enabled
+          local hideFromChatEnabled = DBB2_Config and DBB2_Config.hideFromChat and DBB2_Config.hideFromChat ~= 0
+          local hideBlacklistedEnabled = DBB2_Config and DBB2_Config.blacklist and DBB2_Config.blacklist.hideFromChat
+          
+          if msg and (hideFromChatEnabled or hideBlacklistedEnabled) then
             -- Extract the actual message text (remove color codes and sender info for matching)
             local cleanMsg = msg
             -- Remove color codes |cXXXXXXXX and |r
@@ -326,6 +339,7 @@ function DBB2.api.InitBlacklist()
   if not DBB2_Config.blacklist then
     DBB2_Config.blacklist = {
       enabled = true,
+      hideFromChat = true,  -- Hide blacklisted messages from chat (enabled by default)
       players = {},
       keywords = {"[\\[(][a-z][a-z]?[a-z]?[\\])]", "recruit(ing)?", "<.*>"}
     }
@@ -333,6 +347,9 @@ function DBB2.api.InitBlacklist()
   -- Ensure all fields exist
   if DBB2_Config.blacklist.enabled == nil then
     DBB2_Config.blacklist.enabled = false
+  end
+  if DBB2_Config.blacklist.hideFromChat == nil then
+    DBB2_Config.blacklist.hideFromChat = true  -- Default to enabled
   end
   if not DBB2_Config.blacklist.players then
     DBB2_Config.blacklist.players = {}
@@ -354,6 +371,20 @@ end
 function DBB2.api.SetBlacklistEnabled(enabled)
   DBB2.api.InitBlacklist()
   DBB2_Config.blacklist.enabled = enabled
+end
+
+-- [ IsBlacklistHideFromChatEnabled ]
+-- Returns whether hiding blacklisted messages from chat is enabled
+function DBB2.api.IsBlacklistHideFromChatEnabled()
+  DBB2.api.InitBlacklist()
+  return DBB2_Config.blacklist.hideFromChat
+end
+
+-- [ SetBlacklistHideFromChat ]
+-- Enables or disables hiding blacklisted messages from chat
+function DBB2.api.SetBlacklistHideFromChat(enabled)
+  DBB2.api.InitBlacklist()
+  DBB2_Config.blacklist.hideFromChat = enabled
 end
 
 -- [ AddPlayerToBlacklist ]

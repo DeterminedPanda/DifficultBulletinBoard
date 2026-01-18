@@ -115,6 +115,7 @@ DBB2:RegisterModule("config", function()
     -- Reset blacklist to defaults
     DBB2_Config.blacklist = {
       enabled = true,
+      hideFromChat = true,
       players = {},
       keywords = {"[\\[(][a-z][a-z]?[a-z]?[\\])]", "recruit(ing)?", "<.*>"}
     }
@@ -1097,11 +1098,36 @@ DBB2:RegisterModule("config", function()
     DBB2.api.SetBlacklistEnabled(checked)
   end
   
+  -- Hide from chat checkbox (enabled by default)
+  local blHideFromChatCheck = DBB2.api.CreateCheckBox("DBB2BlacklistHideFromChat", blContainer, "Hide messages from Chat", 9)
+  blHideFromChatCheck:SetPoint("TOPLEFT", blEnabledCheck, "BOTTOMLEFT", 0, -DBB2:ScaleSize(5))
+  blHideFromChatCheck:SetChecked(DBB2.api.IsBlacklistHideFromChatEnabled())
+  blHideFromChatCheck.OnChecked = function(checked)
+    DBB2.api.SetBlacklistHideFromChat(checked)
+  end
+  
+  -- Add tooltip for hide from chat option
+  blHideFromChatCheck:SetScript("OnEnter", function()
+    local r, g, b = DBB2:GetHighlightColor()
+    this.backdrop:SetBackdropBorderColor(r, g, b, 1)
+    DBB2.api.ShowTooltip(this, "RIGHT", {
+      {"Hide Blacklisted from Chat", "highlight"},
+      "Hide messages matching blacklisted",
+      "keywords from your chat window.",
+      {"Works with Hide from Chat option.", "gray"}
+    })
+  end)
+  
+  blHideFromChatCheck:SetScript("OnLeave", function()
+    this.backdrop:SetBackdropBorderColor(0.3, 0.3, 0.3, 1)
+    DBB2.api.HideTooltip()
+  end)
+  
   -- =====================
   -- IMPORT/EXPORT SECTION (first)
   -- =====================
   local importExportTitle = DBB2.api.CreateLabel(blContainer, "Import / Export", 10)
-  importExportTitle:SetPoint("TOPLEFT", blEnabledCheck, "BOTTOMLEFT", 0, -blSectionGap)
+  importExportTitle:SetPoint("TOPLEFT", blHideFromChatCheck, "BOTTOMLEFT", 0, -blSectionGap)
   importExportTitle:SetTextColor(hr, hg, hb, 1)
   
   local importExportDesc = DBB2.api.CreateLabel(blContainer, "Copy to export, paste and press Enter to import (comma separated)", 9)
