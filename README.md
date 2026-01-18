@@ -15,34 +15,8 @@
 - **Notification System**: Be notified if an entry gets added to a specific topic.
 - **Lockouts Track**: Keep track of raids your are saved to.
 
-### Group Logs
 
-<img width="813" height="456" alt="groups logs" src="https://github.com/user-attachments/assets/ea40afdc-5d4a-4fd9-8174-e09b05a06f48" />
-
-
-
-### Group Finder
-
-<img width="811" height="456" alt="groups" src="https://github.com/user-attachments/assets/27471241-0e7c-4939-8a79-99ea574cadc2" />
-
-
-
-### Profession Search
-
-<img width="816" height="457" alt="professions" src="https://github.com/user-attachments/assets/6fcc0029-cb01-46ca-ada1-bdf6430bd7d0" />
-
-
-
-### Hardcore Messages
-
-<img width="816" height="458" alt="hardcore" src="https://github.com/user-attachments/assets/c8f1eafa-cf77-4859-b182-15d8995ea667" />
-
-
-
-## Settings
-
-<img width="815" height="457" alt="settings" src="https://github.com/user-attachments/assets/e82e0273-2089-4959-8263-1fbb0c231657" />
-
+![ezgif-86e6b1303c5c58b6](https://github.com/user-attachments/assets/08221dfa-02db-4437-b1c1-6466a95c6aa5)
 
 
 ## Installation
