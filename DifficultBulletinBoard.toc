@@ -6,7 +6,6 @@
 ## SavedVariablesPerCharacter: DBB2_Config
 
 DifficultBulletinBoard.lua
-api\debug.lua
 api\utility.lua
 api\regex.lua
 api\categories.lua

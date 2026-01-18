@@ -298,27 +298,6 @@ function DBB2:GetHighlightColor()
   return c.r, c.g, c.b, c.a
 end
 
--- Slash command for debug mode toggle
-SLASH_DBB2DEBUG1 = "/dbb2debug"
-SlashCmdList["DBB2DEBUG"] = function(msg)
-  DBB2_Config.debugMode = not DBB2_Config.debugMode
-  if DBB2_Config.debugMode then
-    DEFAULT_CHAT_FRAME:AddMessage("|cff33ffcc[DBB2]|r Debug mode |cff00ff00ENABLED|r - spam filter info will be shown")
-  else
-    DEFAULT_CHAT_FRAME:AddMessage("|cff33ffcc[DBB2]|r Debug mode |cffff0000DISABLED|r")
-  end
-end
-
--- Slash command to test filter tags
-SLASH_DBB2TESTFILTER1 = "/dbb2testfilter"
-SlashCmdList["DBB2TESTFILTER"] = function(msg)
-  if DBB2.api and DBB2.api.TestFilterTags then
-    DBB2.api.TestFilterTags(msg)
-  else
-    DEFAULT_CHAT_FRAME:AddMessage("|cffff0000[DBB2]|r Filter test API not loaded")
-  end
-end
-
 -- Slash command to toggle GUI
 SLASH_DBB1 = "/dbb"
 SlashCmdList["DBB"] = function(msg)

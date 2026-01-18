@@ -207,8 +207,7 @@ function DBB2.api.ShouldHideFromChat(message, sender)
     -- Remove sender prefix like "[Mam]: " or "Mam: "
     msgContent = string_gsub(msgContent, "^%[?[^%]:]+%]?:%s*", "")
     
-    -- Use skipLog=true to avoid double-logging (AddMessage will log it)
-    if DBB2.api.IsDuplicateMessage(msgContent, sender, true) then
+    if DBB2.api.IsDuplicateMessage(msgContent, sender) then
       return true
     end
   end
@@ -936,9 +935,8 @@ end
 -- Checks if a message is a duplicate within the spam filter time window
 -- 'message'    [string]        the message text
 -- 'sender'     [string]        the sender name
--- 'skipLog'    [boolean]       if true, don't log the duplicate (used by ShouldHideFromChat)
 -- return:      [boolean]       true if duplicate, false otherwise
-function DBB2.api.IsDuplicateMessage(message, sender, skipLog)
+function DBB2.api.IsDuplicateMessage(message, sender)
   if not message then return false end
   
   local spamSeconds = DBB2_Config.spamFilterSeconds or 150
@@ -967,9 +965,6 @@ function DBB2.api.IsDuplicateMessage(message, sender, skipLog)
     local storedSender = string_lower(msg.sender or "")
     
     if storedSender == lowerSender and storedMsg == lowerMsg then
-      if not skipLog then
-        DBB2.api.LogDuplicate(sender, timeDiff, message)
-      end
       return true
     end
   end
@@ -1087,9 +1082,7 @@ function DBB2.api.AddMessage(message, sender, channel, msgType)
   end
   
   -- Check blacklist (only for messages that match categories)
-  local blocked, reason, details = DBB2.api.IsMessageBlacklisted(message, sender)
-  if blocked then
-    DBB2.api.LogBlacklist(sender, reason, details, message)
+  if DBB2.api.IsMessageBlacklisted(message, sender) then
     return
   end
   
