@@ -16,7 +16,9 @@
 - **Lockouts Track**: Keep track of raids your are saved to.
 
 
-![ezgif-86e6b1303c5c58b6](https://github.com/user-attachments/assets/08221dfa-02db-4437-b1c1-6466a95c6aa5)
+
+![85ad664551023708](https://github.com/user-attachments/assets/b474d2c6-60a6-4116-b5c7-8e3df43d0f58)
+
 
 
 ## Installation
