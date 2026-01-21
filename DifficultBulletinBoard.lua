@@ -157,6 +157,11 @@ DBB2:SetScript("OnEvent", function()
       DBB2_Config.scrollSpeed = 55
     end
     
+    -- Ensure showLevelFilteredGroups exists for existing configs (default off)
+    if DBB2_Config.showLevelFilteredGroups == nil then
+      DBB2_Config.showLevelFilteredGroups = false
+    end
+    
     -- Load modules (use ipairs to preserve load order from TOC file)
     for i, module in ipairs(DBB2.modules) do
       if module then

@@ -30,47 +30,61 @@ DBB2:RegisterModule("categories", function()
   }
   
   -- Default category definitions
+  -- Level ranges: minLevel = minimum recommended level, maxLevel = maximum useful level (60 = endgame)
   local defaultGroups = {
-    { name = "Custom Topic",                  selected = false, tags = {} },
-    { name = "Upper Karazhan Halls",          selected = true, tags = { "kara40", "ukh"} },
-    { name = "Naxxramas",                     selected = true, tags = { "naxxramas", "naxx" } },
-    { name = "Temple of Ahn'Qiraj",           selected = true, tags = { "ahn'qiraj", "ahnqiraj", "aq40", "aq" } },
-    { name = "Emerald Sanctum",               selected = true, tags = { "emerald", "sanctum", "es", "esnormal", "eshardcore" } },
-    { name = "Blackwing Lair",                selected = true, tags = { "blackwing", "bwl" } },
-    { name = "Lower Karazhan Halls",          selected = true, tags = { "karazhan", "kara", "kara10", "k10", "kz10" } },
-    { name = "Onyxia's Lair",                 selected = true, tags = { "onyxia", "ony", "onyx" } },
-    { name = "Molten Core",                   selected = true, tags = { "molten", "mc" } },
-    { name = "Ruins of Ahn'Qiraj",            selected = true, tags = { "ruins", "ahn'qiraj", "ahnqiraj", "aq20", "aq" } },
-    { name = "Zul'Gurub",                     selected = true, tags = { "zul'gurub", "zulgurub", "zg" } },
-    { name = "Stormwind Vault",               selected = true, tags = { "vault", "swvault" } },
-    { name = "Caverns of Time: Black Morass", selected = true, tags = { "cot", "morass", "cavern", "cot:bm", "bm" } },
-    { name = "Karazhan Crypt",                selected = true, tags = { "crypt", "kara", "karazhan" } },
-    { name = "Upper Blackrock Spire",         selected = true, tags = { "ubrs", "blackrock", "upper", "spire" } },
-    { name = "Lower Blackrock Spire",         selected = true, tags = { "lbrs", "blackrock", "lower", "spire" } },
-    { name = "Stratholme",                    selected = true, tags = { "strat", "stratholme" } },
-    { name = "Scholomance",                   selected = true, tags = { "scholo", "scholomance" } },
-    { name = "Dire Maul",                     selected = true, tags = { "dire", "maul", "dm", "dm:e", "dm:east", "dm:w", "dm:west", "dm:n", "dm:north", "dmw", "dmwest", "dmn", "dmnorth", "dme", "dmeast", "tribute" } },
-    { name = "Blackrock Depths",              selected = true, tags = { "brd", "blackrock", "depths", "emp", "lava" } },
-    { name = "Hateforge Quarry",              selected = true, tags = { "hateforge", "quarry", "hq", "hfq" } },
-    { name = "The Sunken Temple",             selected = true, tags = { "st", "sunken", "temple" } },
-    { name = "Zul'Farrak",                    selected = true, tags = { "zf", "zul'farrak", "zulfarrak", "farrak" } },
-    { name = "Maraudon",                      selected = true, tags = { "mara", "maraudon" } },
-    { name = "Gilneas City",                  selected = true, tags = { "gilneas", "city" } },
-    { name = "Stormwrought Ruins",            selected = true, tags = { "stormwrought", "ruins", "castle", "descent" } },
-    { name = "Uldaman",                       selected = true, tags = { "uldaman" } },
-    { name = "Razorfen Downs",                selected = true, tags = { "razorfen", "downs", "rfd" } },
-    { name = "Scarlet Monastery",             selected = true, tags = { "scarlet", "monastery", "sm", "armory", "cathedral", "cath", "library", "lib", "graveyard" } },
-    { name = "The Crescent Grove",            selected = true, tags = { "crescent", "grove" } },
-    { name = "Razorfen Kraul",                selected = true, tags = { "razorfen", "kraul", "rfk" } },
-    { name = "Dragonmaw Retreat",             selected = true, tags = { "dragonmaw", "retreat", "dmr" } },
-    { name = "Gnomeregan",                    selected = true, tags = { "gnomeregan", "gnomer" } },
-    { name = "The Stockade",                  selected = true, tags = { "stockade", "stockades", "stock", "stocks" } },
-    { name = "Blackfathom Deeps",             selected = true, tags = { "bfd", "blackfathom" } },
-    { name = "Shadowfang Keep",               selected = true, tags = { "sfk", "shadowfang" } },
-    { name = "The Deadmines",                 selected = true, tags = { "vc", "dm", "deadmine", "deadmines" } },
-    { name = "Wailing Caverns",               selected = true, tags = { "wc", "wailing", "caverns" } },
-    { name = "Ragefire Chasm",                selected = true, tags = { "rfc", "ragefire", "chasm" } },
+    { name = "Custom Topic",                  selected = false, tags = {}, minLevel = 1, maxLevel = 60 },
+    { name = "Upper Karazhan Halls",          selected = true, tags = { "kara40", "ukh"}, minLevel = 60, maxLevel = 60 },
+    { name = "Naxxramas",                     selected = true, tags = { "naxxramas", "naxx" }, minLevel = 60, maxLevel = 60 },
+    { name = "Temple of Ahn'Qiraj",           selected = true, tags = { "ahn'qiraj", "ahnqiraj", "aq40", "aq" }, minLevel = 60, maxLevel = 60 },
+    { name = "Emerald Sanctum",               selected = true, tags = { "emerald", "sanctum", "es", "esnormal", "eshardcore" }, minLevel = 60, maxLevel = 60 },
+    { name = "Blackwing Lair",                selected = true, tags = { "blackwing", "bwl" }, minLevel = 60, maxLevel = 60 },
+    { name = "Lower Karazhan Halls",          selected = true, tags = { "karazhan", "kara", "kara10", "k10", "kz10" }, minLevel = 60, maxLevel = 60 },
+    { name = "Onyxia's Lair",                 selected = true, tags = { "onyxia", "ony", "onyx" }, minLevel = 60, maxLevel = 60 },
+    { name = "Molten Core",                   selected = true, tags = { "molten", "mc" }, minLevel = 60, maxLevel = 60 },
+    { name = "Ruins of Ahn'Qiraj",            selected = true, tags = { "ruins", "ahn'qiraj", "ahnqiraj", "aq20", "aq" }, minLevel = 60, maxLevel = 60 },
+    { name = "Zul'Gurub",                     selected = true, tags = { "zul'gurub", "zulgurub", "zg" }, minLevel = 60, maxLevel = 60 },
+    { name = "Stormwind Vault",               selected = true, tags = { "vault", "swvault" }, minLevel = 60, maxLevel = 60 },
+    { name = "Caverns of Time: Black Morass", selected = true, tags = { "cot", "morass", "cavern", "cot:bm", "bm" }, minLevel = 60, maxLevel = 60 },
+    { name = "Karazhan Crypt",                selected = true, tags = { "crypt", "kara", "karazhan" }, minLevel = 60, maxLevel = 60 },
+    { name = "Upper Blackrock Spire",         selected = true, tags = { "ubrs", "blackrock", "upper", "spire" }, minLevel = 60, maxLevel = 60 },
+    { name = "Lower Blackrock Spire",         selected = true, tags = { "lbrs", "blackrock", "lower", "spire" }, minLevel = 55, maxLevel = 60 },
+    { name = "Stratholme",                    selected = true, tags = { "strat", "stratholme" }, minLevel = 58, maxLevel = 60 },
+    { name = "Scholomance",                   selected = true, tags = { "scholo", "scholomance" }, minLevel = 58, maxLevel = 60 },
+    { name = "Dire Maul",                     selected = true, tags = { "dire", "maul", "dm", "dm:e", "dm:east", "dm:w", "dm:west", "dm:n", "dm:north", "dmw", "dmwest", "dmn", "dmnorth", "dme", "dmeast", "tribute" }, minLevel = 57, maxLevel = 60 },
+    { name = "Blackrock Depths",              selected = true, tags = { "brd", "blackrock", "depths", "emp", "lava" }, minLevel = 50, maxLevel = 60 },
+    { name = "Hateforge Quarry",              selected = true, tags = { "hateforge", "quarry", "hq", "hfq" }, minLevel = 51, maxLevel = 60 },
+    { name = "The Sunken Temple",             selected = true, tags = { "st", "sunken", "temple" }, minLevel = 49, maxLevel = 58 },
+    { name = "Zul'Farrak",                    selected = true, tags = { "zf", "zul'farrak", "zulfarrak", "farrak" }, minLevel = 42, maxLevel = 51 },
+    { name = "Maraudon",                      selected = true, tags = { "mara", "maraudon" }, minLevel = 43, maxLevel = 54 },
+    { name = "Gilneas City",                  selected = true, tags = { "gilneas", "city" }, minLevel = 43, maxLevel = 52 },
+    { name = "Stormwrought Ruins",            selected = true, tags = { "stormwrought", "ruins", "castle", "descent" }, minLevel = 32, maxLevel = 44 },
+    { name = "Uldaman",                       selected = true, tags = { "uldaman" }, minLevel = 41, maxLevel = 50 },
+    { name = "Razorfen Downs",                selected = true, tags = { "razorfen", "downs", "rfd" }, minLevel = 35, maxLevel = 44 },
+    { name = "Scarlet Monastery",             selected = true, tags = { "scarlet", "monastery", "sm", "armory", "cathedral", "cath", "library", "lib", "graveyard" }, minLevel = 30, maxLevel = 45 },
+    { name = "The Crescent Grove",            selected = true, tags = { "crescent", "grove" }, minLevel = 28, maxLevel = 38 },
+    { name = "Razorfen Kraul",                selected = true, tags = { "razorfen", "kraul", "rfk" }, minLevel = 29, maxLevel = 36 },
+    { name = "Dragonmaw Retreat",             selected = true, tags = { "dragonmaw", "retreat", "dmr" }, minLevel = 26, maxLevel = 35 },
+    { name = "Gnomeregan",                    selected = true, tags = { "gnomeregan", "gnomer" }, minLevel = 28, maxLevel = 37 },
+    { name = "The Stockade",                  selected = true, tags = { "stockade", "stockades", "stock", "stocks" }, minLevel = 23, maxLevel = 32 },
+    { name = "Blackfathom Deeps",             selected = true, tags = { "bfd", "blackfathom" }, minLevel = 22, maxLevel = 31 },
+    { name = "Shadowfang Keep",               selected = true, tags = { "sfk", "shadowfang" }, minLevel = 20, maxLevel = 28 },
+    { name = "The Deadmines",                 selected = true, tags = { "vc", "dm", "deadmine", "deadmines" }, minLevel = 16, maxLevel = 24 },
+    { name = "Wailing Caverns",               selected = true, tags = { "wc", "wailing", "caverns" }, minLevel = 16, maxLevel = 25 },
+    { name = "Ragefire Chasm",                selected = true, tags = { "rfc", "ragefire", "chasm" }, minLevel = 13, maxLevel = 19 },
   }
+  
+  -- Level range lookup table (runtime only, not saved)
+  -- Populated here because defaultGroups is defined locally in this module.
+  -- Access via DBB2.api.GetCategoryLevelRange() or DBB2.api.IsLevelAppropriate()
+  DBB2.categoryLevelRanges = {}
+  for _, cat in ipairs(defaultGroups) do
+    if cat.minLevel and cat.maxLevel then
+      DBB2.categoryLevelRanges[cat.name] = {
+        minLevel = cat.minLevel,
+        maxLevel = cat.maxLevel
+      }
+    end
+  end
   
   local defaultProfessions = {
     { name = "Alchemy",        selected = true, tags = { "alchemist", "alchemy", "alch" } },

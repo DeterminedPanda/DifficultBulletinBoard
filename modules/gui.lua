@@ -667,6 +667,14 @@ DBB2:RegisterModule("gui", function()
       
       for _, cat in ipairs(categories) do
         if cat.selected then
+          -- Level filter check for Groups tab only
+          -- Skip categories outside player's level range when filter is enabled
+          local passesLevelFilter = true
+          if categoryType == "groups" and DBB2_Config.showLevelFilteredGroups then
+            passesLevelFilter = DBB2.api.IsLevelAppropriate(cat.name)
+          end
+          
+          if passesLevelFilter then
           local messages = categorized[cat.name] or {}
           local msgCount = table_getn(messages)
           local isCollapsed = DBB2.api.IsCategoryCollapsed(categoryType, cat.name)
@@ -975,6 +983,7 @@ DBB2:RegisterModule("gui", function()
             
             yOffset = yOffset + catHeight + DBB2:ScaleSize(5)
           end
+          end  -- if passesLevelFilter
         end
       end
       

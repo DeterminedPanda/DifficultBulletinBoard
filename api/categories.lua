@@ -831,3 +831,36 @@ function DBB2.api.GetCategorizedMessages(categoryType)
   
   return categorized
 end
+
+-- =====================================================
+-- LEVEL RANGE API
+-- =====================================================
+-- Runtime lookup table for category level ranges
+-- Used for level filtering feature - maps category name to {minLevel, maxLevel}
+-- This is populated by modules/categories.lua during initialization
+
+-- [ GetCategoryLevelRange ]
+-- Returns the level range for a category (used for level filtering)
+-- 'categoryName'  [string]   name of the category
+-- return:         [table]    {minLevel, maxLevel} or nil if not found
+function DBB2.api.GetCategoryLevelRange(categoryName)
+  if DBB2.categoryLevelRanges and DBB2.categoryLevelRanges[categoryName] then
+    return DBB2.categoryLevelRanges[categoryName]
+  end
+  return nil
+end
+
+-- [ IsLevelAppropriate ]
+-- Checks if a category is appropriate for the given player level
+-- 'categoryName'  [string]   name of the category
+-- 'playerLevel'   [number]   player's level (optional, defaults to UnitLevel("player"))
+-- return:         [boolean]  true if category is within level range, false otherwise
+function DBB2.api.IsLevelAppropriate(categoryName, playerLevel)
+  playerLevel = playerLevel or UnitLevel("player")
+  local levelRange = DBB2.api.GetCategoryLevelRange(categoryName)
+  if levelRange then
+    return playerLevel >= levelRange.minLevel and playerLevel <= levelRange.maxLevel
+  end
+  -- If no level range defined, assume it's appropriate for all levels
+  return true
+end

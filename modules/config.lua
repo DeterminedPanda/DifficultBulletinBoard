@@ -110,6 +110,7 @@ DBB2:RegisterModule("config", function()
     DBB2_Config.defaultTab = 0
     DBB2_Config.notificationSound = 1
     DBB2_Config.showCurrentTime = false
+    DBB2_Config.showLevelFilteredGroups = false
     -- Reset notifications to defaults (mode 0 = off)
     DBB2_Config.notifications = { mode = 0 }
     -- Reset blacklist to defaults
@@ -464,9 +465,44 @@ DBB2:RegisterModule("config", function()
     DBB2_Config.scrollSpeed = val
   end
   
+  -- Level Filter toggle (0 = off, 1 = on) - filter Groups by player level
+  local levelFilterEnabled = DBB2_Config.showLevelFilteredGroups and 1 or 0
+  local levelFilterNames = { [0] = "Off", [1] = "On" }
+  local levelFilterSlider = DBB2.api.CreateSlider("DBB2LevelFilterSlider", generalScrollChild, "Level Filter (Groups): " .. levelFilterNames[levelFilterEnabled], 0, 1, 1, 9)
+  levelFilterSlider:SetPoint("TOPLEFT", scrollSlider, "BOTTOMLEFT", 0, -DBB2:ScaleSize(11))
+  levelFilterSlider:SetWidth(DBB2:ScaleSize(250))
+  levelFilterSlider:SetValue(levelFilterEnabled)
+  
+  -- Add tooltip on hover
+  levelFilterSlider.slider:SetScript("OnEnter", function()
+    local r, g, b = DBB2:GetHighlightColor()
+    this.backdrop:SetBackdropBorderColor(r, g, b, 1)
+    DBB2.api.ShowTooltip(this, "RIGHT", {
+      {"Level Filter (Groups)", "highlight"},
+      "Only show dungeon/raid categories",
+      "appropriate for your current level.",
+      {"Affects Groups tab only.", "gray"}
+    })
+  end)
+  
+  levelFilterSlider.slider:SetScript("OnLeave", function()
+    this.backdrop:SetBackdropBorderColor(0.2, 0.2, 0.2, 1)
+    DBB2.api.HideTooltip()
+  end)
+  
+  levelFilterSlider.OnValueChanged = function(value)
+    DBB2_Config.showLevelFilteredGroups = (value == 1)
+    levelFilterSlider.label:SetText("Level Filter (Groups): " .. levelFilterNames[value])
+    -- Update Groups panel if visible
+    local groupsPanel = DBB2.gui.tabs.panels["Groups"]
+    if groupsPanel and groupsPanel.UpdateCategories and groupsPanel:IsVisible() then
+      groupsPanel.UpdateCategories()
+    end
+  end
+  
   -- Notifications section title
   local notifyTitle = DBB2.api.CreateLabel(generalScrollChild, "Notifications", 10)
-  notifyTitle:SetPoint("TOPLEFT", scrollSlider, "BOTTOMLEFT", 0, -DBB2:ScaleSize(19))
+  notifyTitle:SetPoint("TOPLEFT", levelFilterSlider, "BOTTOMLEFT", 0, -DBB2:ScaleSize(19))
   notifyTitle:SetTextColor(hr, hg, hb, 1)
   
   -- Initialize notification config
