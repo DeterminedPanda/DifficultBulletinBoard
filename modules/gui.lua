@@ -819,16 +819,7 @@ DBB2:RegisterModule("gui", function()
                     catFrame.bellIcon:SetVertexColor(1, 1, 1, 0.5)
                   end
                 end
-                -- Show lockout tooltip if locked
-                if catFrame.isLocked and catFrame.lockoutInfo then
-                  local remaining = catFrame.lockoutInfo.resetTime - time()
-                  local timeStr = DBB2.api.FormatTimeRemaining(remaining)
-                  DBB2.api.ShowTooltip(catFrame.headerBtn, "CURSOR", {
-                    {"|cffff6666Locked|r", "highlight"},
-                    "You are saved to this instance.",
-                    {"Resets in: " .. timeStr, "gray"}
-                  })
-                end
+
               end)
               
               catFrame.headerBtn:SetScript("OnLeave", function()
@@ -888,9 +879,11 @@ DBB2:RegisterModule("gui", function()
               headerText = cat.name .. " (" .. displayCount .. ")"
             end
             
-            -- Add lockout indicator to header
-            if isLocked then
-              headerText = headerText .. " |cffff6666[Saved]|r"
+            -- Add lockout indicator to header with reset time
+            if isLocked and lockoutInfo then
+              local remaining = lockoutInfo.resetTime - time()
+              local timeStr = DBB2.api.FormatTimeRemaining(remaining)
+              headerText = headerText .. " |cffff6666[Saved - " .. timeStr .. "]|r"
               catFrame.header:SetText(headerText)
               catFrame.header:SetTextColor(0.8, 0.3, 0.3, 1)
               if not isCollapsed then
