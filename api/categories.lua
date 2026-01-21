@@ -537,6 +537,7 @@ end
 -- [ MatchMessageToCategory ]
 -- Checks if a message matches any tag in a category
 -- Returns true if message contains any of the category's tags as whole words
+-- Supports wildcard patterns: * (any chars), ? (one char), [abc], [a-z], [!abc], {a,b,c}
 -- Also matches tags followed by 1-2 digits (e.g., "zg15", "ony12") for raid group sizes
 -- Special case: "aq" tag only matches with "40" suffix to distinguish from aq20 (Ruins)
 -- If filter tags are enabled for the category type, message must ALSO match a filter tag
@@ -587,116 +588,128 @@ function DBB2.api.MatchMessageToCategory(message, category, ignoreSelected, cate
   -- Use ipairs instead of table.getn for Lua 5.0 compatibility
   for i, lowerTag in ipairs(tagsLower) do
     local tagLen = tagsLen[i]
-    local startPos = 1
-    
-    while true do
-      local foundPos = string_find(lowerMsg, lowerTag, startPos, true)
-      if not foundPos then
-        break
+
+    -- Check if tag contains wildcard special characters
+    local isWildcard = string_find(lowerTag, "[%*%?%[%]%{%}\\]")
+
+    if isWildcard then
+      -- Use wildcard matching for patterns
+      if DBB2.api.MatchWildcard(lowerMsg, lowerTag) then
+        return true
       end
-      
-      -- Check character before the match (must be start or non-alphanumeric)
-      local charBefore = ""
-      if foundPos > 1 then
-        charBefore = string_sub(lowerMsg, foundPos - 1, foundPos - 1)
-      end
-      
-      -- Check character after the match
-      local afterPos = foundPos + tagLen
-      local charAfter = ""
-      if afterPos <= msgLen then
-        charAfter = string_sub(lowerMsg, afterPos, afterPos)
-      end
-      
-      -- Check if boundaries are word boundaries (not letters or numbers)
-      local validBefore = (foundPos == 1) or not string_find(charBefore, "[%w]")
-      
-      -- For validAfter, we now allow 1-2 trailing digits (raid group sizes like "zg15", "ony12")
-      -- Special case: "aq" tag should only match "aq40" to distinguish from aq20 (Ruins)
-      local validAfter = false
-      if afterPos > msgLen then
-        -- End of message - valid
-        validAfter = true
-      elseif not string_find(charAfter, "[%w]") then
-        -- Non-alphanumeric after - valid word boundary
-        validAfter = true
-      elseif string_find(charAfter, "%d") then
-        -- Digit after tag - check for raid group size pattern (1-2 digits)
-        local digit1 = charAfter
-        local digit2 = ""
-        local charAfterDigits = ""
-        local digitEndPos = afterPos + 1
-        
-        -- Check for second digit
-        if digitEndPos <= msgLen then
-          local nextChar = string_sub(lowerMsg, digitEndPos, digitEndPos)
-          if string_find(nextChar, "%d") then
-            digit2 = nextChar
-            digitEndPos = digitEndPos + 1
+    else
+      -- Plain text matching with word boundaries
+      local startPos = 1
+
+      while true do
+        local foundPos = string_find(lowerMsg, lowerTag, startPos, true)
+        if not foundPos then
+          break
+        end
+
+        -- Check character before the match (must be start or non-alphanumeric)
+        local charBefore = ""
+        if foundPos > 1 then
+          charBefore = string_sub(lowerMsg, foundPos - 1, foundPos - 1)
+        end
+
+        -- Check character after the match
+        local afterPos = foundPos + tagLen
+        local charAfter = ""
+        if afterPos <= msgLen then
+          charAfter = string_sub(lowerMsg, afterPos, afterPos)
+        end
+
+        -- Check if boundaries are word boundaries (not letters or numbers)
+        local validBefore = (foundPos == 1) or not string_find(charBefore, "[%w]")
+
+        -- For validAfter, we now allow 1-2 trailing digits (raid group sizes like "zg15", "ony12")
+        -- Special case: "aq" tag should only match "aq40" to distinguish from aq20 (Ruins)
+        local validAfter = false
+        if afterPos > msgLen then
+          -- End of message - valid
+          validAfter = true
+        elseif not string_find(charAfter, "[%w]") then
+          -- Non-alphanumeric after - valid word boundary
+          validAfter = true
+        elseif string_find(charAfter, "%d") then
+          -- Digit after tag - check for raid group size pattern (1-2 digits)
+          local digit1 = charAfter
+          local digit2 = ""
+          local charAfterDigits = ""
+          local digitEndPos = afterPos + 1
+
+          -- Check for second digit
+          if digitEndPos <= msgLen then
+            local nextChar = string_sub(lowerMsg, digitEndPos, digitEndPos)
+            if string_find(nextChar, "%d") then
+              digit2 = nextChar
+              digitEndPos = digitEndPos + 1
+            end
+          end
+
+          -- Check character after the digits
+          if digitEndPos <= msgLen then
+            charAfterDigits = string_sub(lowerMsg, digitEndPos, digitEndPos)
+          end
+
+          -- Valid if digits are followed by word boundary
+          local digitsFollowedByBoundary = (digitEndPos > msgLen) or not string_find(charAfterDigits, "[%w]")
+
+          if digitsFollowedByBoundary then
+            -- Special handling for "aq" tag to distinguish Temple (40-man) from Ruins (20-man)
+            -- "aq40" -> Temple of Ahn'Qiraj only
+            -- "aq" + any other number (aq13, aq15, aq20, etc.) -> Ruins of Ahn'Qiraj
+            if lowerTag == "aq" then
+              local digitSuffix = digit1 .. digit2
+              -- Check which category we're matching against by looking at category name
+              local catNameLower = string_lower(category.name or "")
+              if string_find(catNameLower, "temple") or string_find(catNameLower, "aq40") then
+                -- Temple of Ahn'Qiraj - only match "aq40"
+                if digitSuffix == "40" then
+                  validAfter = true
+                end
+              elseif string_find(catNameLower, "ruins") or string_find(catNameLower, "aq20") then
+                -- Ruins of Ahn'Qiraj - match any number except "40"
+                if digitSuffix ~= "40" then
+                  validAfter = true
+                end
+              end
+            -- Special handling for "kara" tag to distinguish Upper (40-man) from Lower (10-man)
+            -- "kara40" -> Upper Karazhan Halls only
+            -- "kara" + any other number (kara10, kara15, etc.) -> Lower Karazhan Halls
+            elseif lowerTag == "kara" then
+              local digitSuffix = digit1 .. digit2
+              local catNameLower = string_lower(category.name or "")
+              if string_find(catNameLower, "upper") or string_find(catNameLower, "ukh") then
+                -- Upper Karazhan Halls - only match "kara40"
+                if digitSuffix == "40" then
+                  validAfter = true
+                end
+              elseif string_find(catNameLower, "lower") or string_find(catNameLower, "lkh") then
+                -- Lower Karazhan Halls - match any number except "40"
+                if digitSuffix ~= "40" then
+                  validAfter = true
+                end
+              end
+            else
+              -- For all other tags, allow any 1-2 digit suffix
+              validAfter = true
+            end
           end
         end
-        
-        -- Check character after the digits
-        if digitEndPos <= msgLen then
-          charAfterDigits = string_sub(lowerMsg, digitEndPos, digitEndPos)
-        end
-        
-        -- Valid if digits are followed by word boundary
-        local digitsFollowedByBoundary = (digitEndPos > msgLen) or not string_find(charAfterDigits, "[%w]")
-        
-        if digitsFollowedByBoundary then
-          -- Special handling for "aq" tag to distinguish Temple (40-man) from Ruins (20-man)
-          -- "aq40" -> Temple of Ahn'Qiraj only
-          -- "aq" + any other number (aq13, aq15, aq20, etc.) -> Ruins of Ahn'Qiraj
-          if lowerTag == "aq" then
-            local digitSuffix = digit1 .. digit2
-            -- Check which category we're matching against by looking at category name
-            local catNameLower = string_lower(category.name or "")
-            if string_find(catNameLower, "temple") or string_find(catNameLower, "aq40") then
-              -- Temple of Ahn'Qiraj - only match "aq40"
-              if digitSuffix == "40" then
-                validAfter = true
-              end
-            elseif string_find(catNameLower, "ruins") or string_find(catNameLower, "aq20") then
-              -- Ruins of Ahn'Qiraj - match any number except "40"
-              if digitSuffix ~= "40" then
-                validAfter = true
-              end
-            end
-          -- Special handling for "kara" tag to distinguish Upper (40-man) from Lower (10-man)
-          -- "kara40" -> Upper Karazhan Halls only
-          -- "kara" + any other number (kara10, kara15, etc.) -> Lower Karazhan Halls
-          elseif lowerTag == "kara" then
-            local digitSuffix = digit1 .. digit2
-            local catNameLower = string_lower(category.name or "")
-            if string_find(catNameLower, "upper") or string_find(catNameLower, "ukh") then
-              -- Upper Karazhan Halls - only match "kara40"
-              if digitSuffix == "40" then
-                validAfter = true
-              end
-            elseif string_find(catNameLower, "lower") or string_find(catNameLower, "lkh") then
-              -- Lower Karazhan Halls - match any number except "40"
-              if digitSuffix ~= "40" then
-                validAfter = true
-              end
-            end
-          else
-            -- For all other tags, allow any 1-2 digit suffix
-            validAfter = true
+
+        if validBefore and validAfter then
+          -- Check tag exclusions for false positives
+          if not IsTagExcluded(lowerTag, lowerMsg, foundPos, tagLen) then
+            return true
           end
         end
+
+        -- Continue searching from next position
+        startPos = foundPos + 1
       end
-      
-      if validBefore and validAfter then
-        -- Check tag exclusions for false positives
-        if not IsTagExcluded(lowerTag, lowerMsg, foundPos, tagLen) then
-          return true
-        end
-      end
-      
-      -- Continue searching from next position
-      startPos = foundPos + 1
-    end
+    end  -- end else (plain text matching)
   end
   return false
 end

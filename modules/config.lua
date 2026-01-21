@@ -189,7 +189,7 @@ DBB2:RegisterModule("config", function()
   versionFrame.version = versionFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
   versionFrame.version:SetFont("Fonts\\FRIZQT__.TTF", DBB2:GetFontSize(9))
   versionFrame.version:SetPoint("TOPRIGHT", versionFrame.name, "BOTTOMRIGHT", 0, -2)
-  versionFrame.version:SetText("v2.07")
+  versionFrame.version:SetText("v2.08")
   versionFrame.version:SetTextColor(0.5, 0.5, 0.5, 1)
   versionFrame.version:SetJustifyH("RIGHT")
   
@@ -686,10 +686,15 @@ DBB2:RegisterModule("config", function()
     local desc = DBB2.api.CreateLabel(panel, "Edit tags to customize which messages match each category.", 9)
     desc:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -DBB2:ScaleSize(5))
     desc:SetTextColor(0.5, 0.5, 0.5, 1)
-    
+
+    -- Helper text for wildcard patterns
+    local wildcardHelp = DBB2.api.CreateLabel(panel, "Supports wildcards: * (any), ? (one char), [a-z], {a,b}. See api/wildcards.lua", 8)
+    wildcardHelp:SetPoint("TOPLEFT", desc, "BOTTOMLEFT", 0, -DBB2:ScaleSize(2))
+    wildcardHelp:SetTextColor(0.5, 0.5, 0.5, 1)
+
     -- Legend for checkboxes
     local legendLabel = DBB2.api.CreateLabel(panel, "[ ] = Enable category", 8)
-    legendLabel:SetPoint("TOPLEFT", desc, "BOTTOMLEFT", 0, -DBB2:ScaleSize(3))
+    legendLabel:SetPoint("TOPLEFT", wildcardHelp, "BOTTOMLEFT", 0, -DBB2:ScaleSize(3))
     legendLabel:SetTextColor(0.4, 0.4, 0.4, 1)
     
     -- Track the last anchor element for container positioning
