@@ -137,19 +137,6 @@ function DBB2.api.SetHardcoreChatActive()
   DBB2._hardcoreChatActive = true
 end
 
--- [ ClearWorldMessages ]
--- Removes all messages from World channel (used when switching to hardcore mode)
-function DBB2.api.ClearWorldMessages()
-  if not DBB2.messages then return end
-  
-  for i = table.getn(DBB2.messages), 1, -1 do
-    local msg = DBB2.messages[i]
-    if msg.channel and string.lower(msg.channel) == "world" then
-      table.remove(DBB2.messages, i)
-    end
-  end
-end
-
 
 -- =====================
 -- CHANNEL WHITELIST API
@@ -278,3 +265,223 @@ function DBB2.api.GetJoinedChannels()
   return channels
 end
 
+
+-- =====================
+-- CHANNEL MONITORING CONFIG API
+-- =====================
+
+-- Default channel monitoring settings (which channels are enabled for monitoring)
+DBB2._defaultMonitoredChannels = {
+  -- Group 1: Local/Social
+  Say = false,
+  Yell = false,
+  Guild = true,
+  Whisper = false,
+  Party = false,
+  -- Group 2: Zone/Global channels
+  General = true,
+  Trade = true,
+  LocalDefense = false,
+  WorldDefense = false,
+  LookingForGroup = true,
+  GuildRecruitment = false,
+  World = true,
+  -- Special
+  Hardcore = true,  -- Will only work for hardcore characters
+}
+
+-- Static channel order (always shown regardless of joined status)
+-- Use "-" as separator marker between groups
+DBB2._staticChannelOrder = {
+  "Say", "Yell", "Guild", "Whisper", "Party",
+  "-",  -- separator
+  "General", "Trade", "LocalDefense", "WorldDefense", "LookingForGroup", "GuildRecruitment", "World", "Hardcore",
+  "-",  -- separator (dynamic channels follow)
+}
+
+-- [ InitChannelConfig ]
+-- Initializes channel monitoring config if not present
+function DBB2.api.InitChannelConfig()
+  if not DBB2_Config.monitoredChannels then
+    DBB2_Config.monitoredChannels = {}
+    for channel, enabled in pairs(DBB2._defaultMonitoredChannels) do
+      DBB2_Config.monitoredChannels[channel] = enabled
+    end
+  end
+  -- Ensure all default channels exist in config (for new channels added in updates)
+  for channel, enabled in pairs(DBB2._defaultMonitoredChannels) do
+    if DBB2_Config.monitoredChannels[channel] == nil then
+      DBB2_Config.monitoredChannels[channel] = enabled
+    end
+  end
+end
+
+-- [ RefreshJoinedChannels ]
+-- Fetches all currently joined channels and adds them to config (disabled by default)
+-- This should be called when the Channels panel is shown to catch late-joining channels
+-- return:      [table]         array of channel names (static order + separators + dynamic)
+function DBB2.api.RefreshJoinedChannels()
+  DBB2.api.InitChannelConfig()
+  
+  -- Get currently joined channels
+  local joinedChannels = DBB2.api.GetJoinedChannels()
+  
+  -- Build set of static channel names for quick lookup
+  local staticChannels = {}
+  for _, name in ipairs(DBB2._staticChannelOrder) do
+    if name ~= "-" then
+      staticChannels[name] = true
+    end
+  end
+  
+  -- Add any new custom channels to config (disabled by default)
+  for _, ch in ipairs(joinedChannels) do
+    local name = ch.name
+    if name and DBB2_Config.monitoredChannels[name] == nil then
+      -- New channel not in defaults, disable by default
+      DBB2_Config.monitoredChannels[name] = false
+    end
+  end
+  
+  -- Build result: static channels in order (with separators), then dynamic custom channels
+  local result = {}
+  
+  -- Add all static channels (including separators)
+  for _, name in ipairs(DBB2._staticChannelOrder) do
+    table.insert(result, name)
+  end
+  
+  -- Add custom joined channels (not in static list)
+  for _, ch in ipairs(joinedChannels) do
+    local name = ch.name
+    if name and not staticChannels[name] then
+      table.insert(result, name)
+    end
+  end
+  
+  return result
+end
+
+-- [ IsChannelMonitored ]
+-- Returns whether a specific channel is enabled for monitoring
+-- 'channelName' [string]       the channel name to check
+-- return:       [boolean]      true if channel is monitored
+function DBB2.api.IsChannelMonitored(channelName)
+  if not channelName then return false end
+  DBB2.api.InitChannelConfig()
+  return DBB2_Config.monitoredChannels[channelName] or false
+end
+
+-- [ SetChannelMonitored ]
+-- Enables or disables monitoring for a specific channel
+-- 'channelName' [string]       the channel name
+-- 'enabled'     [boolean]      whether to monitor this channel
+function DBB2.api.SetChannelMonitored(channelName, enabled)
+  if not channelName then return end
+  DBB2.api.InitChannelConfig()
+  DBB2_Config.monitoredChannels[channelName] = enabled
+  
+  -- Also update the whitelist to match
+  if enabled then
+    DBB2.api.AddWhitelistedChannel(channelName)
+  else
+    DBB2.api.RemoveWhitelistedChannel(channelName)
+  end
+end
+
+-- [ GetMonitoredChannels ]
+-- Returns table of all monitored channel settings
+-- return:      [table]         table of channelName -> boolean
+function DBB2.api.GetMonitoredChannels()
+  DBB2.api.InitChannelConfig()
+  return DBB2_Config.monitoredChannels
+end
+
+
+-- =====================
+-- HARDCORE CHARACTER DETECTION
+-- =====================
+
+-- [ DetectHardcoreCharacter ]
+-- Detects if the current character is an active hardcore character by scanning spellbook
+-- A character is considered "active hardcore" if:
+--   1. Has "Hardcore" spell AND is below level 60 (normal hardcore), OR
+--   2. Has "Inferno" spell (level 60 hardcore who chose to stay hardcore)
+-- return:      [boolean]       true if active hardcore character detected
+function DBB2.api.DetectHardcoreCharacter()
+  -- Check cached result first
+  if DBB2_Config.isHardcoreCharacter ~= nil then
+    return DBB2_Config.isHardcoreCharacter
+  end
+  
+  local hasHardcoreSpell = false
+  local hasInfernoSpell = false
+  local playerLevel = UnitLevel("player") or 60
+  
+  -- Scan spellbook for "Hardcore" and "Inferno" spells
+  for tab = 1, GetNumSpellTabs() do
+    local _, _, offset, numSpells = GetSpellTabInfo(tab)
+    for i = 1, numSpells do
+      local spellName = GetSpellName(offset + i, "spell")
+      if spellName then
+        local lowerName = string.lower(spellName)
+        if string.find(lowerName, "hardcore") then
+          hasHardcoreSpell = true
+        end
+        if string.find(lowerName, "inferno") then
+          hasInfernoSpell = true
+        end
+      end
+    end
+  end
+  
+  -- Active hardcore: has Inferno spell, OR has Hardcore spell and below level 60
+  local isActiveHardcore = hasInfernoSpell or (hasHardcoreSpell and playerLevel < 60)
+  
+  DBB2_Config.isHardcoreCharacter = isActiveHardcore
+  return isActiveHardcore
+end
+
+-- [ IsHardcoreCharacter ]
+-- Returns cached hardcore character status (use DetectHardcoreCharacter to force re-scan)
+-- return:      [boolean]       true if hardcore character
+function DBB2.api.IsHardcoreCharacter()
+  if DBB2_Config.isHardcoreCharacter == nil then
+    return DBB2.api.DetectHardcoreCharacter()
+  end
+  return DBB2_Config.isHardcoreCharacter
+end
+
+
+-- =====================
+-- AUTO-JOIN CHANNELS
+-- =====================
+
+-- Channels that should be auto-joined if not already joined
+DBB2._autoJoinChannels = {"World", "LookingForGroup"}
+
+-- [ AutoJoinRequiredChannels ]
+-- Automatically joins World and LookingForGroup channels if not already joined
+-- Should be called on PLAYER_ENTERING_WORLD event
+function DBB2.api.AutoJoinRequiredChannels()
+  -- Get currently joined channels
+  local joinedChannels = DBB2.api.GetJoinedChannels()
+  
+  -- Build lookup table of joined channel names (lowercase for comparison)
+  local joinedLookup = {}
+  for _, ch in ipairs(joinedChannels) do
+    if ch.name then
+      joinedLookup[string.lower(ch.name)] = true
+    end
+  end
+  
+  -- Check and join required channels
+  for _, channelName in ipairs(DBB2._autoJoinChannels) do
+    local lowerName = string.lower(channelName)
+    if not joinedLookup[lowerName] then
+      -- Channel not joined, join it
+      JoinChannelByName(channelName)
+      DEFAULT_CHAT_FRAME:AddMessage("|cff33ffccDBB2|r: Auto-joined |cffffffff" .. channelName .. "|r channel.")
+    end
+  end
+end

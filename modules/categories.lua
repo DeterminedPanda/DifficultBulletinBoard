@@ -13,7 +13,7 @@
 --   - Filter tags (LF/LFG/LFM, LFW/WTB/WTS)
 --   - Blacklist keywords
 -- This only happens ONCE per version bump, so users won't lose custom changes repeatedly.
-local CATEGORY_VERSION = 4
+local CATEGORY_VERSION = 5
 
 DBB2:RegisterModule("categories", function()
   -- Default filter tags for category types (must match in addition to category tags when enabled)
@@ -43,7 +43,7 @@ DBB2:RegisterModule("categories", function()
     { name = "Molten Core",                   selected = true, tags = { "molten", "mc" }, minLevel = 60, maxLevel = 60 },
     { name = "Ruins of Ahn'Qiraj",            selected = true, tags = { "ruins", "ahn'qiraj", "ahnqiraj", "aq20", "aq" }, minLevel = 60, maxLevel = 60 },
     { name = "Zul'Gurub",                     selected = true, tags = { "zul'gurub", "zulgurub", "zg" }, minLevel = 60, maxLevel = 60 },
-    { name = "Stormwind Vault",               selected = true, tags = { "vault", "swvault" }, minLevel = 60, maxLevel = 60 },
+    { name = "Stormwind Vault",               selected = true, tags = { "vault", "swvault", "swv" }, minLevel = 60, maxLevel = 60 },
     { name = "Caverns of Time: Black Morass", selected = true, tags = { "cot", "morass", "cavern", "cot:bm", "bm" }, minLevel = 60, maxLevel = 60 },
     { name = "Karazhan Crypt",                selected = true, tags = { "crypt", "kara", "karazhan" }, minLevel = 60, maxLevel = 60 },
     { name = "Upper Blackrock Spire",         selected = true, tags = { "ubrs", "blackrock", "upper", "spire" }, minLevel = 60, maxLevel = 60 },

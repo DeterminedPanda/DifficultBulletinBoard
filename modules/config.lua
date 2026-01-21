@@ -16,7 +16,7 @@ DBB2:RegisterModule("config", function()
   configPanel:SetPoint("BOTTOMRIGHT", DBB2.gui.tabs.content, "BOTTOMRIGHT", 0, 0)
   
   -- Create tab system for config (vertical tabs on right side inside content)
-  local configTabs = {"General", "Groups", "Professions", "Hardcore", "Blacklist"}
+  local configTabs = {"General", "Channels", "Groups", "Professions", "Hardcore", "Blacklist"}
   DBB2.gui.configTabs = DBB2.api.CreateTabSystem("DBB2Config", configPanel, configTabs, 90, 14)
   
   -- Reposition the tab buttons vertically stacked inside the content area (top-right)
@@ -120,6 +120,13 @@ DBB2:RegisterModule("config", function()
       players = {},
       keywords = {"recruit*", "<*>", "[???]", "[??]"}
     }
+    -- Reset monitored channels to defaults
+    DBB2_Config.monitoredChannels = nil
+    DBB2.api.InitChannelConfig()
+    -- Reset whitelisted channels to match
+    DBB2.api.ResetWhitelistedChannels()
+    -- Reset hardcore detection (will re-detect on reload)
+    DBB2_Config.isHardcoreCharacter = nil
     -- Reset GUI position and size to defaults
     DBB2_Config.position = nil
     -- Reset categories to defaults (lives in modules namespace, not api)
@@ -190,7 +197,7 @@ DBB2:RegisterModule("config", function()
   versionFrame.version = versionFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
   versionFrame.version:SetFont("Fonts\\FRIZQT__.TTF", DBB2:GetFontSize(9))
   versionFrame.version:SetPoint("TOPRIGHT", versionFrame.name, "BOTTOMRIGHT", 0, -2)
-  versionFrame.version:SetText("v2.08")
+  versionFrame.version:SetText("v2.09")
   versionFrame.version:SetTextColor(0.5, 0.5, 0.5, 1)
   versionFrame.version:SetJustifyH("RIGHT")
   
@@ -699,6 +706,237 @@ DBB2:RegisterModule("config", function()
   maxMsgSlider.OnValueChanged = function(val)
     DBB2_Config.maxMessagesPerCategory = val
   end
+  
+  -- =====================
+  -- CHANNELS CONFIG PANEL
+  -- =====================
+  local channelsPanel = DBB2.gui.configTabs.panels["Channels"]
+  
+  -- Create scroll frame for Channels tab
+  local channelsScroll = DBB2.api.CreateScrollFrame("DBB2ChannelsScroll", channelsPanel)
+  channelsScroll:SetPoint("TOPLEFT", channelsPanel, "TOPLEFT", 0, 0)
+  channelsScroll:SetPoint("BOTTOMRIGHT", channelsPanel, "BOTTOMRIGHT", 0, DBB2:ScaleSize(5))
+  
+  local channelsScrollChild = DBB2.api.CreateScrollChild("DBB2ChannelsScrollChild", channelsScroll)
+  
+  -- Content height will be set dynamically based on channel count
+  -- Start with a minimal height, will be updated by RebuildChannelCheckboxes
+  channelsScrollChild:SetHeight(DBB2:ScaleSize(100))
+  
+  -- Update scroll child width on size change
+  local lastChannelsScrollWidth = 0
+  channelsScroll:SetScript("OnUpdate", function()
+    if not this:IsVisible() then return end
+    
+    local scrollLeft = this:GetLeft()
+    local scrollRight = this:GetRight()
+    if not scrollLeft or not scrollRight then return end
+    
+    local scrollWidth = scrollRight - scrollLeft
+    
+    if scrollWidth > 0 and scrollWidth ~= lastChannelsScrollWidth then
+      lastChannelsScrollWidth = scrollWidth
+      channelsScrollChild:SetWidth(scrollWidth)
+      this.UpdateScrollState()
+    end
+  end)
+  
+  -- Section title
+  local channelsTitle = DBB2.api.CreateLabel(channelsScrollChild, "Monitored Channels", 10)
+  channelsTitle:SetPoint("TOPLEFT", DBB2:ScaleSize(10), -DBB2:ScaleSize(10))
+  channelsTitle:SetTextColor(hr, hg, hb, 1)
+  
+  local channelsDesc = DBB2.api.CreateLabel(channelsScrollChild, "Select which channels to monitor for LFG messages.", 9)
+  channelsDesc:SetPoint("TOPLEFT", channelsTitle, "BOTTOMLEFT", 0, -DBB2:ScaleSize(5))
+  channelsDesc:SetTextColor(0.5, 0.5, 0.5, 1)
+  
+  -- Initialize channel monitoring config
+  DBB2.api.InitChannelConfig()
+  
+  -- Known channel descriptions (for tooltips)
+  local channelDescriptions = {
+    Say = "Local /say chat (players nearby)",
+    Yell = "Local /yell chat (wider range)",
+    Guild = "Your guild chat",
+    Whisper = "Private whisper messages",
+    Party = "Your party chat",
+    General = "Zone general chat (may be spammy)",
+    Trade = "Trade channel (sometimes used for LFG)",
+    LocalDefense = "Zone defense alerts",
+    WorldDefense = "World-wide defense alerts",
+    LookingForGroup = "Blizzard's official LFG channel",
+    GuildRecruitment = "Guild recruitment channel",
+    World = "Main LFG channel on most servers",
+    Hardcore = "Turtle WoW hardcore channel"
+  }
+  
+  -- Container for dynamically created channel checkboxes
+  channelsPanel.channelCheckboxes = {}
+  channelsPanel.checkboxContainer = CreateFrame("Frame", nil, channelsScrollChild)
+  channelsPanel.checkboxContainer:SetPoint("TOPLEFT", channelsDesc, "BOTTOMLEFT", 0, -DBB2:ScaleSize(12))
+  channelsPanel.checkboxContainer:SetPoint("RIGHT", channelsScrollChild, "RIGHT", -DBB2:ScaleSize(10), 0)
+  -- Height will be set dynamically by RebuildChannelCheckboxes
+  
+  local checkSize = DBB2:ScaleSize(14)
+  
+  -- Function to rebuild channel checkboxes dynamically
+  local function RebuildChannelCheckboxes()
+    -- Clear existing checkboxes and separators
+    for _, check in ipairs(channelsPanel.channelCheckboxes) do
+      check:Hide()
+      check:SetParent(nil)
+    end
+    channelsPanel.channelCheckboxes = {}
+    
+    -- Clear existing inline separators
+    if channelsPanel.inlineSeparators then
+      for _, sep in ipairs(channelsPanel.inlineSeparators) do
+        sep:Hide()
+      end
+    end
+    channelsPanel.inlineSeparators = {}
+    
+    -- Detect hardcore character once for this rebuild
+    local isHardcoreChar = DBB2.api.DetectHardcoreCharacter()
+    
+    -- Get fresh channel list
+    local channelList = DBB2.api.RefreshJoinedChannels()
+    
+    local lastElement = nil
+    local checkSize = DBB2:ScaleSize(14)
+    local separatorHeight = DBB2:ScaleSize(8)
+    local elementCount = 0
+    local totalHeight = 0
+    
+    for i, channelName in ipairs(channelList) do
+      if channelName == "-" then
+        -- Create spacing between sections (no divider line)
+        local spacer = CreateFrame("Frame", nil, channelsPanel.checkboxContainer)
+        spacer:SetWidth(1)
+        spacer:SetHeight(1)  -- Minimal height, just for anchoring
+        if lastElement then
+          -- Position with extra gap for section separation
+          spacer:SetPoint("TOPLEFT", lastElement, "BOTTOMLEFT", 0, -separatorHeight)
+        else
+          spacer:SetPoint("TOPLEFT", channelsPanel.checkboxContainer, "TOPLEFT", 0, -separatorHeight)
+        end
+        table.insert(channelsPanel.channelCheckboxes, spacer)
+        lastElement = spacer
+        -- Count the gap (replaces the normal 5px gap with separatorHeight gap)
+        -- Previous checkbox already added 5px, so add the difference
+        totalHeight = totalHeight + (separatorHeight - DBB2:ScaleSize(5))
+      else
+        local check = DBB2.api.CreateCheckBox("DBB2Channel" .. channelName .. i, channelsPanel.checkboxContainer, channelName, 9)
+        if not lastElement then
+          check:SetPoint("TOPLEFT", channelsPanel.checkboxContainer, "TOPLEFT", 0, 0)
+          -- First checkbox: only count its height, no gap before it
+          totalHeight = totalHeight + checkSize
+        else
+          check:SetPoint("TOPLEFT", lastElement, "BOTTOMLEFT", 0, -DBB2:ScaleSize(5))
+          -- Subsequent checkboxes: count height + gap before it
+          totalHeight = totalHeight + checkSize + DBB2:ScaleSize(5)
+        end
+        check:SetWidth(checkSize)
+        check:SetHeight(checkSize)
+        
+        -- Store channel name for callback
+        check._channelName = channelName
+        
+        -- Special handling for Hardcore channel
+        if channelName == "Hardcore" then
+          -- Hardcore channel only available for hardcore characters
+          if isHardcoreChar then
+            check:SetChecked(DBB2.api.IsChannelMonitored("Hardcore"))
+            check.OnChecked = function(checked)
+              DBB2.api.SetChannelMonitored("Hardcore", checked)
+            end
+            -- Highlight border on hover when enabled
+            check:SetScript("OnEnter", function()
+              local r, g, b = DBB2:GetHighlightColor()
+              this.backdrop:SetBackdropBorderColor(r, g, b, 1)
+            end)
+            check:SetScript("OnLeave", function()
+              this.backdrop:SetBackdropBorderColor(0.3, 0.3, 0.3, 1)
+            end)
+          else
+            check:SetChecked(false)
+            check:Disable()
+          end
+        elseif channelName == "World" or channelName == "LookingForGroup" then
+          -- World/LookingForGroup: normal handling, user controls state
+          check:SetChecked(DBB2.api.IsChannelMonitored(channelName))
+          check.OnChecked = function(checked)
+            DBB2.api.SetChannelMonitored(check._channelName, checked)
+          end
+          -- Highlight border on hover
+          check:SetScript("OnEnter", function()
+            local r, g, b = DBB2:GetHighlightColor()
+            this.backdrop:SetBackdropBorderColor(r, g, b, 1)
+          end)
+          check:SetScript("OnLeave", function()
+            this.backdrop:SetBackdropBorderColor(0.3, 0.3, 0.3, 1)
+          end)
+        else
+          -- Normal channel handling
+          check:SetChecked(DBB2.api.IsChannelMonitored(channelName))
+          
+          check.OnChecked = function(checked)
+            DBB2.api.SetChannelMonitored(check._channelName, checked)
+          end
+          
+          -- Add tooltip
+          check:SetScript("OnEnter", function()
+            local r, g, b = DBB2:GetHighlightColor()
+            this.backdrop:SetBackdropBorderColor(r, g, b, 1)
+            local desc = channelDescriptions[this._channelName] or "Monitor this channel for messages."
+            DBB2.api.ShowTooltip(this, "RIGHT", {
+              {this._channelName, "highlight"},
+              desc
+            })
+          end)
+          
+          check:SetScript("OnLeave", function()
+            this.backdrop:SetBackdropBorderColor(0.3, 0.3, 0.3, 1)
+            DBB2.api.HideTooltip()
+          end)
+        end
+        
+        table.insert(channelsPanel.channelCheckboxes, check)
+        lastElement = check
+        elementCount = elementCount + 1
+      end
+    end
+    
+    -- Set container height to fit content exactly
+    channelsPanel.checkboxContainer:SetHeight(totalHeight)
+    
+    -- Update scroll child height to fit all content exactly
+    -- Header (title + desc + spacing) + totalHeight + small bottom padding
+    local headerHeight = DBB2:ScaleSize(10 + 12 + 5 + 12)  -- top padding + title + desc spacing + container offset
+    local bottomPadding = DBB2:ScaleSize(5)  -- minimal padding to match other tabs
+    local newContentHeight = headerHeight + totalHeight + bottomPadding
+    channelsScrollChild:SetHeight(newContentHeight)
+    
+    -- Update scroll state
+    if channelsScroll.UpdateScrollState then
+      channelsScroll.UpdateScrollState()
+    end
+  end
+  
+  -- Build initial checkboxes
+  RebuildChannelCheckboxes()
+  
+  -- Expose rebuild function on panel for event-driven updates
+  channelsPanel.RebuildChannelCheckboxes = RebuildChannelCheckboxes
+  
+  -- Rebuild checkboxes when panel is shown (catches channels joined after login)
+  local originalOnShow = channelsPanel:GetScript("OnShow")
+  channelsPanel:SetScript("OnShow", function()
+    RebuildChannelCheckboxes()
+    if originalOnShow then
+      originalOnShow()
+    end
+  end)
   
   -- =====================
   -- CATEGORY CONFIG PANELS (Groups, Professions, Hardcore)

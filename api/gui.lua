@@ -251,6 +251,33 @@ function DBB2.api.CreateCheckBox(name, parent, label, fontSize)
     f.label:SetTextColor(1, 1, 1, 1)
   end
   
+  -- Disable method (grays out and prevents clicks)
+  f.Disable = function(self)
+    self.isDisabled = true
+    self.button:EnableMouse(false)
+    self.check:SetVertexColor(0.5, 0.5, 0.5, 1)
+    if self.backdrop then
+      self.backdrop:SetBackdropBorderColor(0.2, 0.2, 0.2, 1)
+    end
+    if self.label then
+      self.label:SetTextColor(0.5, 0.5, 0.5, 1)
+    end
+  end
+  
+  -- Enable method (restores normal state)
+  f.Enable = function(self)
+    self.isDisabled = false
+    self.button:EnableMouse(true)
+    local r, g, b = DBB2:GetHighlightColor()
+    self.check:SetVertexColor(r, g, b, 1)
+    if self.backdrop then
+      self.backdrop:SetBackdropBorderColor(0.3, 0.3, 0.3, 1)
+    end
+    if self.label then
+      self.label:SetTextColor(1, 1, 1, 1)
+    end
+  end
+  
   return f
 end
 

@@ -1,11 +1,17 @@
 -- Create main addon namespace
 DBB2 = CreateFrame("Frame", nil, UIParent)
 DBB2:RegisterEvent("ADDON_LOADED")
+DBB2:RegisterEvent("PLAYER_ENTERING_WORLD")
 DBB2:RegisterEvent("CHAT_MSG_CHANNEL")
 DBB2:RegisterEvent("CHAT_MSG_GUILD")
+DBB2:RegisterEvent("CHAT_MSG_SAY")
+DBB2:RegisterEvent("CHAT_MSG_YELL")
+DBB2:RegisterEvent("CHAT_MSG_PARTY")
+DBB2:RegisterEvent("CHAT_MSG_WHISPER")
 DBB2:RegisterEvent("CHAT_MSG_SYSTEM")
 DBB2:RegisterEvent("UPDATE_INSTANCE_INFO")
 DBB2:RegisterEvent("CHAT_MSG_HARDCORE")  -- Turtle WoW hardcore chat
+DBB2:RegisterEvent("CHAT_MSG_CHANNEL_NOTICE")  -- Channel join/leave notifications
 
 -- Initialize saved variables
 DBB2_Config = {}
@@ -178,7 +184,56 @@ DBB2:SetScript("OnEvent", function()
     -- Initialize lockout tracking
     DBB2.api.InitLockouts()
     
+    -- Initialize channel monitoring config
+    DBB2.api.InitChannelConfig()
+    
     DEFAULT_CHAT_FRAME:AddMessage("|cff33ffccDifficult|cffffffffBulletinBoard |cff555555v2.00|r loaded. Click minimap button to open.")
+  end
+  
+  if event == "PLAYER_ENTERING_WORLD" then
+    -- Clear hardcore detection cache to force fresh detection on each login/switch
+    DBB2_Config.isHardcoreCharacter = nil
+    local isHardcore = DBB2.api.DetectHardcoreCharacter()
+    
+    -- For hardcore characters, default all channels to off except Hardcore and Guild
+    if isHardcore then
+      DBB2.api.SetChannelMonitored("World", false)
+      DBB2.api.SetChannelMonitored("LookingForGroup", false)
+      DBB2.api.SetChannelMonitored("General", false)
+      DBB2.api.SetChannelMonitored("Trade", false)
+      DBB2.api.SetChannelMonitored("Say", false)
+      DBB2.api.SetChannelMonitored("Yell", false)
+      DBB2.api.SetChannelMonitored("Whisper", false)
+      DBB2.api.SetChannelMonitored("Party", false)
+      DBB2.api.SetChannelMonitored("LocalDefense", false)
+      DBB2.api.SetChannelMonitored("WorldDefense", false)
+      DBB2.api.SetChannelMonitored("GuildRecruitment", false)
+    end
+    
+    -- Rebuild channel config panel if it exists (updates states)
+    if DBB2.gui and DBB2.gui.configTabs and DBB2.gui.configTabs.panels then
+      local channelsPanel = DBB2.gui.configTabs.panels["Channels"]
+      if channelsPanel and channelsPanel.RebuildChannelCheckboxes then
+        channelsPanel.RebuildChannelCheckboxes()
+      end
+    end
+    
+    -- Auto-join required channels (World, LookingForGroup) if not already joined
+    -- Use a small delay to ensure channel system is ready
+    if not DBB2._autoJoinScheduled then
+      DBB2._autoJoinScheduled = true
+      -- Create a frame for the delayed call
+      local delayFrame = CreateFrame("Frame")
+      delayFrame.elapsed = 0
+      delayFrame:SetScript("OnUpdate", function()
+        this.elapsed = this.elapsed + arg1
+        if this.elapsed >= 2 then  -- 2 second delay
+          DBB2.api.AutoJoinRequiredChannels()
+          this:SetScript("OnUpdate", nil)
+          this:Hide()
+        end
+      end)
+    end
   end
   
   if event == "CHAT_MSG_CHANNEL" or event == "CHAT_MSG_GUILD" then
@@ -186,6 +241,13 @@ DBB2:SetScript("OnEvent", function()
     local message = arg1
     local sender = arg2
     local channel = arg9 or "Guild"
+    
+    -- For Guild messages, check if Guild channel is monitored
+    if event == "CHAT_MSG_GUILD" then
+      if not DBB2.api.IsChannelMonitored("Guild") then
+        return  -- Guild channel not monitored, ignore
+      end
+    end
     
     -- For channel messages, only capture from whitelisted LFG-relevant channels
     -- This automatically filters out addon channels like TTRP, XTENSIONXTOOLTIP, etc.
@@ -204,17 +266,43 @@ DBB2:SetScript("OnEvent", function()
     DBB2.api.AddMessage(message, sender, channel, event)
   end
   
+  if event == "CHAT_MSG_SAY" or event == "CHAT_MSG_YELL" or event == "CHAT_MSG_PARTY" or event == "CHAT_MSG_WHISPER" then
+    -- Capture Say, Yell, Party, Whisper messages
+    local message = arg1
+    local sender = arg2
+    local channel
+    
+    if event == "CHAT_MSG_SAY" then
+      channel = "Say"
+    elseif event == "CHAT_MSG_YELL" then
+      channel = "Yell"
+    elseif event == "CHAT_MSG_WHISPER" then
+      channel = "Whisper"
+    else
+      channel = "Party"
+    end
+    
+    -- Check if this channel is monitored
+    if not DBB2.api.IsChannelMonitored(channel) then
+      return
+    end
+    
+    DBB2.api.AddMessage(message, sender, channel, event)
+  end
+  
   if event == "CHAT_MSG_HARDCORE" then
     -- Turtle WoW hardcore chat messages
     local message = arg1
     local sender = arg2
     
+    -- Check if Hardcore channel is monitored
+    if not DBB2.api.IsChannelMonitored("Hardcore") then
+      return  -- Hardcore channel not monitored, ignore
+    end
+    
     -- Mark hardcore chat as active (enables auto-switch from World)
-    -- On first hardcore message, clear any World messages captured before switch
     if not DBB2.api.IsHardcoreChatActive() then
       DBB2.api.SetHardcoreChatActive()
-      -- Clear messages from World channel that snuck in before detection
-      DBB2.api.ClearWorldMessages()
     end
     
     DBB2.api.AddMessage(message, sender, "Hardcore", event)
@@ -232,6 +320,18 @@ DBB2:SetScript("OnEvent", function()
   
   if event == "UPDATE_INSTANCE_INFO" then
     DBB2.api.UpdateLockouts()
+  end
+  
+  if event == "CHAT_MSG_CHANNEL_NOTICE" then
+    -- Channel join/leave notification - refresh channel list if panel exists
+    -- arg1 = notice type (e.g. "YOU_JOINED", "YOU_LEFT")
+    -- arg9 = channel name
+    if DBB2.gui and DBB2.gui.configTabs and DBB2.gui.configTabs.panels then
+      local channelsPanel = DBB2.gui.configTabs.panels["Channels"]
+      if channelsPanel and channelsPanel.RebuildChannelCheckboxes then
+        channelsPanel.RebuildChannelCheckboxes()
+      end
+    end
   end
 end)
 
