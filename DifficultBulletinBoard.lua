@@ -195,8 +195,10 @@ DBB2:SetScript("OnEvent", function()
     DBB2_Config.isHardcoreCharacter = nil
     local isHardcore = DBB2.api.DetectHardcoreCharacter()
     
-    -- For hardcore characters, default all channels to off except Hardcore and Guild
-    if isHardcore then
+    -- For hardcore characters, apply defaults ONLY if user hasn't customized channels yet
+    -- Once user makes any change, their preferences are saved like normal characters
+    if isHardcore and not DBB2_Config.hardcoreChannelsInitialized then
+      DBB2_Config.hardcoreChannelsInitialized = true
       DBB2.api.SetChannelMonitored("World", false)
       DBB2.api.SetChannelMonitored("LookingForGroup", false)
       DBB2.api.SetChannelMonitored("General", false)

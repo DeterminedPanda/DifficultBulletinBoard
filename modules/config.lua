@@ -120,13 +120,10 @@ DBB2:RegisterModule("config", function()
       players = {},
       keywords = {"recruit*", "<*>", "[???]", "[??]"}
     }
-    -- Reset monitored channels to defaults
-    DBB2_Config.monitoredChannels = nil
-    DBB2.api.InitChannelConfig()
-    -- Reset whitelisted channels to match
-    DBB2.api.ResetWhitelistedChannels()
-    -- Reset hardcore detection (will re-detect on reload)
-    DBB2_Config.isHardcoreCharacter = nil
+    -- Reset monitored channels to defaults (handles hardcore vs normal)
+    -- Clear the initialized flag so hardcore defaults can be re-applied
+    DBB2_Config.hardcoreChannelsInitialized = nil
+    DBB2.api.ResetChannelDefaults()
     -- Reset GUI position and size to defaults
     DBB2_Config.position = nil
     -- Reset categories to defaults (lives in modules namespace, not api)

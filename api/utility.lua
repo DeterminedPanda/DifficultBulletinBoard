@@ -316,6 +316,39 @@ function DBB2.api.InitChannelConfig()
   end
 end
 
+-- [ ResetChannelDefaults ]
+-- Resets channel monitoring to defaults based on character type
+-- Hardcore characters: only Hardcore + Guild enabled
+-- Normal characters: standard defaults (World, LFG, General, Trade, Guild)
+-- return:      [boolean]       true if hardcore defaults applied, false if normal
+function DBB2.api.ResetChannelDefaults()
+  local isHardcore = DBB2.api.IsHardcoreCharacter()
+  
+  -- Reset all channels to off first
+  DBB2_Config.monitoredChannels = {}
+  for channel, _ in pairs(DBB2._defaultMonitoredChannels) do
+    DBB2_Config.monitoredChannels[channel] = false
+  end
+  
+  if isHardcore then
+    -- Hardcore defaults: only Hardcore and Guild
+    DBB2_Config.monitoredChannels["Hardcore"] = true
+    DBB2_Config.monitoredChannels["Guild"] = true
+    -- Clear the initialized flag so it can be re-applied if needed
+    DBB2_Config.hardcoreChannelsInitialized = true
+  else
+    -- Normal defaults from the default table
+    for channel, enabled in pairs(DBB2._defaultMonitoredChannels) do
+      DBB2_Config.monitoredChannels[channel] = enabled
+    end
+  end
+  
+  -- Also reset the whitelist to match
+  DBB2.api.ResetWhitelistedChannels()
+  
+  return isHardcore
+end
+
 -- [ RefreshJoinedChannels ]
 -- Fetches all currently joined channels and adds them to config (disabled by default)
 -- This should be called when the Channels panel is shown to catch late-joining channels
@@ -404,9 +437,11 @@ end
 
 -- [ DetectHardcoreCharacter ]
 -- Detects if the current character is an active hardcore character by scanning spellbook
+-- Only scans the first "General" tab for efficiency and accuracy.
+-- Looks for spells with rank "Challenge" (e.g., "Hardcore (Challenge)", "Inferno (Challenge)")
 -- A character is considered "active hardcore" if:
---   1. Has "Hardcore" spell AND is below level 60 (normal hardcore), OR
---   2. Has "Inferno" spell (level 60 hardcore who chose to stay hardcore)
+--   1. Has "Hardcore" spell with "Challenge" rank AND is below level 60 (normal hardcore), OR
+--   2. Has "Inferno" spell with "Challenge" rank (level 60 hardcore who chose to stay hardcore)
 -- return:      [boolean]       true if active hardcore character detected
 function DBB2.api.DetectHardcoreCharacter()
   -- Check cached result first
@@ -418,18 +453,23 @@ function DBB2.api.DetectHardcoreCharacter()
   local hasInfernoSpell = false
   local playerLevel = UnitLevel("player") or 60
   
-  -- Scan spellbook for "Hardcore" and "Inferno" spells
-  for tab = 1, GetNumSpellTabs() do
-    local _, _, offset, numSpells = GetSpellTabInfo(tab)
+  -- Only scan the first "General" tab (tab 1) for challenge spells
+  -- This is more efficient and avoids false matches from other spell tabs
+  local numTabs = GetNumSpellTabs()
+  if numTabs >= 1 then
+    local tabName, _, offset, numSpells = GetSpellTabInfo(1)
+    
     for i = 1, numSpells do
-      local spellName = GetSpellName(offset + i, "spell")
-      if spellName then
-        local lowerName = string.lower(spellName)
-        if string.find(lowerName, "hardcore") then
-          hasHardcoreSpell = true
-        end
-        if string.find(lowerName, "inferno") then
-          hasInfernoSpell = true
+      local spellName, spellRank = GetSpellName(offset + i, "spell")
+      if spellName and spellRank then
+        -- Only match spells with "Challenge" rank for precise detection
+        if spellRank == "Challenge" then
+          local lowerName = string.lower(spellName)
+          if lowerName == "hardcore" then
+            hasHardcoreSpell = true
+          elseif lowerName == "inferno" then
+            hasInfernoSpell = true
+          end
         end
       end
     end
