@@ -2,7 +2,7 @@
 ## Title: |cffaaa7ccDifficult|cffffffffBulletinBoard
 ## Author: akzkak, DeterminedPanda
 ## Notes: Group finder based on chat messages
-## Version: 2.08
+## Version: 2.10
 ## SavedVariablesPerCharacter: DBB2_Config
 
 DifficultBulletinBoard.lua
