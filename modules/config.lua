@@ -111,6 +111,7 @@ DBB2:RegisterModule("config", function()
     DBB2_Config.notificationSound = 1
     DBB2_Config.showCurrentTime = false
     DBB2_Config.showLevelFilteredGroups = false
+    DBB2_Config.clearNotificationsOnGroupJoin = true
     -- Reset notifications to defaults (mode 0 = off)
     DBB2_Config.notifications = { mode = 0 }
     -- Reset blacklist to defaults
@@ -194,7 +195,7 @@ DBB2:RegisterModule("config", function()
   versionFrame.version = versionFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
   versionFrame.version:SetFont("Fonts\\FRIZQT__.TTF", DBB2:GetFontSize(9))
   versionFrame.version:SetPoint("TOPRIGHT", versionFrame.name, "BOTTOMRIGHT", 0, -2)
-  versionFrame.version:SetText("v2.10")
+  versionFrame.version:SetText("v2.11")
   versionFrame.version:SetTextColor(0.5, 0.5, 0.5, 1)
   versionFrame.version:SetJustifyH("RIGHT")
   
@@ -576,9 +577,38 @@ DBB2:RegisterModule("config", function()
     soundSlider.label:SetText("Sound: " .. soundNames[value])
   end
   
+  -- Clear on Group Join toggle (0 = off, 1 = on)
+  local clearOnGroupEnabled = DBB2_Config.clearNotificationsOnGroupJoin and 1 or 0
+  local clearOnGroupNames = { [0] = "Off", [1] = "On" }
+  local clearOnGroupSlider = DBB2.api.CreateSlider("DBB2ClearOnGroupSlider", generalScrollChild, "Auto-Clear: " .. clearOnGroupNames[clearOnGroupEnabled], 0, 1, 1, 9)
+  clearOnGroupSlider:SetPoint("TOPLEFT", soundSlider, "BOTTOMLEFT", 0, -DBB2:ScaleSize(11))
+  clearOnGroupSlider:SetWidth(DBB2:ScaleSize(250))
+  clearOnGroupSlider:SetValue(clearOnGroupEnabled)
+  
+  -- Add tooltip on hover
+  clearOnGroupSlider.slider:SetScript("OnEnter", function()
+    local r, g, b = DBB2:GetHighlightColor()
+    this.backdrop:SetBackdropBorderColor(r, g, b, 1)
+    DBB2.api.ShowTooltip(this, "RIGHT", {
+      {"Auto-Clear", "highlight"},
+      "Disable all category notifications",
+      "when joining a party or raid."
+    })
+  end)
+  
+  clearOnGroupSlider.slider:SetScript("OnLeave", function()
+    this.backdrop:SetBackdropBorderColor(0.2, 0.2, 0.2, 1)
+    DBB2.api.HideTooltip()
+  end)
+  
+  clearOnGroupSlider.OnValueChanged = function(value)
+    DBB2_Config.clearNotificationsOnGroupJoin = (value == 1)
+    clearOnGroupSlider.label:SetText("Auto-Clear: " .. clearOnGroupNames[value])
+  end
+  
   -- Spam Prevention section title
   local spamTitle = DBB2.api.CreateLabel(generalScrollChild, "Spam Prevention", 10)
-  spamTitle:SetPoint("TOPLEFT", soundSlider, "BOTTOMLEFT", 0, -DBB2:ScaleSize(19))
+  spamTitle:SetPoint("TOPLEFT", clearOnGroupSlider, "BOTTOMLEFT", 0, -DBB2:ScaleSize(19))
   spamTitle:SetTextColor(hr, hg, hb, 1)
   
   -- Message expire slider (0-30 minutes, 0 = disabled)

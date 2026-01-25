@@ -810,6 +810,41 @@ notificationFrame:SetScript("OnUpdate", function()
   end
 end)
 
+-- [ ClearNotificationQueue ]
+-- Clears all pending notifications from the queue
+-- Called when joining a group (if clearNotificationsOnGroupJoin is enabled)
+function DBB2.api.ClearNotificationQueue()
+  DBB2.notificationQueue = {}
+  DBB2.notificationActive = false
+  DBB2.notificationTimer = 0
+end
+
+-- [ DisableAllNotifications ]
+-- Disables notifications for all categories and clears the pending queue
+-- Called when joining a group (if clearNotificationsOnGroupJoin is enabled)
+function DBB2.api.DisableAllNotifications()
+  -- Clear the notification state for all category types
+  DBB2.notificationState = {
+    groups = {},
+    professions = {},
+    hardcore = {}
+  }
+  
+  -- Also clear any pending notifications in the queue
+  DBB2.api.ClearNotificationQueue()
+  
+  -- Update GUI bell icons if visible
+  if DBB2.gui and DBB2.gui:IsShown() and DBB2.gui.tabs then
+    local panels = {"Groups", "Professions", "Hardcore"}
+    for _, panelName in ipairs(panels) do
+      local panel = DBB2.gui.tabs.panels[panelName]
+      if panel and panel.UpdateCategories then
+        panel.UpdateCategories()
+      end
+    end
+  end
+end
+
 -- [ SendNotification ]
 -- Sends a notification for a matched category
 function DBB2.api.SendNotification(categoryName, sender, message)

@@ -12,6 +12,8 @@ DBB2:RegisterEvent("CHAT_MSG_SYSTEM")
 DBB2:RegisterEvent("UPDATE_INSTANCE_INFO")
 DBB2:RegisterEvent("CHAT_MSG_HARDCORE")  -- Turtle WoW hardcore chat
 DBB2:RegisterEvent("CHAT_MSG_CHANNEL_NOTICE")  -- Channel join/leave notifications
+DBB2:RegisterEvent("PARTY_MEMBERS_CHANGED")  -- Party join/leave for notification clearing
+DBB2:RegisterEvent("RAID_ROSTER_UPDATE")  -- Raid join/leave for notification clearing
 
 -- Initialize saved variables
 DBB2_Config = {}
@@ -332,6 +334,16 @@ DBB2:SetScript("OnEvent", function()
       local channelsPanel = DBB2.gui.configTabs.panels["Channels"]
       if channelsPanel and channelsPanel.RebuildChannelCheckboxes then
         channelsPanel.RebuildChannelCheckboxes()
+      end
+    end
+  end
+  
+  if event == "PARTY_MEMBERS_CHANGED" or event == "RAID_ROSTER_UPDATE" then
+    -- Disable all category notifications when joining a group (if enabled)
+    if DBB2_Config.clearNotificationsOnGroupJoin then
+      -- Check if in a party or raid
+      if GetNumPartyMembers() > 0 or GetNumRaidMembers() > 0 then
+        DBB2.api.DisableAllNotifications()
       end
     end
   end
