@@ -367,11 +367,12 @@ DBB2:RegisterModule("gui", function()
       end
     end
     
-    local contentHeight = visibleRows * ROW_HEIGHT + DBB2:ScaleSize(10)
-    local newChildHeight = math_max(contentHeight, scrollHeight)
+    local contentHeight = visibleRows * ROW_HEIGHT
+    local newChildHeight = contentHeight
     
     if newChildHeight ~= lastChildHeight then
       DBB2.gui.scrollchild:SetHeight(newChildHeight)
+      DBB2.gui.scrollchild:SetWidth(this:GetWidth() or 1)  -- Ensure width is set before SetScrollChild
       this:SetScrollChild(DBB2.gui.scrollchild)
       lastChildHeight = newChildHeight
     end
@@ -977,7 +978,7 @@ DBB2:RegisterModule("gui", function()
             if isCollapsed or visibleMessages == 0 then
               catHeight = headerHeight + DBB2:ScaleSize(5)  -- Just header height
             else
-              catHeight = headerHeight + (visibleMessages * ROW_HEIGHT) + DBB2:ScaleSize(10)
+              catHeight = headerHeight + (visibleMessages * ROW_HEIGHT) + DBB2:ScaleSize(5)
             end
             catFrame:SetHeight(catHeight)
             catFrame:Show()
@@ -990,7 +991,9 @@ DBB2:RegisterModule("gui", function()
       
       -- Update scroll child height
       local scrollHeight = scroll:GetHeight()
-      scrollchild:SetHeight(math_max(yOffset, scrollHeight))
+      local newChildHeight = math_max(yOffset, scrollHeight)
+      scrollchild:SetHeight(newChildHeight)
+      scrollchild:SetWidth(scroll:GetWidth() or 1)  -- Ensure width is set before SetScrollChild
       scroll:SetScrollChild(scrollchild)
       -- Defer UpdateScrollState to next frame so WoW can recalculate scroll range
       scroll._needsScrollUpdate = true
@@ -1077,10 +1080,18 @@ DBB2:RegisterModule("gui", function()
     local activeTab = DBB2.gui.tabs.activeTab
     if activeTab == "Logs" then
       DBB2.gui:UpdateMessages()
+      -- Force scroll state update after resize
+      if DBB2.gui.scroll and DBB2.gui.scroll.UpdateScrollState then
+        DBB2.gui.scroll.UpdateScrollState()
+      end
     elseif activeTab == "Groups" or activeTab == "Professions" or activeTab == "Hardcore" then
       local panel = DBB2.gui.tabs.panels[activeTab]
       if panel and panel.UpdateCategories then
         panel.UpdateCategories()
+      end
+      -- Force scroll state update after resize
+      if panel and panel.scroll and panel.scroll.UpdateScrollState then
+        panel.scroll.UpdateScrollState()
       end
     end
   end)

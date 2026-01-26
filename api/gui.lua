@@ -17,8 +17,8 @@ function DBB2.api.CreateScrollFrame(name, parent)
   f.slider = CreateFrame("Slider", nil, f)
   f.slider:SetOrientation('VERTICAL')
   f.slider:SetWidth(sliderWidth)
-  f.slider:SetPoint("TOPRIGHT", f, "TOPRIGHT", 0, 0)
-  f.slider:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", 0, 0)
+  f.slider:SetPoint("TOPRIGHT", f, "TOPRIGHT", 0, -1)
+  f.slider:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", 0, 1)
   
   -- CRITICAL: These are required for the slider to be draggable in WoW 1.12.1
   f.slider:EnableMouse(1)
@@ -37,26 +37,50 @@ function DBB2.api.CreateScrollFrame(name, parent)
   f.slider:SetScript("OnValueChanged", function()
     f:SetVerticalScroll(this:GetValue())
   end)
+  
+  -- Helper to calculate scroll range from scroll child
+  f.GetCalculatedScrollRange = function()
+    local frameHeight = f:GetHeight() or 0
+    local wowRange = f:GetVerticalScrollRange() or 0
+    
+    -- Calculate range from scroll child height
+    local calcRange = 0
+    if f.scrollChild and frameHeight > 0 then
+      local childHeight = f.scrollChild:GetHeight() or 0
+      calcRange = math.max(0, childHeight - frameHeight)
+    end
+    
+    -- Always trust calcRange when it's 0 or smaller than wowRange
+    -- This handles content shrinking (filter added) immediately
+    -- Only use wowRange when calcRange is larger (prevents over-scrolling)
+    if calcRange <= 0 then
+      return 0
+    elseif wowRange > 0 then
+      return math.min(wowRange, calcRange)
+    else
+      return calcRange
+    end
+  end
 
   f.UpdateScrollState = function()
-    local scrollRange = f:GetVerticalScrollRange()
     local frameHeight = f:GetHeight()
     
     -- Only update if we have valid dimensions
     if frameHeight and frameHeight > 0 then
+      local scrollRange = f.GetCalculatedScrollRange()
+      
       f.slider:SetMinMaxValues(0, scrollRange)
       f.slider:SetValue(f:GetVerticalScroll())
 
-      local m = frameHeight + scrollRange
-      local ratio = frameHeight / m
-
-      if ratio < 1 and scrollRange > 0 then
+      -- Hide scrollbar when content fits (scrollRange is 0 or negligible)
+      if scrollRange <= 1 then
+        f.slider:Hide()
+      else
+        local m = frameHeight + scrollRange
+        local ratio = frameHeight / m
         local size = math.floor(frameHeight * ratio)
         f.slider.thumb:SetHeight(math.max(size, DBB2:ScaleSize(20)))
         f.slider:Show()
-      else
-        -- Hide scrollbar when not needed
-        f.slider:Hide()
       end
     end
   end
@@ -65,7 +89,7 @@ function DBB2.api.CreateScrollFrame(name, parent)
     step = step or 0
 
     local current = f:GetVerticalScroll()
-    local max = f:GetVerticalScrollRange()
+    local max = f.GetCalculatedScrollRange()
     local new = current - step
 
     if new >= max then
@@ -108,6 +132,130 @@ function DBB2.api.CreateScrollChild(name, parent)
   parent:SetScrollChild(f)
   -- Store reference on parent for manual scroll range calculation
   parent.scrollChild = f
+  return f
+end
+
+-- [ CreateStaticScrollFrame ]
+-- Creates a scroll frame for static content (like config panels)
+-- Uses simple height-based calculation without dynamic content tracking
+-- 'name'       [string]        frame name (optional)
+-- 'parent'     [frame]         parent frame
+-- return:      [frame]         the scroll frame
+function DBB2.api.CreateStaticScrollFrame(name, parent)
+  local f = CreateFrame("ScrollFrame", name, parent)
+
+  -- create slider
+  local sliderWidth = DBB2:ScaleSize(7)
+  f.slider = CreateFrame("Slider", nil, f)
+  f.slider:SetOrientation('VERTICAL')
+  f.slider:SetWidth(sliderWidth)
+  f.slider:SetPoint("TOPRIGHT", f, "TOPRIGHT", 0, -1)
+  f.slider:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", 0, 1)
+  
+  -- CRITICAL: These are required for the slider to be draggable in WoW 1.12.1
+  f.slider:EnableMouse(1)
+  f.slider:SetValueStep(1)
+  f.slider:SetMinMaxValues(0, 0)
+  f.slider:SetValue(0)
+  
+  -- Set thumb texture
+  f.slider:SetThumbTexture("Interface\\BUTTONS\\WHITE8X8")
+  f.slider.thumb = f.slider:GetThumbTexture()
+  f.slider.thumb:SetWidth(sliderWidth)
+  f.slider.thumb:SetHeight(DBB2:ScaleSize(50))
+  local hr, hg, hb = DBB2:GetHighlightColor()
+  f.slider.thumb:SetTexture(hr, hg, hb, .5)
+
+  f.slider:SetScript("OnValueChanged", function()
+    f:SetVerticalScroll(this:GetValue())
+  end)
+
+  -- Simple scroll range calculation for static content
+  -- Just uses scroll child height directly
+  f.GetScrollRange = function()
+    local frameHeight = f:GetHeight() or 0
+    if f.scrollChild and frameHeight > 0 then
+      local childHeight = f.scrollChild:GetHeight() or 0
+      return math.max(0, childHeight - frameHeight)
+    end
+    return 0
+  end
+
+  f.UpdateScrollState = function()
+    local frameHeight = f:GetHeight()
+    
+    if frameHeight and frameHeight > 0 then
+      local scrollRange = f.GetScrollRange()
+      
+      f.slider:SetMinMaxValues(0, scrollRange)
+      
+      -- Clamp current scroll to valid range
+      local currentScroll = f:GetVerticalScroll()
+      if currentScroll > scrollRange then
+        f:SetVerticalScroll(scrollRange)
+        f.slider:SetValue(scrollRange)
+      else
+        f.slider:SetValue(currentScroll)
+      end
+
+      -- Hide scrollbar when content fits
+      if scrollRange <= 1 then
+        f.slider:Hide()
+      else
+        local m = frameHeight + scrollRange
+        local ratio = frameHeight / m
+        local size = math.floor(frameHeight * ratio)
+        f.slider.thumb:SetHeight(math.max(size, DBB2:ScaleSize(20)))
+        f.slider:Show()
+      end
+    end
+  end
+
+  f.Scroll = function(self, step)
+    step = step or 0
+
+    local current = f:GetVerticalScroll()
+    local max = f.GetScrollRange()
+    local new = current - step
+
+    if new >= max then
+      f:SetVerticalScroll(max)
+    elseif new <= 0 then
+      f:SetVerticalScroll(0)
+    else
+      f:SetVerticalScroll(new)
+    end
+
+    f.UpdateScrollState()
+  end
+
+  f:EnableMouseWheel(1)
+  f:SetScript("OnMouseWheel", function()
+    local scrollSpeed = DBB2_Config.scrollSpeed or 20
+    f:Scroll(arg1 * scrollSpeed)
+  end)
+
+  return f
+end
+
+-- [ CreateStaticScrollChild ]
+-- Creates a scroll child for static scroll frames
+-- 'name'       [string]        frame name (optional)
+-- 'parent'     [frame]         parent scroll frame
+-- 'height'     [number]        fixed content height
+-- return:      [frame]         the scroll child frame
+function DBB2.api.CreateStaticScrollChild(name, parent, height)
+  local f = CreateFrame("Frame", name, parent)
+  f:SetWidth(parent:GetWidth() or 1)
+  f:SetHeight(height or 1)
+  parent:SetScrollChild(f)
+  parent.scrollChild = f
+  
+  -- Update scroll state after setting child
+  if parent.UpdateScrollState then
+    parent.UpdateScrollState()
+  end
+  
   return f
 end
 

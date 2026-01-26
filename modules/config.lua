@@ -218,57 +218,26 @@ DBB2:RegisterModule("config", function()
   -- =====================
   local generalPanel = DBB2.gui.configTabs.panels["General"]
   
-  -- Create scroll frame for General tab
-  local generalScroll = DBB2.api.CreateScrollFrame("DBB2GeneralScroll", generalPanel)
+  -- Create static scroll frame for General tab (fixed content height)
+  local generalScroll = DBB2.api.CreateStaticScrollFrame("DBB2GeneralScroll", generalPanel)
   generalScroll:SetPoint("TOPLEFT", generalPanel, "TOPLEFT", 0, 0)
   generalScroll:SetPoint("BOTTOMRIGHT", generalPanel, "BOTTOMRIGHT", 0, 0)
-  generalPanel.scrollFrame = generalScroll  -- Register for OnShow update
+  generalPanel.scrollFrame = generalScroll
   
-  -- Add padding to scrollbar (config tabs don't have natural padding like main GUI)
+  -- Add padding to scrollbar
   local sliderPadding = DBB2:ScaleSize(5)
   generalScroll.slider:ClearAllPoints()
   generalScroll.slider:SetPoint("TOPRIGHT", generalScroll, "TOPRIGHT", 0, -sliderPadding)
   generalScroll.slider:SetPoint("BOTTOMRIGHT", generalScroll, "BOTTOMRIGHT", 0, sliderPadding)
   
-  local generalScrollChild = DBB2.api.CreateScrollChild("DBB2GeneralScrollChild", generalScroll)
-  
   -- Content container with fixed height for all settings
-  local contentHeight = DBB2:ScaleSize(450)  -- Enough for all settings including notifications
-  generalScrollChild:SetHeight(contentHeight)
+  -- Height calculated to fit all content with ScaleSize(5) bottom padding (matching main GUI)
+  local contentHeight = DBB2:ScaleSize(638)
+  local generalScrollChild = DBB2.api.CreateStaticScrollChild("DBB2GeneralScrollChild", generalScroll, contentHeight)
   
   -- Update scroll child width on size change
-  -- Track last width to avoid redundant updates
   local lastGeneralScrollWidth = 0
   generalScroll:SetScript("OnUpdate", function()
-    -- Check for deferred scroll update
-    if this._needsScrollUpdate then
-      this._needsScrollUpdate = false
-      -- Re-set scroll child to force WoW to recalculate scroll range
-      local childHeight = generalScrollChild:GetHeight()
-      this:SetScrollChild(generalScrollChild)
-      local scrollRange = this:GetVerticalScrollRange()
-      local frameHeight = this:GetHeight()
-      
-      -- Special case for General config: manually calculate scroll range since WoW returns 0
-      -- This is safe because General has fixed content height set at creation
-      if scrollRange == 0 and childHeight > frameHeight then
-        scrollRange = childHeight - frameHeight
-        this.slider:SetMinMaxValues(0, scrollRange)
-        this.slider:SetValue(this:GetVerticalScroll())
-        local m = frameHeight + scrollRange
-        local ratio = frameHeight / m
-        if ratio < 1 and scrollRange > 0 then
-          local size = math.floor(frameHeight * ratio)
-          this.slider.thumb:SetHeight(math.max(size, DBB2:ScaleSize(20)))
-          this.slider:Show()
-          return
-        end
-      end
-      
-      this.UpdateScrollState()
-    end
-    
-    -- Early exit if not visible
     if not this:IsVisible() then return end
     
     local scrollLeft = this:GetLeft()
@@ -277,7 +246,6 @@ DBB2:RegisterModule("config", function()
     
     local scrollWidth = scrollRight - scrollLeft
     
-    -- Only update if width actually changed
     if scrollWidth > 0 and scrollWidth ~= lastGeneralScrollWidth then
       lastGeneralScrollWidth = scrollWidth
       generalScrollChild:SetWidth(scrollWidth)
@@ -788,55 +756,24 @@ DBB2:RegisterModule("config", function()
   -- =====================
   local channelsPanel = DBB2.gui.configTabs.panels["Channels"]
   
-  -- Create scroll frame for Channels tab
-  local channelsScroll = DBB2.api.CreateScrollFrame("DBB2ChannelsScroll", channelsPanel)
+  -- Create static scroll frame for Channels tab
+  local channelsScroll = DBB2.api.CreateStaticScrollFrame("DBB2ChannelsScroll", channelsPanel)
   channelsScroll:SetPoint("TOPLEFT", channelsPanel, "TOPLEFT", 0, 0)
   channelsScroll:SetPoint("BOTTOMRIGHT", channelsPanel, "BOTTOMRIGHT", 0, 0)
-  channelsPanel.scrollFrame = channelsScroll  -- Register for OnShow update
+  channelsPanel.scrollFrame = channelsScroll
   
-  -- Add padding to scrollbar (config tabs don't have natural padding like main GUI)
+  -- Add padding to scrollbar
   local chSliderPadding = DBB2:ScaleSize(5)
   channelsScroll.slider:ClearAllPoints()
   channelsScroll.slider:SetPoint("TOPRIGHT", channelsScroll, "TOPRIGHT", 0, -chSliderPadding)
   channelsScroll.slider:SetPoint("BOTTOMRIGHT", channelsScroll, "BOTTOMRIGHT", 0, chSliderPadding)
   
-  local channelsScrollChild = DBB2.api.CreateScrollChild("DBB2ChannelsScrollChild", channelsScroll)
-  
   -- Content height will be set dynamically based on channel count
-  -- Start with a reasonable height to show auto-join section, will be updated by RebuildChannelCheckboxes
-  channelsScrollChild:SetHeight(DBB2:ScaleSize(300))
+  local channelsScrollChild = DBB2.api.CreateStaticScrollChild("DBB2ChannelsScrollChild", channelsScroll, DBB2:ScaleSize(300))
   
   -- Update scroll child width on size change
   local lastChannelsScrollWidth = 0
   channelsScroll:SetScript("OnUpdate", function()
-    -- Check for deferred scroll update
-    if this._needsScrollUpdate then
-      this._needsScrollUpdate = false
-      -- Re-set scroll child to force WoW to recalculate scroll range
-      local childHeight = channelsScrollChild:GetHeight()
-      this:SetScrollChild(channelsScrollChild)
-      local scrollRange = this:GetVerticalScrollRange()
-      local frameHeight = this:GetHeight()
-      
-      -- Special case for Channels config: manually calculate scroll range since WoW returns 0
-      -- This mirrors the fix applied to General config tab
-      if scrollRange == 0 and childHeight > frameHeight then
-        scrollRange = childHeight - frameHeight
-        this.slider:SetMinMaxValues(0, scrollRange)
-        this.slider:SetValue(this:GetVerticalScroll())
-        local m = frameHeight + scrollRange
-        local ratio = frameHeight / m
-        if ratio < 1 and scrollRange > 0 then
-          local size = math.floor(frameHeight * ratio)
-          this.slider.thumb:SetHeight(math.max(size, DBB2:ScaleSize(20)))
-          this.slider:Show()
-          return
-        end
-      end
-      
-      this.UpdateScrollState()
-    end
-    
     if not this:IsVisible() then return end
     
     local scrollLeft = this:GetLeft()
