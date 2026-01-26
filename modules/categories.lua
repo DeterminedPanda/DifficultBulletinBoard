@@ -13,7 +13,7 @@
 --   - Filter tags (LF/LFG/LFM, LFW/WTB/WTS)
 --   - Blacklist keywords
 -- This only happens ONCE per version bump, so users won't lose custom changes repeatedly.
-local CATEGORY_VERSION = 5
+local CATEGORY_VERSION = 6
 
 DBB2:RegisterModule("categories", function()
   -- Default filter tags for category types (must match in addition to category tags when enabled)

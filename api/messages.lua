@@ -355,7 +355,7 @@ end
 
 -- Default blacklist keywords (used by InitBlacklist and reset functions)
 -- NOTE: Auto-reset on version change is handled in modules/categories.lua via CATEGORY_VERSION
-DBB2.DEFAULT_BLACKLIST_KEYWORDS = {"recruit*", "<*>", "[???]", "[??]"}
+DBB2.DEFAULT_BLACKLIST_KEYWORDS = {"recruit*", "recrut*", "<*>", "[???]", "[??]"}
 
 -- [ InitBlacklist ]
 -- Initializes blacklist config if not present

@@ -133,7 +133,7 @@ DBB2:RegisterModule("config", function()
       enabled = true,
       hideFromChat = true,
       players = {},
-      keywords = {"recruit*", "<*>", "[???]", "[??]"}
+      keywords = {"recruit*", "recrut*", "<*>", "[???]", "[??]"}
     }
     -- Reset monitored channels to defaults (handles hardcore vs normal)
     -- Clear the initialized flag so hardcore defaults can be re-applied
@@ -800,6 +800,28 @@ DBB2:RegisterModule("config", function()
     -- Check for deferred scroll update
     if this._needsScrollUpdate then
       this._needsScrollUpdate = false
+      -- Re-set scroll child to force WoW to recalculate scroll range
+      local childHeight = channelsScrollChild:GetHeight()
+      this:SetScrollChild(channelsScrollChild)
+      local scrollRange = this:GetVerticalScrollRange()
+      local frameHeight = this:GetHeight()
+      
+      -- Special case for Channels config: manually calculate scroll range since WoW returns 0
+      -- This mirrors the fix applied to General config tab
+      if scrollRange == 0 and childHeight > frameHeight then
+        scrollRange = childHeight - frameHeight
+        this.slider:SetMinMaxValues(0, scrollRange)
+        this.slider:SetValue(this:GetVerticalScroll())
+        local m = frameHeight + scrollRange
+        local ratio = frameHeight / m
+        if ratio < 1 and scrollRange > 0 then
+          local size = math.floor(frameHeight * ratio)
+          this.slider.thumb:SetHeight(math.max(size, DBB2:ScaleSize(20)))
+          this.slider:Show()
+          return
+        end
+      end
+      
       this.UpdateScrollState()
     end
     
@@ -1610,6 +1632,7 @@ DBB2:RegisterModule("config", function()
     ["[??]"] = "[pl], [it]",
     ["[???]"] = "[pol], [ita]",
     ["recruit*"] = "recruit, recruiting",
+    ["recrut*"] = "recrut, recrute, recruting",
   }
   
   -- Helper function to create a blacklist row
