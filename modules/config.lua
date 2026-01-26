@@ -10,6 +10,19 @@ DBB2:RegisterModule("config", function()
   
   local configPanel = DBB2.gui.tabs.panels["Config"]
   
+  -- When Config panel is shown, trigger scroll update for the active config tab
+  local originalConfigOnShow = configPanel:GetScript("OnShow")
+  configPanel:SetScript("OnShow", function()
+    if originalConfigOnShow then originalConfigOnShow() end
+    -- Defer scroll update for the active config tab's scroll frame
+    if DBB2.gui.configTabs and DBB2.gui.configTabs.activeTab then
+      local activePanel = DBB2.gui.configTabs.panels[DBB2.gui.configTabs.activeTab]
+      if activePanel and activePanel.scrollFrame then
+        activePanel.scrollFrame._needsScrollUpdate = true
+      end
+    end
+  end)
+  
   -- Reposition Config panel to fill the content area completely (remove default 2px inset)
   configPanel:ClearAllPoints()
   configPanel:SetPoint("TOPLEFT", DBB2.gui.tabs.content, "TOPLEFT", 0, 0)
@@ -112,6 +125,7 @@ DBB2:RegisterModule("config", function()
     DBB2_Config.showCurrentTime = false
     DBB2_Config.showLevelFilteredGroups = false
     DBB2_Config.clearNotificationsOnGroupJoin = true
+    DBB2_Config.autoJoinChannels = true
     -- Reset notifications to defaults (mode 0 = off)
     DBB2_Config.notifications = { mode = 0 }
     -- Reset blacklist to defaults
@@ -195,7 +209,7 @@ DBB2:RegisterModule("config", function()
   versionFrame.version = versionFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
   versionFrame.version:SetFont("Fonts\\FRIZQT__.TTF", DBB2:GetFontSize(9))
   versionFrame.version:SetPoint("TOPRIGHT", versionFrame.name, "BOTTOMRIGHT", 0, -2)
-  versionFrame.version:SetText("v2.11")
+  versionFrame.version:SetText("v" .. (GetAddOnMetadata("DifficultBulletinBoard", "Version") or "?"))
   versionFrame.version:SetTextColor(0.5, 0.5, 0.5, 1)
   versionFrame.version:SetJustifyH("RIGHT")
   
@@ -208,6 +222,7 @@ DBB2:RegisterModule("config", function()
   local generalScroll = DBB2.api.CreateScrollFrame("DBB2GeneralScroll", generalPanel)
   generalScroll:SetPoint("TOPLEFT", generalPanel, "TOPLEFT", 0, 0)
   generalScroll:SetPoint("BOTTOMRIGHT", generalPanel, "BOTTOMRIGHT", 0, DBB2:ScaleSize(5))
+  generalPanel.scrollFrame = generalScroll  -- Register for OnShow update
   
   local generalScrollChild = DBB2.api.CreateScrollChild("DBB2GeneralScrollChild", generalScroll)
   
@@ -219,6 +234,34 @@ DBB2:RegisterModule("config", function()
   -- Track last width to avoid redundant updates
   local lastGeneralScrollWidth = 0
   generalScroll:SetScript("OnUpdate", function()
+    -- Check for deferred scroll update
+    if this._needsScrollUpdate then
+      this._needsScrollUpdate = false
+      -- Re-set scroll child to force WoW to recalculate scroll range
+      local childHeight = generalScrollChild:GetHeight()
+      this:SetScrollChild(generalScrollChild)
+      local scrollRange = this:GetVerticalScrollRange()
+      local frameHeight = this:GetHeight()
+      
+      -- Special case for General config: manually calculate scroll range since WoW returns 0
+      -- This is safe because General has fixed content height set at creation
+      if scrollRange == 0 and childHeight > frameHeight then
+        scrollRange = childHeight - frameHeight
+        this.slider:SetMinMaxValues(0, scrollRange)
+        this.slider:SetValue(this:GetVerticalScroll())
+        local m = frameHeight + scrollRange
+        local ratio = frameHeight / m
+        if ratio < 1 and scrollRange > 0 then
+          local size = math.floor(frameHeight * ratio)
+          this.slider.thumb:SetHeight(math.max(size, DBB2:ScaleSize(20)))
+          this.slider:Show()
+          return
+        end
+      end
+      
+      this.UpdateScrollState()
+    end
+    
     -- Early exit if not visible
     if not this:IsVisible() then return end
     
@@ -743,16 +786,23 @@ DBB2:RegisterModule("config", function()
   local channelsScroll = DBB2.api.CreateScrollFrame("DBB2ChannelsScroll", channelsPanel)
   channelsScroll:SetPoint("TOPLEFT", channelsPanel, "TOPLEFT", 0, 0)
   channelsScroll:SetPoint("BOTTOMRIGHT", channelsPanel, "BOTTOMRIGHT", 0, DBB2:ScaleSize(5))
+  channelsPanel.scrollFrame = channelsScroll  -- Register for OnShow update
   
   local channelsScrollChild = DBB2.api.CreateScrollChild("DBB2ChannelsScrollChild", channelsScroll)
   
   -- Content height will be set dynamically based on channel count
-  -- Start with a minimal height, will be updated by RebuildChannelCheckboxes
-  channelsScrollChild:SetHeight(DBB2:ScaleSize(100))
+  -- Start with a reasonable height to show auto-join section, will be updated by RebuildChannelCheckboxes
+  channelsScrollChild:SetHeight(DBB2:ScaleSize(300))
   
   -- Update scroll child width on size change
   local lastChannelsScrollWidth = 0
   channelsScroll:SetScript("OnUpdate", function()
+    -- Check for deferred scroll update
+    if this._needsScrollUpdate then
+      this._needsScrollUpdate = false
+      this.UpdateScrollState()
+    end
+    
     if not this:IsVisible() then return end
     
     local scrollLeft = this:GetLeft()
@@ -777,8 +827,39 @@ DBB2:RegisterModule("config", function()
   channelsDesc:SetPoint("TOPLEFT", channelsTitle, "BOTTOMLEFT", 0, -DBB2:ScaleSize(5))
   channelsDesc:SetTextColor(0.5, 0.5, 0.5, 1)
   
-  -- Initialize channel monitoring config
+  -- Initialize channel monitoring config (must be before UI elements that read config)
   DBB2.api.InitChannelConfig()
+  
+  -- Auto-Join Channels checkbox
+  local autoJoinCheck = DBB2.api.CreateCheckBox("DBB2AutoJoinChannels", channelsScrollChild, "Auto-join World & LookingForGroup at login", 9)
+  autoJoinCheck:SetPoint("TOPLEFT", channelsDesc, "BOTTOMLEFT", 0, -DBB2:ScaleSize(12))
+  autoJoinCheck:SetChecked(DBB2_Config.autoJoinChannels ~= false)
+  autoJoinCheck.OnChecked = function(checked)
+    DBB2_Config.autoJoinChannels = checked
+  end
+  
+  -- Add tooltip on hover
+  autoJoinCheck:SetScript("OnEnter", function()
+    local r, g, b = DBB2:GetHighlightColor()
+    this.backdrop:SetBackdropBorderColor(r, g, b, 1)
+    DBB2.api.ShowTooltip(this, "RIGHT", {
+      {"Auto-Join Channels", "highlight"},
+      "Automatically join World and",
+      "LookingForGroup channels at login.",
+      {"Disable if you prefer to manage", "gray"},
+      {"channels manually.", "gray"}
+    })
+  end)
+  
+  autoJoinCheck:SetScript("OnLeave", function()
+    this.backdrop:SetBackdropBorderColor(0.3, 0.3, 0.3, 1)
+    DBB2.api.HideTooltip()
+  end)
+  
+  -- Channel List section title (below auto-join)
+  local monitoredTitle = DBB2.api.CreateLabel(channelsScrollChild, "Channel List", 10)
+  monitoredTitle:SetPoint("TOPLEFT", autoJoinCheck, "BOTTOMLEFT", 0, -DBB2:ScaleSize(15))
+  monitoredTitle:SetTextColor(hr, hg, hb, 1)
   
   -- Known channel descriptions (for tooltips)
   local channelDescriptions = {
@@ -800,7 +881,7 @@ DBB2:RegisterModule("config", function()
   -- Container for dynamically created channel checkboxes
   channelsPanel.channelCheckboxes = {}
   channelsPanel.checkboxContainer = CreateFrame("Frame", nil, channelsScrollChild)
-  channelsPanel.checkboxContainer:SetPoint("TOPLEFT", channelsDesc, "BOTTOMLEFT", 0, -DBB2:ScaleSize(12))
+  channelsPanel.checkboxContainer:SetPoint("TOPLEFT", monitoredTitle, "BOTTOMLEFT", 0, -DBB2:ScaleSize(8))
   channelsPanel.checkboxContainer:SetPoint("RIGHT", channelsScrollChild, "RIGHT", -DBB2:ScaleSize(10), 0)
   -- Height will be set dynamically by RebuildChannelCheckboxes
   
@@ -938,9 +1019,9 @@ DBB2:RegisterModule("config", function()
     channelsPanel.checkboxContainer:SetHeight(totalHeight)
     
     -- Update scroll child height to fit all content exactly
-    -- Header (title + desc + spacing) + totalHeight + small bottom padding
-    local headerHeight = DBB2:ScaleSize(10 + 12 + 5 + 12)  -- top padding + title + desc spacing + container offset
-    local bottomPadding = DBB2:ScaleSize(5)  -- minimal padding to match other tabs
+    -- Header (title + desc + auto-join checkbox + channel list title + spacing) + totalHeight + small bottom padding
+    local headerHeight = DBB2:ScaleSize(10 + 12 + 5 + 12 + 14 + 15 + 12 + 8)
+    local bottomPadding = DBB2:ScaleSize(5)
     local newContentHeight = headerHeight + totalHeight + bottomPadding
     channelsScrollChild:SetHeight(newContentHeight)
     

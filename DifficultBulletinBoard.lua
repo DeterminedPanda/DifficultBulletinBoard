@@ -170,6 +170,11 @@ DBB2:SetScript("OnEvent", function()
       DBB2_Config.showLevelFilteredGroups = false
     end
     
+    -- Ensure autoJoinChannels exists for existing configs (default on)
+    if DBB2_Config.autoJoinChannels == nil then
+      DBB2_Config.autoJoinChannels = true
+    end
+    
     -- Load modules (use ipairs to preserve load order from TOC file)
     for i, module in ipairs(DBB2.modules) do
       if module then

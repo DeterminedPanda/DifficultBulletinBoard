@@ -84,6 +84,17 @@ function DBB2.api.CreateScrollFrame(name, parent)
     local scrollSpeed = DBB2_Config.scrollSpeed or 20
     f:Scroll(arg1 * scrollSpeed)
   end)
+  
+  -- Flag for deferred scroll state update
+  f._needsScrollUpdate = false
+  
+  -- Check for deferred scroll update on each frame
+  f:SetScript("OnUpdate", function()
+    if this._needsScrollUpdate then
+      this._needsScrollUpdate = false
+      this.UpdateScrollState()
+    end
+  end)
 
   return f
 end
@@ -95,6 +106,8 @@ function DBB2.api.CreateScrollChild(name, parent)
   f:SetWidth(1)
   f:SetHeight(1)
   parent:SetScrollChild(f)
+  -- Store reference on parent for manual scroll range calculation
+  parent.scrollChild = f
   return f
 end
 
@@ -499,6 +512,29 @@ function DBB2.api.CreateTabSystem(name, parent, tabs, buttonWidth, buttonHeight)
     panel:SetPoint("TOPLEFT", 2, -2)
     panel:SetPoint("BOTTOMRIGHT", -2, 2)
     panel:Hide()
+    
+    -- Store reference to scroll frame if one is added as child
+    panel.scrollFrame = nil
+    
+    -- Update scroll state for child scroll frame when panel is shown
+    panel:SetScript("OnShow", function()
+      -- Defer to next frame to allow dimensions to calculate
+      this._updateScrollPending = true
+      -- Also trigger deferred update on the scroll frame itself
+      if this.scrollFrame then
+        this.scrollFrame._needsScrollUpdate = true
+      end
+    end)
+    
+    panel:SetScript("OnUpdate", function()
+      if this._updateScrollPending then
+        this._updateScrollPending = nil
+        -- Update scroll frame if one is registered
+        if this.scrollFrame and this.scrollFrame.UpdateScrollState then
+          this.scrollFrame.UpdateScrollState()
+        end
+      end
+    end)
     
     tabSystem.panels[tabName] = panel
   end

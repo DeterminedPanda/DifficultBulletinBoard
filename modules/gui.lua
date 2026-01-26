@@ -309,6 +309,7 @@ DBB2:RegisterModule("gui", function()
   DBB2.gui.scroll = DBB2.api.CreateScrollFrame("DBB2ScrollFrame", logsPanel)
   DBB2.gui.scroll:SetPoint("TOPLEFT", logsPanel, "TOPLEFT", 0, -(filterHeight + filterPadding))
   DBB2.gui.scroll:SetPoint("BOTTOMRIGHT", logsPanel, "BOTTOMRIGHT", 0, 0)
+  logsPanel.scrollFrame = DBB2.gui.scroll  -- Register for OnShow update
   
   -- Create scroll child
   DBB2.gui.scrollchild = DBB2.api.CreateScrollChild("DBB2ScrollChild", DBB2.gui.scroll)
@@ -330,6 +331,12 @@ DBB2:RegisterModule("gui", function()
   local lastChildHeight = 0
   local lastScrollWidth = 0
   DBB2.gui.scroll:SetScript("OnUpdate", function()
+    -- Check for deferred scroll update
+    if this._needsScrollUpdate then
+      this._needsScrollUpdate = false
+      this.UpdateScrollState()
+    end
+    
     -- Early exit if not visible
     if not this:IsVisible() then return end
     
@@ -595,6 +602,7 @@ DBB2:RegisterModule("gui", function()
     local scroll = DBB2.api.CreateScrollFrame("DBB2" .. panelName .. "Scroll", panel)
     scroll:SetPoint("TOPLEFT", panel, "TOPLEFT", 0, -(filterHeight + filterPadding))
     scroll:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", 0, 0)
+    panel.scrollFrame = scroll  -- Register for OnShow update
     
     local scrollchild = DBB2.api.CreateScrollChild("DBB2" .. panelName .. "ScrollChild", scroll)
     
@@ -981,15 +989,23 @@ DBB2:RegisterModule("gui", function()
       end
       
       -- Update scroll child height
-      scrollchild:SetHeight(math_max(yOffset, scroll:GetHeight()))
+      local scrollHeight = scroll:GetHeight()
+      scrollchild:SetHeight(math_max(yOffset, scrollHeight))
       scroll:SetScrollChild(scrollchild)
-      scroll.UpdateScrollState()
+      -- Defer UpdateScrollState to next frame so WoW can recalculate scroll range
+      scroll._needsScrollUpdate = true
     end
     
     -- Update scroll child width on size change
     -- Track last width to avoid redundant updates
     local lastCatScrollWidth = 0
     scroll:SetScript("OnUpdate", function()
+      -- Check for deferred scroll update
+      if this._needsScrollUpdate then
+        this._needsScrollUpdate = false
+        this.UpdateScrollState()
+      end
+      
       -- Early exit if not visible
       if not this:IsVisible() then return end
       

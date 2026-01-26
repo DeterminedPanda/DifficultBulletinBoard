@@ -314,6 +314,10 @@ function DBB2.api.InitChannelConfig()
       DBB2_Config.monitoredChannels[channel] = enabled
     end
   end
+  -- Ensure autoJoinChannels exists (default: enabled)
+  if DBB2_Config.autoJoinChannels == nil then
+    DBB2_Config.autoJoinChannels = true
+  end
 end
 
 -- [ ResetChannelDefaults ]
@@ -503,7 +507,13 @@ DBB2._autoJoinChannels = {"World", "LookingForGroup"}
 -- [ AutoJoinRequiredChannels ]
 -- Automatically joins World and LookingForGroup channels if not already joined
 -- Should be called on PLAYER_ENTERING_WORLD event
+-- Respects the autoJoinChannels config setting (enabled by default)
 function DBB2.api.AutoJoinRequiredChannels()
+  -- Check if auto-join is disabled by user
+  if DBB2_Config.autoJoinChannels == false then
+    return
+  end
+  
   -- Get currently joined channels
   local joinedChannels = DBB2.api.GetJoinedChannels()
   
