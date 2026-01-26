@@ -22,6 +22,7 @@ DBB2_Config = {}
 DBB2.messages = {}
 DBB2.modules = {}
 DBB2.api = {}  -- Initialize API table
+DBB2.pendingMessages = {}  -- Queue for messages to display after login
 
 -- Store minimap button angle
 if not DBB2_Config.minimapAngle then
@@ -93,6 +94,12 @@ function DBB2:CreateBackdropShadow(frame)
   frame.backdrop_shadow:SetPoint("BOTTOMRIGHT", anchor, "BOTTOMRIGHT", 5, -5)
   frame.backdrop_shadow:SetBackdrop(DBB2.backdrop_shadow)
   frame.backdrop_shadow:SetBackdropBorderColor(0, 0, 0, 0.8)
+end
+
+-- Helper function to queue a message for display after login
+-- Used by modules that run during ADDON_LOADED when chat frame may not be ready
+function DBB2:QueueMessage(msg)
+  table.insert(DBB2.pendingMessages, msg)
 end
 
 -- Event handler
@@ -194,10 +201,18 @@ DBB2:SetScript("OnEvent", function()
     -- Initialize channel monitoring config
     DBB2.api.InitChannelConfig()
     
-    DEFAULT_CHAT_FRAME:AddMessage("|cff33ffccDifficult|cffffffffBulletinBoard |cff555555v2.00|r loaded. Click minimap button to open.")
+    DEFAULT_CHAT_FRAME:AddMessage("|cff33ffccDifficult|cffffffffBulletinBoard |cff555555v" .. (GetAddOnMetadata("DifficultBulletinBoard", "Version") or "?") .. "|r loaded. Click minimap button to open.")
   end
   
   if event == "PLAYER_ENTERING_WORLD" then
+    -- Display any queued messages from module initialization
+    if table.getn(DBB2.pendingMessages) > 0 then
+      for _, msg in ipairs(DBB2.pendingMessages) do
+        DEFAULT_CHAT_FRAME:AddMessage(msg)
+      end
+      DBB2.pendingMessages = {}
+    end
+    
     -- Clear hardcore detection cache to force fresh detection on each login/switch
     DBB2_Config.isHardcoreCharacter = nil
     local isHardcore = DBB2.api.DetectHardcoreCharacter()

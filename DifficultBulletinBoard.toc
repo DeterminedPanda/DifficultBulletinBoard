@@ -6,6 +6,7 @@
 ## SavedVariablesPerCharacter: DBB2_Config
 
 DifficultBulletinBoard.lua
+api\variables.lua
 api\utility.lua
 api\wildcards.lua
 api\categories.lua

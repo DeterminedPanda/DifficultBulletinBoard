@@ -3,17 +3,10 @@
 --
 -- NOTE: Category API functions are in api/categories.lua
 -- This module provides default data and the ResetCategoriesToDefaults function.
-
--- =====================================================
--- CATEGORY VERSION - INCREMENT THIS WHEN YOU CHANGE DEFAULT TAGS
--- =====================================================
--- When you modify any default tags below, bump this number.
--- On next login, users will get ALL tag-related settings auto-reset to new defaults:
---   - Category tags (groups, professions, hardcore)
---   - Filter tags (LF/LFG/LFM, LFW/WTB/WTS)
---   - Blacklist keywords
--- This only happens ONCE per version bump, so users won't lose custom changes repeatedly.
-local CATEGORY_VERSION = 6
+--
+-- VERSION NUMBERS are now in api/variables.lua:
+--   DBB2.versions.CATEGORY  - for category/filter tag changes
+--   DBB2.versions.BLACKLIST - for blacklist keyword changes
 
 DBB2:RegisterModule("categories", function()
   -- Default filter tags for category types (must match in addition to category tags when enabled)
@@ -163,26 +156,49 @@ DBB2:RegisterModule("categories", function()
   -- =====================================================
   -- AUTO-RESET ON VERSION CHANGE
   -- =====================================================
-  -- Check if category version has changed - if so, auto-reset ALL tag-related settings
-  -- This ensures users get updated tags when you modify defaults, but only once
-  local savedVersion = DBB2_Config.categoryVersion or 0
-  if savedVersion < CATEGORY_VERSION then
-    -- Reset categories to new defaults
+  -- Check each version number separately to only reset what changed
+  
+  -- Groups version: reset groups categories and filter tags
+  local savedGroupsVersion = DBB2_Config.groupsVersion or 0
+  if savedGroupsVersion < DBB2.versions.GROUPS then
     DBB2_Config.categories.groups = DBB2.api.DeepCopy(defaultGroups)
+    DBB2_Config.filterTags.groups = DBB2.api.DeepCopy(defaultFilterTags.groups)
+    DBB2_Config.groupsVersion = DBB2.versions.GROUPS
+    DBB2:QueueMessage("|cff33ffccDBB2:|r Groups tags updated to v" .. DBB2.versions.GROUPS .. " defaults.")
+  end
+  
+  -- Professions version: reset professions categories and filter tags
+  local savedProfessionsVersion = DBB2_Config.professionsVersion or 0
+  if savedProfessionsVersion < DBB2.versions.PROFESSIONS then
     DBB2_Config.categories.professions = DBB2.api.DeepCopy(defaultProfessions)
+    DBB2_Config.filterTags.professions = DBB2.api.DeepCopy(defaultFilterTags.professions)
+    DBB2_Config.professionsVersion = DBB2.versions.PROFESSIONS
+    DBB2:QueueMessage("|cff33ffccDBB2:|r Professions tags updated to v" .. DBB2.versions.PROFESSIONS .. " defaults.")
+  end
+  
+  -- Hardcore version: reset hardcore categories
+  local savedHardcoreVersion = DBB2_Config.hardcoreVersion or 0
+  if savedHardcoreVersion < DBB2.versions.HARDCORE then
     DBB2_Config.categories.hardcore = DBB2.api.DeepCopy(defaultHardcore)
-    -- Reset filter tags to new defaults
-    DBB2_Config.filterTags = {
-      groups = DBB2.api.DeepCopy(defaultFilterTags.groups),
-      professions = DBB2.api.DeepCopy(defaultFilterTags.professions)
-    }
-    -- Reset blacklist keywords to new defaults (preserves enabled state and player list)
-    if DBB2_Config.blacklist then
-      DBB2_Config.blacklist.keywords = DBB2.api.DeepCopy(DBB2.DEFAULT_BLACKLIST_KEYWORDS)
+    DBB2_Config.hardcoreVersion = DBB2.versions.HARDCORE
+    DBB2:QueueMessage("|cff33ffccDBB2:|r Hardcore tags updated to v" .. DBB2.versions.HARDCORE .. " defaults.")
+  end
+  
+  -- Blacklist version: reset blacklist keywords only (preserves enabled state and player list)
+  local savedBlacklistVersion = DBB2_Config.blacklistVersion or 0
+  if savedBlacklistVersion < DBB2.versions.BLACKLIST then
+    -- Ensure blacklist structure exists before resetting keywords
+    if not DBB2_Config.blacklist then
+      DBB2_Config.blacklist = {
+        enabled = true,
+        hideFromChat = true,
+        players = {},
+        keywords = {}
+      }
     end
-    -- Update stored version so this only happens once
-    DBB2_Config.categoryVersion = CATEGORY_VERSION
-    DEFAULT_CHAT_FRAME:AddMessage("|cff33ffccDBB2:|r Tags updated to v" .. CATEGORY_VERSION .. " defaults.")
+    DBB2_Config.blacklist.keywords = DBB2.api.DeepCopy(DBB2.DEFAULT_BLACKLIST_KEYWORDS)
+    DBB2_Config.blacklistVersion = DBB2.versions.BLACKLIST
+    DBB2:QueueMessage("|cff33ffccDBB2:|r Blacklist keywords updated to v" .. DBB2.versions.BLACKLIST .. " defaults.")
   end
   
   -- [ ResetCategoriesToDefaults ]
@@ -203,5 +219,10 @@ DBB2:RegisterModule("categories", function()
     if DBB2_Config.blacklist then
       DBB2_Config.blacklist.keywords = DBB2.api.DeepCopy(DBB2.DEFAULT_BLACKLIST_KEYWORDS)
     end
+    -- Update version numbers to current
+    DBB2_Config.groupsVersion = DBB2.versions.GROUPS
+    DBB2_Config.professionsVersion = DBB2.versions.PROFESSIONS
+    DBB2_Config.hardcoreVersion = DBB2.versions.HARDCORE
+    DBB2_Config.blacklistVersion = DBB2.versions.BLACKLIST
   end
 end)

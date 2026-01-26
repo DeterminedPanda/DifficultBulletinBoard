@@ -221,8 +221,14 @@ DBB2:RegisterModule("config", function()
   -- Create scroll frame for General tab
   local generalScroll = DBB2.api.CreateScrollFrame("DBB2GeneralScroll", generalPanel)
   generalScroll:SetPoint("TOPLEFT", generalPanel, "TOPLEFT", 0, 0)
-  generalScroll:SetPoint("BOTTOMRIGHT", generalPanel, "BOTTOMRIGHT", 0, DBB2:ScaleSize(5))
+  generalScroll:SetPoint("BOTTOMRIGHT", generalPanel, "BOTTOMRIGHT", 0, 0)
   generalPanel.scrollFrame = generalScroll  -- Register for OnShow update
+  
+  -- Add padding to scrollbar (config tabs don't have natural padding like main GUI)
+  local sliderPadding = DBB2:ScaleSize(5)
+  generalScroll.slider:ClearAllPoints()
+  generalScroll.slider:SetPoint("TOPRIGHT", generalScroll, "TOPRIGHT", 0, -sliderPadding)
+  generalScroll.slider:SetPoint("BOTTOMRIGHT", generalScroll, "BOTTOMRIGHT", 0, sliderPadding)
   
   local generalScrollChild = DBB2.api.CreateScrollChild("DBB2GeneralScrollChild", generalScroll)
   
@@ -785,8 +791,14 @@ DBB2:RegisterModule("config", function()
   -- Create scroll frame for Channels tab
   local channelsScroll = DBB2.api.CreateScrollFrame("DBB2ChannelsScroll", channelsPanel)
   channelsScroll:SetPoint("TOPLEFT", channelsPanel, "TOPLEFT", 0, 0)
-  channelsScroll:SetPoint("BOTTOMRIGHT", channelsPanel, "BOTTOMRIGHT", 0, DBB2:ScaleSize(5))
+  channelsScroll:SetPoint("BOTTOMRIGHT", channelsPanel, "BOTTOMRIGHT", 0, 0)
   channelsPanel.scrollFrame = channelsScroll  -- Register for OnShow update
+  
+  -- Add padding to scrollbar (config tabs don't have natural padding like main GUI)
+  local chSliderPadding = DBB2:ScaleSize(5)
+  channelsScroll.slider:ClearAllPoints()
+  channelsScroll.slider:SetPoint("TOPRIGHT", channelsScroll, "TOPRIGHT", 0, -chSliderPadding)
+  channelsScroll.slider:SetPoint("BOTTOMRIGHT", channelsScroll, "BOTTOMRIGHT", 0, chSliderPadding)
   
   local channelsScrollChild = DBB2.api.CreateScrollChild("DBB2ChannelsScrollChild", channelsScroll)
   
@@ -1195,13 +1207,14 @@ DBB2:RegisterModule("config", function()
       containerAnchorOffset = -DBB2:ScaleSize(5)
     end
     
-    -- Scrollbar - fill panel height with bottom padding
+    -- Scrollbar - fill panel height with padding from edges
     local sliderWidth = DBB2:ScaleSize(7)
+    local sliderPadding = DBB2:ScaleSize(5)
     local slider = CreateFrame("Slider", "DBB2Config" .. panelName .. "Slider", panel)
     slider:SetOrientation("VERTICAL")
     slider:SetWidth(sliderWidth)
-    slider:SetPoint("TOPRIGHT", panel, "TOPRIGHT", 0, 0)
-    slider:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", 0, DBB2:ScaleSize(5))
+    slider:SetPoint("TOPRIGHT", panel, "TOPRIGHT", 0, -sliderPadding)
+    slider:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", 0, sliderPadding)
     slider:EnableMouse(true)
     slider:SetValueStep(1)
     slider:SetMinMaxValues(0, 1)
@@ -1598,9 +1611,10 @@ DBB2:RegisterModule("config", function()
   
   blacklistPanel.rowsContainer = rowsContainer
   
-  -- Position scrollbar aligned with rows container top, at panel's right edge with bottom padding
-  blSlider:SetPoint("TOP", rowsContainer, "TOP", 0, 0)
-  blSlider:SetPoint("BOTTOMRIGHT", blacklistPanel, "BOTTOMRIGHT", 0, DBB2:ScaleSize(5))
+  -- Position scrollbar aligned with rows container top, at panel's right edge with padding
+  local blSliderPadding = DBB2:ScaleSize(5)
+  blSlider:SetPoint("TOP", rowsContainer, "TOP", 0, -blSliderPadding)
+  blSlider:SetPoint("BOTTOMRIGHT", blacklistPanel, "BOTTOMRIGHT", 0, blSliderPadding)
   
   -- Helper function to convert keywords array to comma-separated string
   local function KeywordsToString()
