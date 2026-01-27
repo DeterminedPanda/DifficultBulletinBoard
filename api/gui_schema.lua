@@ -341,16 +341,56 @@ function DBB2.schema.CreateMessageRow(name, parent)
     end
   end
   
+  -- Helper: Check if row is visible within scroll frame viewport
+  local function IsRowVisibleInScrollFrame(rowFrame)
+    -- Walk up to find the scroll frame
+    local scrollFrame = nil
+    local current = rowFrame:GetParent()
+    while current do
+      -- Check if parent is a scroll child (has a scroll frame parent)
+      local grandparent = current:GetParent()
+      if grandparent and grandparent.GetVerticalScroll then
+        scrollFrame = grandparent
+        break
+      end
+      current = grandparent
+    end
+    
+    if not scrollFrame then return true end  -- No scroll frame found, assume visible
+    
+    -- Get scroll frame bounds
+    local sfTop = scrollFrame:GetTop()
+    local sfBottom = scrollFrame:GetBottom()
+    if not sfTop or not sfBottom then return true end
+    
+    -- Get row bounds
+    local rowTop = rowFrame:GetTop()
+    local rowBottom = rowFrame:GetBottom()
+    if not rowTop or not rowBottom then return false end
+    
+    -- Row must be fully within viewport (not just overlapping)
+    -- This prevents tooltips when row is partially scrolled out of view
+    if rowTop > sfTop or rowBottom < sfBottom then
+      return false
+    end
+    
+    return true
+  end
+  
   -- Hover handlers for character name
   row.charNameBtn:SetScript("OnUpdate", function()
     if not this:IsVisible() then return end
     
-    local isOver = MouseIsOver(this)
+    local parent = this:GetParent()
+    
+    -- Check if row is actually visible in scroll viewport
+    local isVisibleInViewport = IsRowVisibleInScrollFrame(parent)
+    local isOver = MouseIsOver(this) and isVisibleInViewport
+    
     if isOver == this.isHovered then return end
     
     if isOver then
       this.isHovered = true
-      local parent = this:GetParent()
       local hr, hg, hb = DBB2:GetHighlightColor()
       parent.charName:SetText(parent._sender or "Unknown")
       parent.charName:SetTextColor(hr, hg, hb, 1)
@@ -359,7 +399,6 @@ function DBB2.schema.CreateMessageRow(name, parent)
       end
     else
       this.isHovered = false
-      local parent = this:GetParent()
       local classColor = parent._classColor or "|cffffffff"
       parent.charName:SetText(classColor .. (parent._sender or "Unknown") .. "|r")
       parent.charName:SetTextColor(1, 1, 1, 1)
@@ -371,7 +410,10 @@ function DBB2.schema.CreateMessageRow(name, parent)
     if not this:IsVisible() then return end
     
     local parent = this:GetParent()
-    local isOver = MouseIsOver(this)
+    
+    -- Check if row is actually visible in scroll viewport
+    local isVisibleInViewport = IsRowVisibleInScrollFrame(parent)
+    local isOver = MouseIsOver(this) and isVisibleInViewport
     
     if isOver == this.isHovered then return end
     
