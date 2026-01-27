@@ -12,6 +12,10 @@ local date = date
 local math_max = math.max
 
 DBB2:RegisterModule("gui", function()
+  -- Initialize schema layout constants
+  DBB2.schema.InitLayout()
+  local S = DBB2.schema
+  
   -- Constants
   local MAX_ROWS = 50
   local DEFAULT_ROW_HEIGHT = 16
@@ -74,7 +78,7 @@ DBB2:RegisterModule("gui", function()
   end)
   
   -- Config button - in header area between borders
-  DBB2.gui.configBtn = DBB2.api.CreateButton("DBB2ConfigBtn", DBB2.gui, "Config")
+  DBB2.gui.configBtn = S.CreateButton("DBB2ConfigBtn", DBB2.gui, "Config")
   DBB2.gui.configBtn:SetPoint("RIGHT", DBB2.gui.close, "LEFT", -DBB2:ScaleSize(5), 0)
   DBB2.gui.configBtn:SetWidth(DBB2:ScaleSize(50))
   DBB2.gui.configBtn:SetHeight(closeSize)
@@ -96,9 +100,9 @@ DBB2:RegisterModule("gui", function()
     end
   end)
   
-  -- Create tab system using API (horizontal tabs at top, height 14 to match close/refresh)
+  -- Create tab system using schema (horizontal tabs at top, height 14 to match close/refresh)
   local tabNames = {"Logs", "Groups", "Professions", "Hardcore", "Config"}
-  DBB2.gui.tabs = DBB2.api.CreateTabSystem("DBB2", DBB2.gui, tabNames, 70, 14)
+  DBB2.gui.tabs = S.CreateTabSystem("DBB2", DBB2.gui, tabNames, 70, 14)
   
   -- Hide the Config tab button (we use the separate Config button on the right)
   DBB2.gui.tabs.buttons["Config"]:Hide()
@@ -124,13 +128,12 @@ DBB2:RegisterModule("gui", function()
   
   -- Tab change callback
   DBB2.gui.tabs.onTabChanged = function(tabName)
-    if tabName == "Logs" then
-      DBB2.gui:UpdateMessages()
-    elseif tabName == "Groups" or tabName == "Professions" or tabName == "Hardcore" then
-      local panel = DBB2.gui.tabs.panels[tabName]
-      if panel and panel.UpdateCategories then
-        panel.UpdateCategories()
-      end
+    -- Defer update to next frame to ensure panel dimensions are calculated
+    -- This fixes the issue where messages don't fill width until resize
+    local panel = DBB2.gui.tabs.panels[tabName]
+    if panel then
+      panel._needsContentUpdate = true
+      panel._contentUpdateType = tabName
     end
   end
   
@@ -139,28 +142,18 @@ DBB2:RegisterModule("gui", function()
   -- =====================
   local logsPanel = DBB2.gui.tabs.panels["Logs"]
   
-  -- Filter bar
-  local filterHeight = DBB2:ScaleSize(22)
-  local filterPadding = DBB2:ScaleSize(5)
-  
-  -- Filter input with placeholder
-  -- Leave space for current time, aligned with timestamps
-  local timeColumnWidth = DBB2:ScaleSize(55) + DBB2:ScaleSize(13)
-  DBB2.gui.filterInput = DBB2.api.CreateEditBox("DBB2FilterInput", logsPanel)
+  -- Filter input with placeholder (uses schema constants)
+  DBB2.gui.filterInput = S.CreateFilterInput("DBB2FilterInput", logsPanel)
   DBB2.gui.filterInput:SetPoint("TOPLEFT", logsPanel, "TOPLEFT", 0, 0)
-  DBB2.gui.filterInput:SetPoint("TOPRIGHT", logsPanel, "TOPRIGHT", -timeColumnWidth, 0)
-  DBB2.gui.filterInput:SetHeight(filterHeight)
+  DBB2.gui.filterInput:SetPoint("TOPRIGHT", logsPanel, "TOPRIGHT", -S.TIME_COLUMN_WIDTH, 0)
   
-  -- Current time display (aligned with timestamps below)
-  -- Use same offset as message rows for perfect alignment
-  local timeRightOffset = DBB2:ScaleSize(13) + 2
-  DBB2.gui.currentTimeText = logsPanel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-  DBB2.gui.currentTimeText:SetFont("Fonts\\FRIZQT__.TTF", DBB2:GetFontSize(10))
-  DBB2.gui.currentTimeText:SetPoint("RIGHT", logsPanel, "TOPRIGHT", -timeRightOffset, -(filterHeight / 2))
-  DBB2.gui.currentTimeText:SetWidth(DBB2:ScaleSize(55))
-  DBB2.gui.currentTimeText:SetJustifyH("LEFT")
-  DBB2.gui.currentTimeText:SetTextColor(0.5, 0.5, 0.5, 1)
-  DBB2.gui.currentTimeText:SetText(date("%H:%M:%S"))
+  -- Current time display - aligned with message timestamps
+  DBB2.gui.currentTimeText = S.CreateCurrentTimeDisplay(logsPanel)
+  -- Position to align with row timestamps
+  DBB2.gui.currentTimeText:SetPoint("RIGHT", logsPanel, "TOPRIGHT", -S.SCROLLBAR_SPACE + S.TIMESTAMP_RIGHT_OFFSET, -(S.FILTER_HEIGHT / 2))
+  
+  -- Also store reference on logsPanel for config onChange handler compatibility
+  logsPanel.currentTimeText = DBB2.gui.currentTimeText
   
   -- Hide by default (controlled by config)
   if not DBB2_Config.showCurrentTime then
@@ -194,45 +187,6 @@ DBB2:RegisterModule("gui", function()
       end
     end)
   end
-  
-  -- Hide full border, add bottom-only border line (spans full width including time area)
-  if DBB2.gui.filterInput.backdrop then
-    DBB2.gui.filterInput.backdrop:SetBackdropBorderColor(0, 0, 0, 0)
-  end
-  DBB2.gui.filterInput.bottomBorder = logsPanel:CreateTexture(nil, "BORDER")
-  DBB2.gui.filterInput.bottomBorder:SetTexture("Interface\\BUTTONS\\WHITE8X8")
-  DBB2.gui.filterInput.bottomBorder:SetHeight(1)
-  DBB2.gui.filterInput.bottomBorder:SetPoint("BOTTOMLEFT", DBB2.gui.filterInput, "BOTTOMLEFT", 0, 0)
-  DBB2.gui.filterInput.bottomBorder:SetPoint("BOTTOMRIGHT", logsPanel, "TOPRIGHT", 0, -filterHeight)
-  DBB2.gui.filterInput.bottomBorder:SetVertexColor(0.25, 0.25, 0.25, 1)
-  
-  -- Override hover scripts for bottom border highlight
-  DBB2.gui.filterInput:SetScript("OnEnter", function()
-    local r, g, b = DBB2:GetHighlightColor()
-    this.bottomBorder:SetVertexColor(r, g, b, 1)
-  end)
-  DBB2.gui.filterInput:SetScript("OnLeave", function()
-    this.bottomBorder:SetVertexColor(0.25, 0.25, 0.25, 1)
-  end)
-  
-  -- Placeholder text
-  DBB2.gui.filterInput.placeholder = DBB2.gui.filterInput:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-  DBB2.gui.filterInput.placeholder:SetFont("Fonts\\FRIZQT__.TTF", DBB2:GetFontSize(10))
-  DBB2.gui.filterInput.placeholder:SetPoint("LEFT", 6, 0)
-  DBB2.gui.filterInput.placeholder:SetText("Filter messages... (e.g. bwl,zg,mc)")
-  DBB2.gui.filterInput.placeholder:SetTextColor(0.4, 0.4, 0.4, 1)
-  
-  -- Hide placeholder on focus
-  DBB2.gui.filterInput:SetScript("OnEditFocusGained", function()
-    this.placeholder:Hide()
-  end)
-  
-  -- Show placeholder on focus lost if empty
-  DBB2.gui.filterInput:SetScript("OnEditFocusLost", function()
-    if this:GetText() == "" then
-      this.placeholder:Show()
-    end
-  end)
   
   -- Store current filter terms
   DBB2.gui.filterTerms = {}
@@ -305,24 +259,24 @@ DBB2:RegisterModule("gui", function()
     this:ClearFocus()
   end)
   
-  -- Create scroll frame for messages
-  DBB2.gui.scroll = DBB2.api.CreateScrollFrame("DBB2ScrollFrame", logsPanel)
-  DBB2.gui.scroll:SetPoint("TOPLEFT", logsPanel, "TOPLEFT", 0, -(filterHeight + filterPadding))
+  -- Create scroll frame for messages (using schema)
+  DBB2.gui.scroll = S.CreateScrollFrame("DBB2ScrollFrame", logsPanel)
+  DBB2.gui.scroll:SetPoint("TOPLEFT", logsPanel, "TOPLEFT", 0, -(S.FILTER_HEIGHT + S.FILTER_PADDING))
   DBB2.gui.scroll:SetPoint("BOTTOMRIGHT", logsPanel, "BOTTOMRIGHT", 0, 0)
   logsPanel.scrollFrame = DBB2.gui.scroll  -- Register for OnShow update
   
-  -- Create scroll child
-  DBB2.gui.scrollchild = DBB2.api.CreateScrollChild("DBB2ScrollChild", DBB2.gui.scroll)
+  -- Create scroll child (using schema)
+  DBB2.gui.scrollchild = S.CreateScrollChild("DBB2ScrollChild", DBB2.gui.scroll)
   
-  -- Message row pool
+  -- Message row pool (using schema)
   DBB2.gui.messageRows = {}
-  local ROW_HEIGHT = DBB2:ScaleSize(DEFAULT_ROW_HEIGHT)
+  local ROW_HEIGHT = S.ROW_HEIGHT
   
-  -- Pre-create message rows
+  -- Pre-create message rows using schema
   for i = 1, MAX_ROWS do
-    local row = DBB2.api.CreateMessageRow("DBB2MsgRow" .. i, DBB2.gui.scrollchild, DEFAULT_ROW_HEIGHT)
-    row:SetPoint("TOPLEFT", DBB2.gui.scrollchild, "TOPLEFT", 5, -((i-1) * ROW_HEIGHT))
-    row:SetPoint("RIGHT", DBB2.gui.scrollchild, "RIGHT", -DBB2:ScaleSize(13), 0)
+    local row = S.CreateMessageRow("DBB2MsgRow" .. i, DBB2.gui.scrollchild)
+    row:SetPoint("TOPLEFT", DBB2.gui.scrollchild, "TOPLEFT", S.ROW_LEFT_PADDING, -((i-1) * ROW_HEIGHT))
+    row:SetPoint("RIGHT", DBB2.gui.scrollchild, "RIGHT", -S.SCROLLBAR_SPACE, 0)
     row:Hide()
     DBB2.gui.messageRows[i] = row
   end
@@ -367,12 +321,13 @@ DBB2:RegisterModule("gui", function()
       end
     end
     
-    local contentHeight = visibleRows * ROW_HEIGHT
+    local contentHeight = visibleRows * S.ROW_HEIGHT
     local newChildHeight = contentHeight
     
     if newChildHeight ~= lastChildHeight then
       DBB2.gui.scrollchild:SetHeight(newChildHeight)
-      DBB2.gui.scrollchild:SetWidth(this:GetWidth() or 1)  -- Ensure width is set before SetScrollChild
+      -- Use the same calculated width (scrollWidth) instead of GetWidth() for consistency
+      DBB2.gui.scrollchild:SetWidth(scrollWidth)
       this:SetScrollChild(DBB2.gui.scrollchild)
       lastChildHeight = newChildHeight
     end
@@ -473,73 +428,21 @@ DBB2:RegisterModule("gui", function()
     
     -- Shared row pool constants
     local MAX_POOL_ROWS = 100
-    local ROW_HEIGHT = DBB2:ScaleSize(DEFAULT_ROW_HEIGHT)
+    local ROW_HEIGHT = S.ROW_HEIGHT
     
-    -- Filter bar
-    local filterHeight = DBB2:ScaleSize(22)
-    local filterPadding = DBB2:ScaleSize(5)
-    
-    -- Filter input with placeholder
-    -- Leave space for current time, aligned with timestamps
-    local timeColumnWidth = DBB2:ScaleSize(55) + DBB2:ScaleSize(13)
-    panel.filterInput = DBB2.api.CreateEditBox("DBB2" .. panelName .. "FilterInput", panel)
+    -- Filter input with placeholder (using schema)
+    panel.filterInput = S.CreateFilterInput("DBB2" .. panelName .. "FilterInput", panel)
     panel.filterInput:SetPoint("TOPLEFT", panel, "TOPLEFT", 0, 0)
-    panel.filterInput:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -timeColumnWidth, 0)
-    panel.filterInput:SetHeight(filterHeight)
+    panel.filterInput:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -S.TIME_COLUMN_WIDTH, 0)
     
-    -- Current time display (aligned with timestamps below)
-    local timeRightOffset = DBB2:ScaleSize(13) + 2
-    panel.currentTimeText = panel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    panel.currentTimeText:SetFont("Fonts\\FRIZQT__.TTF", DBB2:GetFontSize(10))
-    panel.currentTimeText:SetPoint("RIGHT", panel, "TOPRIGHT", -timeRightOffset, -(filterHeight / 2))
-    panel.currentTimeText:SetWidth(DBB2:ScaleSize(55))
-    panel.currentTimeText:SetJustifyH("LEFT")
-    panel.currentTimeText:SetTextColor(0.5, 0.5, 0.5, 1)
-    panel.currentTimeText:SetText(date("%H:%M:%S"))
+    -- Current time display - aligned with message timestamps (using schema)
+    panel.currentTimeText = S.CreateCurrentTimeDisplay(panel)
+    panel.currentTimeText:SetPoint("RIGHT", panel, "TOPRIGHT", -S.SCROLLBAR_SPACE + S.TIMESTAMP_RIGHT_OFFSET, -(S.FILTER_HEIGHT / 2))
     
     -- Hide by default (controlled by config)
     if not DBB2_Config.showCurrentTime then
       panel.currentTimeText:Hide()
     end
-    
-    -- Hide full border, add bottom-only border line (spans full width including time area)
-    if panel.filterInput.backdrop then
-      panel.filterInput.backdrop:SetBackdropBorderColor(0, 0, 0, 0)
-    end
-    panel.filterInput.bottomBorder = panel:CreateTexture(nil, "BORDER")
-    panel.filterInput.bottomBorder:SetTexture("Interface\\BUTTONS\\WHITE8X8")
-    panel.filterInput.bottomBorder:SetHeight(1)
-    panel.filterInput.bottomBorder:SetPoint("BOTTOMLEFT", panel.filterInput, "BOTTOMLEFT", 0, 0)
-    panel.filterInput.bottomBorder:SetPoint("BOTTOMRIGHT", panel, "TOPRIGHT", 0, -filterHeight)
-    panel.filterInput.bottomBorder:SetVertexColor(0.25, 0.25, 0.25, 1)
-    
-    -- Override hover scripts for bottom border highlight
-    panel.filterInput:SetScript("OnEnter", function()
-      local r, g, b = DBB2:GetHighlightColor()
-      this.bottomBorder:SetVertexColor(r, g, b, 1)
-    end)
-    panel.filterInput:SetScript("OnLeave", function()
-      this.bottomBorder:SetVertexColor(0.25, 0.25, 0.25, 1)
-    end)
-    
-    -- Placeholder text
-    panel.filterInput.placeholder = panel.filterInput:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    panel.filterInput.placeholder:SetFont("Fonts\\FRIZQT__.TTF", DBB2:GetFontSize(10))
-    panel.filterInput.placeholder:SetPoint("LEFT", 6, 0)
-    panel.filterInput.placeholder:SetText("Filter messages... (e.g. bwl,zg,mc)")
-    panel.filterInput.placeholder:SetTextColor(0.4, 0.4, 0.4, 1)
-    
-    -- Hide placeholder on focus
-    panel.filterInput:SetScript("OnEditFocusGained", function()
-      this.placeholder:Hide()
-    end)
-    
-    -- Show placeholder on focus lost if empty
-    panel.filterInput:SetScript("OnEditFocusLost", function()
-      if this:GetText() == "" then
-        this.placeholder:Show()
-      end
-    end)
     
     -- Store filter terms
     panel.filterTerms = {}
@@ -599,13 +502,13 @@ DBB2:RegisterModule("gui", function()
       this:ClearFocus()
     end)
     
-    -- Create scroll frame for categories
-    local scroll = DBB2.api.CreateScrollFrame("DBB2" .. panelName .. "Scroll", panel)
-    scroll:SetPoint("TOPLEFT", panel, "TOPLEFT", 0, -(filterHeight + filterPadding))
+    -- Create scroll frame for categories (using schema)
+    local scroll = S.CreateScrollFrame("DBB2" .. panelName .. "Scroll", panel)
+    scroll:SetPoint("TOPLEFT", panel, "TOPLEFT", 0, -(S.FILTER_HEIGHT + S.FILTER_PADDING))
     scroll:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", 0, 0)
     panel.scrollFrame = scroll  -- Register for OnShow update
     
-    local scrollchild = DBB2.api.CreateScrollChild("DBB2" .. panelName .. "ScrollChild", scroll)
+    local scrollchild = S.CreateScrollChild("DBB2" .. panelName .. "ScrollChild", scroll)
     
     -- Store references
     panel.scroll = scroll
@@ -617,9 +520,9 @@ DBB2:RegisterModule("gui", function()
     panel.rowPool = {}
     panel.rowPoolIndex = 0
     
-    -- Pre-create pooled rows
+    -- Pre-create pooled rows (using schema)
     for i = 1, MAX_POOL_ROWS do
-      local row = DBB2.api.CreateMessageRow("DBB2" .. panelName .. "PoolRow" .. i, scrollchild, DEFAULT_ROW_HEIGHT)
+      local row = S.CreateMessageRow("DBB2" .. panelName .. "PoolRow" .. i, scrollchild)
       row:Hide()
       panel.rowPool[i] = row
     end
@@ -734,20 +637,22 @@ DBB2:RegisterModule("gui", function()
             local catFrame = panel.categoryFrames[cat.name]
             if not catFrame then
               catFrame = CreateFrame("Frame", nil, scrollchild)
-              catFrame:SetWidth(scrollchild:GetWidth() - DBB2:ScaleSize(13))
+              -- No right offset - let rows handle their own offset like Logs panel
+              catFrame:SetPoint("LEFT", scrollchild, "LEFT", 0, 0)
+              catFrame:SetPoint("RIGHT", scrollchild, "RIGHT", 0, 0)
               panel.categoryFrames[cat.name] = catFrame
               
               -- Clickable header button (for collapse only)
               catFrame.headerBtn = CreateFrame("Button", nil, catFrame)
               catFrame.headerBtn:SetPoint("TOPLEFT", 0, 0)
               catFrame.headerBtn:SetPoint("TOPRIGHT", 0, 0)
-              catFrame.headerBtn:SetHeight(DBB2:ScaleSize(22))
+              catFrame.headerBtn:SetHeight(S.CATEGORY_HEADER_HEIGHT)
               catFrame.headerBtn:EnableMouse(true)
               
               -- Collapse indicator
               catFrame.collapseIndicator = catFrame.headerBtn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
               catFrame.collapseIndicator:SetFont("Fonts\\FRIZQT__.TTF", DBB2:GetFontSize(14))
-              catFrame.collapseIndicator:SetPoint("LEFT", 5, 0)
+              catFrame.collapseIndicator:SetPoint("LEFT", S.ROW_LEFT_PADDING, 0)
               catFrame.collapseIndicator:SetWidth(DBB2:ScaleSize(12))
               catFrame.collapseIndicator:SetText("+")
               
@@ -926,13 +831,22 @@ DBB2:RegisterModule("gui", function()
             catFrame.bellBtn.categoryName = cat.name
             catFrame.bellBtn.categoryType = categoryType
             
-            -- Position category frame
+            -- Position category frame - use explicit width from scroll frame
             catFrame:ClearAllPoints()
             catFrame:SetPoint("TOPLEFT", scrollchild, "TOPLEFT", 0, -yOffset)
-            catFrame:SetPoint("RIGHT", scrollchild, "RIGHT", -DBB2:ScaleSize(13), 0)
+            -- Get scroll frame width and set catFrame width explicitly
+            -- Subtract scrollbar space to avoid overlap
+            local sfLeft = scroll:GetLeft()
+            local sfRight = scroll:GetRight()
+            if sfLeft and sfRight and sfRight > sfLeft then
+              catFrame:SetWidth(sfRight - sfLeft - S.SCROLLBAR_SPACE)
+            else
+              -- Fallback to anchor-based
+              catFrame:SetPoint("RIGHT", scrollchild, "RIGHT", -S.SCROLLBAR_SPACE, 0)
+            end
             
             -- Create/update message rows using shared pool
-            local headerHeight = DBB2:ScaleSize(22)
+            local headerHeight = S.CATEGORY_HEADER_HEIGHT
             local maxSetting = DBB2_Config.maxMessagesPerCategory or 5
             local maxMessages
             if maxSetting == 0 then
@@ -956,7 +870,7 @@ DBB2:RegisterModule("gui", function()
                   -- Reparent row to category frame
                   row:SetParent(catFrame)
                   row:ClearAllPoints()
-                  row:SetPoint("TOPLEFT", catFrame, "TOPLEFT", 5, -(headerHeight + (i-1) * ROW_HEIGHT))
+                  row:SetPoint("TOPLEFT", catFrame, "TOPLEFT", S.ROW_LEFT_PADDING, -(headerHeight + (i-1) * ROW_HEIGHT))
                   row:SetPoint("RIGHT", catFrame, "RIGHT", 0, 0)
                   
                   local timeStr = date("%H:%M:%S", msg.time)
@@ -976,22 +890,23 @@ DBB2:RegisterModule("gui", function()
             -- Set category frame height
             local catHeight
             if isCollapsed or visibleMessages == 0 then
-              catHeight = headerHeight + DBB2:ScaleSize(5)  -- Just header height
+              catHeight = headerHeight + S.CATEGORY_SPACING  -- Just header height
             else
-              catHeight = headerHeight + (visibleMessages * ROW_HEIGHT) + DBB2:ScaleSize(5)
+              catHeight = headerHeight + (visibleMessages * ROW_HEIGHT) + S.CATEGORY_SPACING
             end
             catFrame:SetHeight(catHeight)
             catFrame:Show()
             
-            yOffset = yOffset + catHeight + DBB2:ScaleSize(5)
+            yOffset = yOffset + catHeight + S.CATEGORY_SPACING
           end
           end  -- if passesLevelFilter
         end
       end
       
-      -- Update scroll child height
+      -- Update scroll child height (includes bottom padding for extra scroll space)
+      local bottomPadding = S.GUI_PADDING * 3  -- Extra scroll space
       local scrollHeight = scroll:GetHeight()
-      local newChildHeight = math_max(yOffset, scrollHeight)
+      local newChildHeight = math_max(yOffset + bottomPadding, scrollHeight)
       scrollchild:SetHeight(newChildHeight)
       scrollchild:SetWidth(scroll:GetWidth() or 1)  -- Ensure width is set before SetScrollChild
       scroll:SetScrollChild(scrollchild)
@@ -1051,9 +966,34 @@ DBB2:RegisterModule("gui", function()
     local tabIndex = (DBB2_Config.defaultTab or 0) + 1  -- Convert 0-based to 1-based
     local tabName = defaultTabNames[tabIndex] or "Logs"
     DBB2.gui.tabs.SwitchTab(tabName)
+    -- Defer a second update to next frame to ensure proper dimensions are calculated
+    -- This fixes the issue where messages don't fill width until resize
+    this._needsDeferredUpdate = true
   end)
   
-  -- Add resize grip (scale minimum size based on font offset)
+  -- Handle deferred update after OnShow (ensures layout dimensions are ready)
+  DBB2.gui:SetScript("OnUpdate", function()
+    if this._needsDeferredUpdate then
+      this._needsDeferredUpdate = nil
+      local activeTab = DBB2.gui.tabs.activeTab
+      if activeTab == "Logs" then
+        DBB2.gui:UpdateMessages()
+        if DBB2.gui.scroll and DBB2.gui.scroll.UpdateScrollState then
+          DBB2.gui.scroll.UpdateScrollState()
+        end
+      elseif activeTab == "Groups" or activeTab == "Professions" or activeTab == "Hardcore" then
+        local panel = DBB2.gui.tabs.panels[activeTab]
+        if panel and panel.UpdateCategories then
+          panel.UpdateCategories()
+        end
+        if panel and panel.scroll and panel.scroll.UpdateScrollState then
+          panel.scroll.UpdateScrollState()
+        end
+      end
+    end
+  end)
+  
+  -- Add resize grip using schema
   local baseMinWidth = 410
   local baseMinHeight = 275
   -- Calculate scale factor directly to avoid cache issues
@@ -1063,7 +1003,7 @@ DBB2:RegisterModule("gui", function()
   local scaleFactor = 1 + (fontOffset * 0.1)
   local scaledMinWidth = math.floor(baseMinWidth * scaleFactor + 0.5)
   local scaledMinHeight = math.floor(baseMinHeight * scaleFactor + 0.5)
-  DBB2.gui.resizeGrip = DBB2.api.CreateResizeGrip(DBB2.gui, scaledMinWidth, scaledMinHeight)
+  DBB2.gui.resizeGrip = S.CreateResizeGrip(DBB2.gui, scaledMinWidth, scaledMinHeight)
   
   -- Enforce minimum size on loaded position (in case saved size is smaller than scaled minimum)
   local minW = DBB2.gui.resizeGrip.minWidth

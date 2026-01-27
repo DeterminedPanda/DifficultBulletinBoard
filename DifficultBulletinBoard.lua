@@ -120,6 +120,14 @@ DBB2:SetScript("OnEvent", function()
       DBB2_Config.hideFromChat = 0  -- Hide captured messages from chat (0=off, 1=selected, 2=all)
       DBB2_Config.maxMessagesPerCategory = 5  -- Max messages shown per category (0 = unlimited)
       DBB2_Config.scrollSpeed = 55  -- Scroll speed (pixels per wheel tick)
+      DBB2_Config.defaultTab = 0  -- Default tab (0=Logs, 1=Groups, 2=Professions, 3=Hardcore)
+      DBB2_Config.showCurrentTime = false  -- Show current time above timestamps
+      DBB2_Config.showLevelFilteredGroups = false  -- Level filter for groups tab
+      DBB2_Config.notificationSound = 1  -- Notification sound (0=off, 1=on)
+      DBB2_Config.clearNotificationsOnGroupJoin = true  -- Clear notifications when joining group
+      DBB2_Config.autoJoinChannels = true  -- Auto-join World and LFG channels
+      DBB2_Config.minimapAngle = 45  -- Minimap button angle
+      DBB2_Config.minimapFreeMode = false  -- Minimap button free positioning mode
     end
     
     -- Ensure fontOffset exists for existing configs and is within safe bounds
@@ -181,6 +189,35 @@ DBB2:SetScript("OnEvent", function()
     if DBB2_Config.autoJoinChannels == nil then
       DBB2_Config.autoJoinChannels = true
     end
+    
+    -- Ensure defaultTab exists for existing configs (default 0 = Logs)
+    if DBB2_Config.defaultTab == nil then
+      DBB2_Config.defaultTab = 0
+    end
+    
+    -- Ensure showCurrentTime exists for existing configs (default off)
+    if DBB2_Config.showCurrentTime == nil then
+      DBB2_Config.showCurrentTime = false
+    end
+    
+    -- Ensure notificationSound exists for existing configs (default on)
+    if DBB2_Config.notificationSound == nil then
+      DBB2_Config.notificationSound = 1
+    end
+    
+    -- Ensure clearNotificationsOnGroupJoin exists for existing configs (default on)
+    if DBB2_Config.clearNotificationsOnGroupJoin == nil then
+      DBB2_Config.clearNotificationsOnGroupJoin = true
+    end
+    
+    -- Ensure minimap button position fields exist for existing configs
+    if DBB2_Config.minimapAngle == nil then
+      DBB2_Config.minimapAngle = 45
+    end
+    if DBB2_Config.minimapFreeMode == nil then
+      DBB2_Config.minimapFreeMode = false
+    end
+    -- minimapFreePos can be nil (means not in free mode)
     
     -- Load modules (use ipairs to preserve load order from TOC file)
     for i, module in ipairs(DBB2.modules) do

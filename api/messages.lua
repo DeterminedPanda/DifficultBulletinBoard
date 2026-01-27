@@ -12,7 +12,6 @@ local table_remove = table.remove
 local table_getn = table.getn
 local time = time
 local ipairs = ipairs
-local pairs = pairs
 local pcall = pcall
 
 -- Constants
@@ -355,7 +354,7 @@ end
 
 -- Default blacklist keywords (used by InitBlacklist and reset functions)
 -- NOTE: Auto-reset on version change is handled in modules/categories.lua via CATEGORY_VERSION
-DBB2.DEFAULT_BLACKLIST_KEYWORDS = {"recruit*", "recrut*", "<*>", "[???]", "[??]"}
+DBB2.DEFAULT_BLACKLIST_KEYWORDS = {"recruit*", "recrut*", "<*>", "\\[???\\]", "\\[??\\]"}
 
 -- [ InitBlacklist ]
 -- Initializes blacklist config if not present

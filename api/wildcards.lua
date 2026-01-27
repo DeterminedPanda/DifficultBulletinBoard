@@ -30,7 +30,6 @@ local string_sub = string.sub
 local string_gsub = string.gsub
 local string_len = string.len
 local string_lower = string.lower
-local string_byte = string.byte
 local table_insert = table.insert
 local table_getn = table.getn
 local ipairs = ipairs

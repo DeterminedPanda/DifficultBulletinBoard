@@ -35,6 +35,18 @@
 --   2. api/*.lua files (add functions to DBB2.api)
 --   3. modules/*.lua files (register via DBB2:RegisterModule, executed on ADDON_LOADED)
 
+-- Localize frequently used globals for performance
+local string_lower = string.lower
+local string_len = string.len
+local string_sub = string.sub
+local string_find = string.find
+local table_insert = table.insert
+local table_remove = table.remove
+local table_getn = table.getn
+local ipairs = ipairs
+local pairs = pairs
+local type = type
+
 -- [ SavePosition ]
 -- Saves the position and size of a frame to saved variables
 -- 'frame'      [frame]         the frame to save
@@ -93,7 +105,7 @@ function DBB2.api.DeepCopy(orig)
   
   local copy = {}
   -- First copy array part
-  for i = 1, table.getn(orig) do
+  for i = 1, table_getn(orig) do
     if type(orig[i]) == "table" then
       copy[i] = DBB2.api.DeepCopy(orig[i])
     else
@@ -102,7 +114,7 @@ function DBB2.api.DeepCopy(orig)
   end
   -- Then copy hash part
   for k, v in pairs(orig) do
-    if type(k) ~= "number" or k < 1 or k > table.getn(orig) then
+    if type(k) ~= "number" or k < 1 or k > table_getn(orig) then
       if type(v) == "table" then
         copy[k] = DBB2.api.DeepCopy(v)
       else
@@ -178,17 +190,17 @@ end
 -- return:       [boolean]      true if channel should be captured
 function DBB2.api.IsChannelWhitelisted(channelName)
   if not channelName then return false end
-  local lowerName = string.lower(channelName)
+  local lowerName = string_lower(channelName)
   local whitelist = DBB2.api.GetWhitelistedChannels()
   
   for _, name in ipairs(whitelist) do
-    local lowerWhitelist = string.lower(name)
-    local whitelistLen = string.len(lowerWhitelist)
+    local lowerWhitelist = string_lower(name)
+    local whitelistLen = string_len(lowerWhitelist)
     -- Use prefix matching: "trade - orgrimmar" starts with "trade"
     -- Check if channel name starts with whitelist entry (plain string comparison)
-    if string.sub(lowerName, 1, whitelistLen) == lowerWhitelist then
+    if string_sub(lowerName, 1, whitelistLen) == lowerWhitelist then
       -- Ensure it's a word boundary (next char is space, dash, or end of string)
-      local nextChar = string.sub(lowerName, whitelistLen + 1, whitelistLen + 1)
+      local nextChar = string_sub(lowerName, whitelistLen + 1, whitelistLen + 1)
       if nextChar == "" or nextChar == " " or nextChar == "-" then
         return true
       end
@@ -204,17 +216,17 @@ end
 function DBB2.api.AddWhitelistedChannel(channelName)
   if not channelName or channelName == "" then return false end
   
-  local lowerName = string.lower(channelName)
+  local lowerName = string_lower(channelName)
   local whitelist = DBB2.api.GetWhitelistedChannels()
   
   -- Check if already exists
   for _, name in ipairs(whitelist) do
-    if string.lower(name) == lowerName then
+    if string_lower(name) == lowerName then
       return false
     end
   end
   
-  table.insert(DBB2_Config.whitelistedChannels, lowerName)
+  table_insert(DBB2_Config.whitelistedChannels, lowerName)
   return true
 end
 
@@ -225,12 +237,12 @@ end
 function DBB2.api.RemoveWhitelistedChannel(channelName)
   if not channelName then return false end
   
-  local lowerName = string.lower(channelName)
+  local lowerName = string_lower(channelName)
   local whitelist = DBB2.api.GetWhitelistedChannels()
   
-  for i = table.getn(whitelist), 1, -1 do
-    if string.lower(whitelist[i]) == lowerName then
-      table.remove(DBB2_Config.whitelistedChannels, i)
+  for i = table_getn(whitelist), 1, -1 do
+    if string_lower(whitelist[i]) == lowerName then
+      table_remove(DBB2_Config.whitelistedChannels, i)
       return true
     end
   end
@@ -254,11 +266,11 @@ function DBB2.api.GetJoinedChannels()
   -- GetChannelList returns: id1, name1, id2, name2, ...
   local list = { GetChannelList() }
   
-  for i = 1, table.getn(list), 2 do
+  for i = 1, table_getn(list), 2 do
     local id = list[i]
     local name = list[i + 1]
     if id and name then
-      table.insert(channels, { id = id, name = name })
+      table_insert(channels, { id = id, name = name })
     end
   end
   
@@ -385,14 +397,14 @@ function DBB2.api.RefreshJoinedChannels()
   
   -- Add all static channels (including separators)
   for _, name in ipairs(DBB2._staticChannelOrder) do
-    table.insert(result, name)
+    table_insert(result, name)
   end
   
   -- Add custom joined channels (not in static list)
   for _, ch in ipairs(joinedChannels) do
     local name = ch.name
     if name and not staticChannels[name] then
-      table.insert(result, name)
+      table_insert(result, name)
     end
   end
   
@@ -468,7 +480,7 @@ function DBB2.api.DetectHardcoreCharacter()
       if spellName and spellRank then
         -- Only match spells with "Challenge" rank for precise detection
         if spellRank == "Challenge" then
-          local lowerName = string.lower(spellName)
+          local lowerName = string_lower(spellName)
           if lowerName == "hardcore" then
             hasHardcoreSpell = true
           elseif lowerName == "inferno" then
@@ -521,13 +533,13 @@ function DBB2.api.AutoJoinRequiredChannels()
   local joinedLookup = {}
   for _, ch in ipairs(joinedChannels) do
     if ch.name then
-      joinedLookup[string.lower(ch.name)] = true
+      joinedLookup[string_lower(ch.name)] = true
     end
   end
   
   -- Check and join required channels
   for _, channelName in ipairs(DBB2._autoJoinChannels) do
-    local lowerName = string.lower(channelName)
+    local lowerName = string_lower(channelName)
     if not joinedLookup[lowerName] then
       -- Channel not joined, join it
       JoinChannelByName(channelName)

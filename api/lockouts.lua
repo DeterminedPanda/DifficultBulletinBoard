@@ -1,6 +1,13 @@
 -- DBB2 Lockouts API
 -- Tracks raid lockouts and maps them to categories
 
+-- Localize frequently used globals for performance
+local string_lower = string.lower
+local math_floor = math.floor
+local math_mod = math.mod
+local time = time
+local pairs = pairs
+
 -- Storage for lockout data
 DBB2.lockouts = {}
 
@@ -40,7 +47,7 @@ function DBB2.api.UpdateLockouts()
     
     if instanceName and instanceReset and instanceReset > 0 then
       -- Store raw lockout info
-      local lowerName = string.lower(instanceName)
+      local lowerName = string_lower(instanceName)
       DBB2.lockouts[lowerName] = {
         name = instanceName,
         id = instanceID,
@@ -69,7 +76,7 @@ end
 function DBB2.api.GetCategoryLockout(categoryName)
   if not categoryName then return nil end
   
-  local lowerCat = string.lower(categoryName)
+  local lowerCat = string_lower(categoryName)
   
   -- Check each lockout
   for instanceKey, lockoutData in pairs(DBB2.lockouts) do
@@ -105,9 +112,9 @@ function DBB2.api.FormatTimeRemaining(seconds)
     return "Expired"
   end
   
-  local days = math.floor(seconds / 86400)
-  local hours = math.floor(math.mod(seconds, 86400) / 3600)
-  local minutes = math.floor(math.mod(seconds, 3600) / 60)
+  local days = math_floor(seconds / 86400)
+  local hours = math_floor(math_mod(seconds, 86400) / 3600)
+  local minutes = math_floor(math_mod(seconds, 3600) / 60)
   
   if days > 0 then
     return days .. "d " .. hours .. "h"

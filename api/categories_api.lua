@@ -50,7 +50,7 @@ tagExclusions["st"] = {
     if charBeforeST == " " then
       checkPos = checkPos - 1
     end
-    
+
     -- Now check for minutes (2 digits)
     if checkPos < 2 then return false end
     local min2 = string_sub(lowerMsg, checkPos, checkPos)
@@ -197,11 +197,20 @@ local function IsTagExcluded(tag, lowerMsg, foundPos, tagLen)
   return false  -- Match is valid
 end
 
+
+-- =====================================================
+-- CATEGORY COLLAPSE STATE API
+-- =====================================================
+-- Functions for managing the collapsed/expanded state of categories in the UI.
+-- Collapsed categories show only the header, hiding their messages.
+
 -- [ IsCategoryCollapsed ]
--- Returns whether a category is collapsed
--- 'categoryType'  [string]  "groups", "professions", or "hardcore"
--- 'categoryName'  [string]  the category name
--- return:         [boolean] true if collapsed
+-- Checks whether a category is currently collapsed in the UI.
+-- Collapsed categories show only the header row, hiding their messages.
+--
+-- @param categoryType  [string]  Category type: "groups", "professions", or "hardcore"
+-- @param categoryName  [string]  The display name of the category
+-- @return              [boolean] true if collapsed, false if expanded or not found
 function DBB2.api.IsCategoryCollapsed(categoryType, categoryName)
   if not categoryType or not categoryName then return false end
   if not DBB2_Config.categoryCollapsed then return false end
@@ -210,11 +219,13 @@ function DBB2.api.IsCategoryCollapsed(categoryType, categoryName)
 end
 
 -- [ SetCategoryCollapsed ]
--- Sets the collapsed state of a category
--- 'categoryType'  [string]  "groups", "professions", or "hardcore"
--- 'categoryName'  [string]  the category name
--- 'collapsed'     [boolean] collapsed state
--- return:         [boolean] true if set successfully
+-- Sets the collapsed/expanded state of a category in the UI.
+-- Creates the necessary config tables if they don't exist.
+--
+-- @param categoryType  [string]  Category type: "groups", "professions", or "hardcore"
+-- @param categoryName  [string]  The display name of the category
+-- @param collapsed     [boolean] true to collapse, false to expand
+-- @return              [boolean] true if set successfully, false if invalid params
 function DBB2.api.SetCategoryCollapsed(categoryType, categoryName, collapsed)
   if not categoryType or not categoryName then return false end
   if not DBB2_Config.categoryCollapsed then
@@ -228,10 +239,12 @@ function DBB2.api.SetCategoryCollapsed(categoryType, categoryName, collapsed)
 end
 
 -- [ ToggleCategoryCollapsed ]
--- Toggles the collapsed state of a category
--- 'categoryType'  [string]  "groups", "professions", or "hardcore"
--- 'categoryName'  [string]  the category name
--- return:         [boolean] new collapsed state
+-- Toggles the collapsed/expanded state of a category.
+-- If collapsed, expands it; if expanded, collapses it.
+--
+-- @param categoryType  [string]  Category type: "groups", "professions", or "hardcore"
+-- @param categoryName  [string]  The display name of the category
+-- @return              [boolean] The new collapsed state (true = now collapsed)
 function DBB2.api.ToggleCategoryCollapsed(categoryType, categoryName)
   local isCollapsed = DBB2.api.IsCategoryCollapsed(categoryType, categoryName)
   DBB2.api.SetCategoryCollapsed(categoryType, categoryName, not isCollapsed)
@@ -246,9 +259,12 @@ end
 -- or LFW/WTB/WTS for professions.
 
 -- [ GetFilterTags ]
--- Returns filter tags config for a category type
--- 'categoryType' [string] "groups" or "professions"
--- return:        [table]  { enabled = bool, tags = {...} }
+-- Returns the filter tags configuration for a category type.
+-- Filter tags are additional tags that must ALSO match (AND condition)
+-- when enabled, allowing filtering for specific message types.
+--
+-- @param categoryType  [string] Category type: "groups" or "professions"
+-- @return              [table]  Config table { enabled = boolean, tags = {string...} }, or nil if not found
 function DBB2.api.GetFilterTags(categoryType)
   if not categoryType then return nil end
   if not DBB2_Config.filterTags then return nil end
@@ -256,9 +272,11 @@ function DBB2.api.GetFilterTags(categoryType)
 end
 
 -- [ IsFilterTagsEnabled ]
--- Returns whether filter tags are enabled for a category type
--- 'categoryType' [string] "groups" or "professions"
--- return:        [boolean]
+-- Checks whether filter tags are currently enabled for a category type.
+-- When enabled, messages must match both category tags AND filter tags.
+--
+-- @param categoryType  [string]  Category type: "groups" or "professions"
+-- @return              [boolean] true if filter tags are enabled, false otherwise
 function DBB2.api.IsFilterTagsEnabled(categoryType)
   local filter = DBB2.api.GetFilterTags(categoryType)
   if not filter then return false end
@@ -266,10 +284,12 @@ function DBB2.api.IsFilterTagsEnabled(categoryType)
 end
 
 -- [ SetFilterTagsEnabled ]
--- Enables or disables filter tags for a category type
--- 'categoryType' [string]  "groups" or "professions"
--- 'enabled'      [boolean] enabled state
--- return:        [boolean] true if set successfully
+-- Enables or disables filter tags for a category type.
+-- Creates the necessary config tables if they don't exist.
+--
+-- @param categoryType  [string]  Category type: "groups" or "professions"
+-- @param enabled       [boolean] true to enable filter tags, false to disable
+-- @return              [boolean] true if set successfully, false if invalid params
 function DBB2.api.SetFilterTagsEnabled(categoryType, enabled)
   if not categoryType then return false end
   if not DBB2_Config.filterTags then
@@ -283,10 +303,12 @@ function DBB2.api.SetFilterTagsEnabled(categoryType, enabled)
 end
 
 -- [ UpdateFilterTags ]
--- Updates filter tags for a category type
--- 'categoryType' [string] "groups" or "professions"
--- 'newTags'      [table]  array of tag strings
--- return:        [boolean] true if updated
+-- Updates the filter tags array for a category type.
+-- Creates the necessary config tables if they don't exist.
+--
+-- @param categoryType  [string] Category type: "groups" or "professions"
+-- @param newTags       [table]  Array of tag strings (e.g., {"lfg", "lfm", "lf1m"})
+-- @return              [boolean] true if updated successfully, false if invalid params
 function DBB2.api.UpdateFilterTags(categoryType, newTags)
   if not categoryType then return false end
   if not DBB2_Config.filterTags then
@@ -299,12 +321,18 @@ function DBB2.api.UpdateFilterTags(categoryType, newTags)
   return true
 end
 
+
 -- [ MatchFilterTags ]
--- Checks if a message matches any of the filter tags for a category type
--- Uses wildcard matching via DBB2.api.MatchWildcard for patterns containing special chars
--- 'message'      [string] the message text
--- 'categoryType' [string] "groups" or "professions"
--- return:        [boolean] true if matches (or if filter is disabled)
+-- Checks if a message matches any of the filter tags for a category type.
+-- Uses word boundary matching for plain tags and wildcard matching for patterns.
+-- Returns true if filter is disabled (pass-through behavior).
+--
+-- Supports wildcard patterns: * (any chars), ? (one char), [abc], [a-z], {a,b,c}
+-- Also matches tags followed by digits (e.g., "lf1m", "lf2m" for "lf" tag).
+--
+-- @param message       [string]  The message text to check
+-- @param categoryType  [string]  Category type: "groups" or "professions"
+-- @return              [boolean] true if matches any filter tag, or if filter is disabled
 function DBB2.api.MatchFilterTags(message, categoryType)
   -- If filter is disabled, always return true (no filtering)
   if not DBB2.api.IsFilterTagsEnabled(categoryType) then
@@ -398,10 +426,19 @@ function DBB2.api.MatchFilterTags(message, categoryType)
   return false
 end
 
+-- =====================================================
+-- CATEGORY MANAGEMENT API
+-- =====================================================
+-- Functions for retrieving and modifying category definitions.
+-- Categories contain tags used to match messages to dungeon/raid groups,
+-- profession services, or hardcore-specific content.
+
 -- [ GetCategories ]
--- Returns categories for a given type
--- 'categoryType' [string] "groups", "professions", or "hardcore"
--- return:        [table]  array of category objects
+-- Returns all categories for a given type from the saved config.
+--
+-- @param categoryType  [string] Category type: "groups", "professions", or "hardcore"
+-- @return              [table]  Array of category objects, or empty table if not found
+--                               Each category: { name, selected, tags, _tagsLower, _tagsLen }
 function DBB2.api.GetCategories(categoryType)
   if not categoryType then return {} end
   if not DBB2_Config.categories then return {} end
@@ -409,10 +446,12 @@ function DBB2.api.GetCategories(categoryType)
 end
 
 -- [ GetCategoryByName ]
--- Returns a specific category by name
--- 'categoryType'  [string]  "groups", "professions", or "hardcore"
--- 'name'          [string]  the category name
--- return:         [table, number] category object and index, or nil
+-- Finds and returns a specific category by its display name.
+--
+-- @param categoryType  [string]  Category type: "groups", "professions", or "hardcore"
+-- @param name          [string]  The exact display name of the category
+-- @return              [table]   The category object if found, or nil
+-- @return              [number]  The index in the categories array, or nil
 function DBB2.api.GetCategoryByName(categoryType, name)
   if not categoryType or not name then return nil end
   local cats = DBB2.api.GetCategories(categoryType)
@@ -424,13 +463,15 @@ function DBB2.api.GetCategoryByName(categoryType, name)
   return nil
 end
 
+
 -- [ UpdateCategoryTags ]
--- Updates tags for a category
--- Also pre-computes lowercase versions for faster matching
--- 'categoryType'  [string]  "groups", "professions", or "hardcore"
--- 'categoryName'  [string]  the category name
--- 'newTags'       [table]   array of tag strings
--- return:         [boolean] true if updated
+-- Updates the search tags for a category.
+-- Also pre-computes lowercase versions and lengths for faster matching.
+--
+-- @param categoryType  [string]  Category type: "groups", "professions", or "hardcore"
+-- @param categoryName  [string]  The display name of the category to update
+-- @param newTags       [table]   Array of tag strings (e.g., {"mc", "molten core", "molten"})
+-- @return              [boolean] true if updated successfully, false if category not found
 function DBB2.api.UpdateCategoryTags(categoryType, categoryName, newTags)
   local cat = DBB2.api.GetCategoryByName(categoryType, categoryName)
   if cat then
@@ -489,11 +530,13 @@ local function EnsureTagsPrecomputed(category)
 end
 
 -- [ SetCategorySelected ]
--- Enables or disables a category
--- 'categoryType'  [string]  "groups", "professions", or "hardcore"
--- 'categoryName'  [string]  the category name
--- 'selected'      [boolean] selected state
--- return:         [boolean] true if updated
+-- Enables or disables a category for message matching.
+-- Disabled categories will not match any messages (unless ignoreSelected is used).
+--
+-- @param categoryType  [string]  Category type: "groups", "professions", or "hardcore"
+-- @param categoryName  [string]  The display name of the category
+-- @param selected      [boolean] true to enable, false to disable
+-- @return              [boolean] true if updated successfully, false if category not found
 function DBB2.api.SetCategorySelected(categoryType, categoryName, selected)
   local cat = DBB2.api.GetCategoryByName(categoryType, categoryName)
   if cat then
@@ -503,10 +546,19 @@ function DBB2.api.SetCategorySelected(categoryType, categoryName, selected)
   return false
 end
 
+-- =====================================================
+-- TAG PARSING UTILITIES
+-- =====================================================
+-- Functions for converting between tag string formats.
+
 -- [ ParseTagsString ]
--- Converts comma-separated string to tags array
--- 'str'    [string]  comma-separated tags
--- return:  [table]   array of lowercase tag strings
+-- Converts a comma-separated string into an array of tags.
+-- Trims whitespace and converts to lowercase.
+--
+-- Example: "MC, BWL, Ony" -> {"mc", "bwl", "ony"}
+--
+-- @param str     [string] Comma-separated tags string
+-- @return        [table]  Array of lowercase tag strings
 function DBB2.api.ParseTagsString(str)
   local tags = {}
   if not str or str == "" then return tags end
@@ -523,9 +575,13 @@ function DBB2.api.ParseTagsString(str)
 end
 
 -- [ TagsToString ]
--- Converts tags array to comma-separated string
--- 'tags'   [table]   array of tag strings
--- return:  [string]  comma-separated string
+-- Converts an array of tags into a comma-separated string.
+-- Uses table.concat for efficiency.
+--
+-- Example: {"mc", "bwl", "ony"} -> "mc, bwl, ony"
+--
+-- @param tags    [table]  Array of tag strings
+-- @return        [string] Comma-separated string, or empty string if no tags
 function DBB2.api.TagsToString(tags)
   if not tags then return "" end
   if table_getn(tags) == 0 then return "" end
@@ -534,18 +590,29 @@ function DBB2.api.TagsToString(tags)
   return table_concat(tags, ", ")
 end
 
+
+-- =====================================================
+-- MESSAGE MATCHING API
+-- =====================================================
+-- Functions for matching messages to categories based on tags.
+
 -- [ MatchMessageToCategory ]
--- Checks if a message matches any tag in a category
--- Returns true if message contains any of the category's tags as whole words
--- Supports wildcard patterns: * (any chars), ? (one char), [abc], [a-z], [!abc], {a,b,c}
--- Also matches tags followed by 1-2 digits (e.g., "zg15", "ony12") for raid group sizes
--- Special case: "aq" tag only matches with "40" suffix to distinguish from aq20 (Ruins)
--- If filter tags are enabled for the category type, message must ALSO match a filter tag
--- 'message'       [string]  the message text
--- 'category'      [table]   category object with .selected and .tags
--- 'ignoreSelected' [boolean] if true, skip the .selected check (for mode 2 filtering)
--- 'categoryType'  [string]  optional - "groups", "professions", or "hardcore" for filter tag checking
--- return:         [boolean] true if matches
+-- Checks if a message matches any tag in a category.
+-- Uses word boundary matching to avoid partial matches (e.g., "dm" won't match "admin").
+--
+-- Features:
+-- - Supports wildcard patterns: * (any chars), ? (one char), [abc], [a-z], [!abc], {a,b,c}
+-- - Matches tags followed by 1-2 digits for raid sizes (e.g., "zg15", "ony12")
+-- - Special handling for "aq" tag to distinguish Temple (40) from Ruins (20)
+-- - Special handling for "kara" tag to distinguish Upper (40) from Lower (10)
+-- - Applies tag exclusion rules to prevent false positives (e.g., "ST" for server time)
+-- - If filter tags are enabled, message must match BOTH category tags AND filter tags
+--
+-- @param message        [string]  The message text to check
+-- @param category       [table]   Category object with .selected, .tags, ._tagsLower, ._tagsLen
+-- @param ignoreSelected [boolean] If true, skip the .selected check (for mode 2 filtering)
+-- @param categoryType   [string]  Optional: "groups", "professions", or "hardcore" for filter tag checking
+-- @return               [boolean] true if message matches the category
 function DBB2.api.MatchMessageToCategory(message, category, ignoreSelected, categoryType)
   if not category then
     return false
@@ -714,12 +781,20 @@ function DBB2.api.MatchMessageToCategory(message, category, ignoreSelected, cate
   return false
 end
 
+
 -- [ CategorizeMessage ]
--- Determines which categories a message belongs to
--- Returns table with matched category names for each type
--- 'message'        [string]  the message text
--- 'ignoreSelected' [boolean] if true, match against all categories regardless of enabled state
--- return:          [table]   { groups = {}, professions = {}, hardcore = {}, isHardcore = bool }
+-- Determines which categories a message belongs to across all category types.
+-- Checks groups, professions, and hardcore categories.
+--
+-- @param message        [string]  The message text to categorize
+-- @param ignoreSelected [boolean] If true, match against all categories regardless of enabled state
+-- @return               [table]   Result table with structure:
+--                                 {
+--                                   groups = {string...},      -- Array of matched group category names
+--                                   professions = {string...}, -- Array of matched profession category names
+--                                   hardcore = {string...},    -- Array of matched hardcore category names
+--                                   isHardcore = boolean       -- true if any hardcore category matched
+--                                 }
 function DBB2.api.CategorizeMessage(message, ignoreSelected)
   -- Create fresh result table each call (safer than pooling)
   local result = {
@@ -758,10 +833,15 @@ function DBB2.api.CategorizeMessage(message, ignoreSelected)
 end
 
 -- [ GetCategorizedMessages ]
--- Returns messages organized by category for a given type
--- Applies duplicate filtering per category (same sender + message within spam window)
--- 'categoryType' [string] "groups", "professions", or "hardcore"
--- return:        [table]  { categoryName = { messages... }, ... }
+-- Returns all messages organized by category for a given type.
+-- Only includes messages for selected (enabled) categories.
+-- Applies duplicate filtering per category (same sender + message within spam window).
+-- Hardcore messages are excluded from groups/professions tabs and vice versa.
+--
+-- @param categoryType  [string] Category type: "groups", "professions", or "hardcore"
+-- @return              [table]  Table mapping category names to message arrays:
+--                               { ["Molten Core"] = {msg1, msg2, ...}, ["BWL"] = {...}, ... }
+--                               Each message has: sender, message, time, channel, etc.
 function DBB2.api.GetCategorizedMessages(categoryType)
   local categorized = {}
   
@@ -835,14 +915,16 @@ end
 -- =====================================================
 -- LEVEL RANGE API
 -- =====================================================
--- Runtime lookup table for category level ranges
--- Used for level filtering feature - maps category name to {minLevel, maxLevel}
--- This is populated by modules/categories.lua during initialization
+-- Functions for level-based category filtering.
+-- Level ranges are populated by modules/categories.lua during initialization
+-- and stored in DBB2.categoryLevelRanges lookup table.
 
 -- [ GetCategoryLevelRange ]
--- Returns the level range for a category (used for level filtering)
--- 'categoryName'  [string]   name of the category
--- return:         [table]    {minLevel, maxLevel} or nil if not found
+-- Returns the level range for a category (used for level filtering).
+-- Level ranges define the appropriate player level for dungeon/raid content.
+--
+-- @param categoryName  [string] The display name of the category
+-- @return              [table]  Level range table { minLevel = number, maxLevel = number }, or nil if not found
 function DBB2.api.GetCategoryLevelRange(categoryName)
   if DBB2.categoryLevelRanges and DBB2.categoryLevelRanges[categoryName] then
     return DBB2.categoryLevelRanges[categoryName]
@@ -851,10 +933,13 @@ function DBB2.api.GetCategoryLevelRange(categoryName)
 end
 
 -- [ IsLevelAppropriate ]
--- Checks if a category is appropriate for the given player level
--- 'categoryName'  [string]   name of the category
--- 'playerLevel'   [number]   player's level (optional, defaults to UnitLevel("player"))
--- return:         [boolean]  true if category is within level range, false otherwise
+-- Checks if a category is appropriate for the given player level.
+-- Used to filter out content that is too high or too low level.
+-- Categories without defined level ranges are considered appropriate for all levels.
+--
+-- @param categoryName  [string] The display name of the category
+-- @param playerLevel   [number] Player's level (optional, defaults to UnitLevel("player"))
+-- @return              [boolean] true if player level is within category's range, or if no range defined
 function DBB2.api.IsLevelAppropriate(categoryName, playerLevel)
   playerLevel = playerLevel or UnitLevel("player")
   local levelRange = DBB2.api.GetCategoryLevelRange(categoryName)

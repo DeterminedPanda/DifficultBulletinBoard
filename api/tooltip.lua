@@ -1,6 +1,13 @@
 -- DBB2 Tooltip API
 -- Centralized tooltip system for consistent styling across the addon
 
+-- Localize frequently used globals for performance
+local table_getn = table.getn
+local ipairs = ipairs
+local type = type
+local math_min = math.min
+local math_max = math.max
+
 -- [ InitTooltip ]
 -- Creates the shared tooltip frame
 function DBB2.api.InitTooltip()
@@ -42,7 +49,7 @@ end
 --                    - {text, "gray"}: uses gray color
 function DBB2.api.ShowTooltip(owner, anchor, lines)
   -- Guard against nil parameters
-  if not lines or table.getn(lines) == 0 then return end
+  if not lines or table_getn(lines) == 0 then return end
   
   local tooltip = DBB2.api.InitTooltip()
   
@@ -206,9 +213,9 @@ function DBB2.api.ShowMessageTooltip(owner, sender, message)
   msgLine:Show()
   
   -- Calculate size
-  local textWidth = math.min(msgLine:GetStringWidth(), maxWidth)
+  local textWidth = math_min(msgLine:GetStringWidth(), maxWidth)
   local titleWidth = titleLine:GetStringWidth()
-  local tooltipWidth = math.max(textWidth, titleWidth) + (padding * 2)
+  local tooltipWidth = math_max(textWidth, titleWidth) + (padding * 2)
   local tooltipHeight = titleLine:GetHeight() + msgLine:GetHeight() + spacing + (padding * 2)
   
   tooltip:SetWidth(tooltipWidth)

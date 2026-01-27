@@ -1,3 +1,10 @@
+-- Localize frequently used globals for performance
+local math_rad = math.rad
+local math_deg = math.deg
+local math_cos = math.cos
+local math_sin = math.sin
+local math_atan2 = math.atan2
+
 DBB2:RegisterModule("minimap", function()
   -- Create minimap button (standard circular minimap button)
   DBB2.minimapButton = CreateFrame("Button", "DBB2MinimapButton", Minimap)
@@ -45,10 +52,10 @@ DBB2:RegisterModule("minimap", function()
       DBB2.minimapButton:SetPoint("CENTER", UIParent, "BOTTOMLEFT", DBB2.minimapButton.freePos.x, DBB2.minimapButton.freePos.y)
     else
       -- Locked to minimap circle
-      local angle = math.rad(DBB2.minimapButton.angle)
+      local angle = math_rad(DBB2.minimapButton.angle)
       local radius = 80
-      local x = math.cos(angle) * radius
-      local y = math.sin(angle) * radius
+      local x = math_cos(angle) * radius
+      local y = math_sin(angle) * radius
       DBB2.minimapButton:SetPoint("CENTER", Minimap, "CENTER", x, y)
     end
   end
@@ -83,7 +90,7 @@ DBB2:RegisterModule("minimap", function()
         -- Locked drag mode - rotate around minimap
         DBB2.minimapButton.freeMode = false
         local px, py = Minimap:GetCenter()
-        local angle = math.deg(math.atan2(my - py, mx - px))
+        local angle = math_deg(math_atan2(my - py, mx - px))
         DBB2.minimapButton.angle = angle
       end
       UpdatePosition()

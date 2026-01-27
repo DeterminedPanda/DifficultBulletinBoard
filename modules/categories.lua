@@ -8,6 +8,10 @@
 --   DBB2.versions.CATEGORY  - for category/filter tag changes
 --   DBB2.versions.BLACKLIST - for blacklist keyword changes
 
+-- Localize frequently used globals for performance
+local ipairs = ipairs
+local pairs = pairs
+
 DBB2:RegisterModule("categories", function()
   -- Default filter tags for category types (must match in addition to category tags when enabled)
   -- These are global filters that apply to all categories within a type
