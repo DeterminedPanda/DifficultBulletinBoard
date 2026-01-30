@@ -14,6 +14,7 @@ DBB2:RegisterModule("minimap", function()
   DBB2.minimapButton:SetFrameLevel(8)
   DBB2.minimapButton:RegisterForDrag("LeftButton")
   DBB2.minimapButton:SetMovable(true)
+  DBB2.minimapButton:SetClampedToScreen(true)
   DBB2.minimapButton:EnableMouse(true)
   DBB2.minimapButton:RegisterForClicks("LeftButtonUp", "RightButtonUp")
   
