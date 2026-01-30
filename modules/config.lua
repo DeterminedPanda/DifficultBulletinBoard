@@ -95,6 +95,10 @@ DBB2:RegisterModule("config", function()
     DBB2_Config.showLevelFilteredGroups = false
     DBB2_Config.clearNotificationsOnGroupJoin = true
     DBB2_Config.autoJoinChannels = true
+    DBB2_Config.clampToScreen = true
+    DBB2_Config.minimapAngle = 45
+    DBB2_Config.minimapFreeMode = false
+    DBB2_Config.minimapFreePos = nil
     DBB2_Config.notifications = { mode = 0 }
     DBB2_Config.blacklist = { enabled = true, hideFromChat = true, players = {}, keywords = {"recruit*", "recrut*", "<*>", "\\[???\\]", "\\[??\\]"} }
     DBB2_Config.hardcoreChannelsInitialized = nil
@@ -194,6 +198,13 @@ DBB2:RegisterModule("config", function()
       end },
     
     { type = "section", label = "Miscellaneous" },
+    { type = "toggle", key = "clampToScreen", label = "Clamp to Screen", default = true,
+      tooltip = {{"Clamp to Screen", "highlight"}, "Prevent dragging the main window off-screen."},
+      onChange = function(enabled)
+        if DBB2.gui then
+          DBB2.gui:SetClampedToScreen(enabled)
+        end
+      end },
     { type = "slider", key = "scrollSpeed", label = "Scroll Speed", min = 10, max = 100, step = 5,
       tooltip = {{"Scroll Speed", "highlight"}, "Pixels per mouse wheel tick."} },
     { type = "toggle", key = "showLevelFilteredGroups", label = "Level Filter (Groups)",

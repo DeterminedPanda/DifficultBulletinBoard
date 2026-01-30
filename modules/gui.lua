@@ -28,7 +28,7 @@ DBB2:RegisterModule("gui", function()
   DBB2.gui:SetWidth(539)
   DBB2.gui:SetHeight(343)
   DBB2.gui:SetFrameStrata("DIALOG")
-  DBB2.gui:SetClampedToScreen(true)
+  DBB2.gui:SetClampedToScreen(DBB2_Config.clampToScreen ~= false)
   DBB2.gui:SetPoint("CENTER", 0, 0)
   DBB2.gui:Hide()
   

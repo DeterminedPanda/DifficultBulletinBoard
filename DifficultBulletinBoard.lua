@@ -128,6 +128,7 @@ DBB2:SetScript("OnEvent", function()
       DBB2_Config.autoJoinChannels = true  -- Auto-join World and LFG channels
       DBB2_Config.minimapAngle = 45  -- Minimap button angle
       DBB2_Config.minimapFreeMode = false  -- Minimap button free positioning mode
+      DBB2_Config.clampToScreen = true  -- Prevent dragging frames off-screen
     end
     
     -- Ensure fontOffset exists for existing configs and is within safe bounds
@@ -218,6 +219,11 @@ DBB2:SetScript("OnEvent", function()
       DBB2_Config.minimapFreeMode = false
     end
     -- minimapFreePos can be nil (means not in free mode)
+    
+    -- Ensure clampToScreen exists for existing configs (default on)
+    if DBB2_Config.clampToScreen == nil then
+      DBB2_Config.clampToScreen = true
+    end
     
     -- Load modules (use ipairs to preserve load order from TOC file)
     for i, module in ipairs(DBB2.modules) do
