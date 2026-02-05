@@ -47,7 +47,7 @@ DBB2:RegisterModule("categories", function()
     { name = "Lower Blackrock Spire",         selected = true, tags = { "lbrs", "blackrock", "lower", "spire" }, minLevel = 55, maxLevel = 60 },
     { name = "Stratholme",                    selected = true, tags = { "strat", "stratholme" }, minLevel = 58, maxLevel = 60 },
     { name = "Scholomance",                   selected = true, tags = { "scholo", "scholomance" }, minLevel = 58, maxLevel = 60 },
-    { name = "Dire Maul",                     selected = true, tags = { "dire", "maul", "dm", "dm:e", "dm:east", "dm:w", "dm:west", "dm:n", "dm:north", "dmw", "dmwest", "dmn", "dmnorth", "dme", "dmeast", "tribute" }, minLevel = 57, maxLevel = 60 },
+    { name = "Dire Maul",                     selected = true, tags = { "dire", "maul", "dm", "dm:e", "dm:east", "dm:w", "dm:west", "dm:n", "dm:north", "dmw", "dmwest", "dmn", "dmnorth", "dme", "dmeast", "tribute", "dmt" }, minLevel = 57, maxLevel = 60 },
     { name = "Blackrock Depths",              selected = true, tags = { "brd", "blackrock", "depths", "emp", "lava" }, minLevel = 50, maxLevel = 60 },
     { name = "Hateforge Quarry",              selected = true, tags = { "hateforge", "quarry", "hq", "hfq" }, minLevel = 51, maxLevel = 60 },
     { name = "The Sunken Temple",             selected = true, tags = { "st", "sunken", "temple" }, minLevel = 49, maxLevel = 58 },
