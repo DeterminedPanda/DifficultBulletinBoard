@@ -92,6 +92,7 @@ DBB2:RegisterModule("config", function()
     DBB2_Config.defaultTab = 0
     DBB2_Config.notificationSound = 1
     DBB2_Config.showCurrentTime = false
+    DBB2_Config.timeDisplayMode = 0
     DBB2_Config.showLevelFilteredGroups = false
     DBB2_Config.clearNotificationsOnGroupJoin = true
     DBB2_Config.autoJoinChannels = true
@@ -193,6 +194,19 @@ DBB2:RegisterModule("config", function()
           local panel = DBB2.gui.tabs.panels[p]
           if panel and panel.currentTimeText then
             if enabled then panel.currentTimeText:Show() else panel.currentTimeText:Hide() end
+          end
+        end
+      end },
+    { type = "slider", key = "timeDisplayMode", label = "Time Format", min = 0, max = 1, step = 1,
+      valueLabels = {[0] = "Time", [1] = "Age"},
+      tooltip = {{"Time Format", "highlight"}, "Time: 14:32:15", "Age: <1m, 2m, 15m, 1h"},
+      onChange = function(val)
+        -- Refresh all panels to update timestamp display
+        if DBB2.gui and DBB2.gui:IsShown() then
+          if DBB2.gui.UpdateMessages then DBB2.gui:UpdateMessages() end
+          for _, p in ipairs({"Groups", "Professions", "Hardcore"}) do
+            local panel = DBB2.gui.tabs.panels[p]
+            if panel and panel.UpdateCategories then panel.UpdateCategories() end
           end
         end
       end },

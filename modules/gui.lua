@@ -162,12 +162,17 @@ DBB2:RegisterModule("gui", function()
   end
   
   -- Global time update frame (updates all panels at once for smooth tab transitions)
+  -- Also handles periodic refresh of relative timestamps
   -- Only create once, on the main GUI frame so it always runs
   if not DBB2.gui.globalTimeFrame then
     DBB2.gui.globalTimeFrame = CreateFrame("Frame", nil, DBB2.gui)
     DBB2.gui.globalTimeFrame.elapsed = 0
+    DBB2.gui.globalTimeFrame.relativeTimeElapsed = 0
     DBB2.gui.globalTimeFrame:SetScript("OnUpdate", function()
       this.elapsed = this.elapsed + arg1
+      this.relativeTimeElapsed = this.relativeTimeElapsed + arg1
+      
+      -- Update current time display every second
       if this.elapsed >= 1 then
         this.elapsed = 0
         if DBB2_Config.showCurrentTime then
@@ -182,6 +187,23 @@ DBB2:RegisterModule("gui", function()
             local panel = DBB2.gui.tabs.panels[panelName]
             if panel and panel.currentTimeText then
               panel.currentTimeText:SetText(timeStr)
+            end
+          end
+        end
+      end
+      
+      -- Update relative timestamps every 30 seconds (to keep them fresh)
+      if this.relativeTimeElapsed >= 30 then
+        this.relativeTimeElapsed = 0
+        if DBB2_Config.timeDisplayMode == 1 and DBB2.gui:IsShown() then
+          -- Refresh active panel to update relative times
+          if DBB2.gui.tabs and DBB2.gui.tabs.activeTab then
+            local activeTab = DBB2.gui.tabs.activeTab
+            if activeTab == "Logs" then
+              if DBB2.gui.UpdateMessages then DBB2.gui:UpdateMessages() end
+            else
+              local panel = DBB2.gui.tabs.panels[activeTab]
+              if panel and panel.UpdateCategories then panel.UpdateCategories() end
             end
           end
         end
@@ -372,7 +394,7 @@ DBB2:RegisterModule("gui", function()
             -- Only show messages that match at least one category
             if matchesCategory then
               local row = DBB2.gui.messageRows[rowIndex]
-              local timeStr = date("%H:%M:%S", msg.time)
+              local timeStr = DBB2.api.FormatMessageTime(msg.time)
               
               -- Check if message matches filter
               local matches = true
@@ -874,7 +896,7 @@ DBB2:RegisterModule("gui", function()
                   row:SetPoint("TOPLEFT", catFrame, "TOPLEFT", S.ROW_LEFT_PADDING, -(headerHeight + (i-1) * ROW_HEIGHT))
                   row:SetPoint("RIGHT", catFrame, "RIGHT", 0, 0)
                   
-                  local timeStr = date("%H:%M:%S", msg.time)
+                  local timeStr = DBB2.api.FormatMessageTime(msg.time)
                   row:SetData(msg.sender, msg.message, timeStr, "|cffffffff")
                   row.message:SetTextColor(0.9, 0.9, 0.9, 1)
                   -- Only set charName color if not currently hovered

@@ -547,3 +547,56 @@ function DBB2.api.AutoJoinRequiredChannels()
     end
   end
 end
+
+
+-- =====================
+-- RELATIVE TIME FORMATTING
+-- =====================
+
+-- [ FormatRelativeTime ]
+-- Formats a timestamp as relative time (e.g., "<1m", "2m", "15m", "1h")
+-- 'timestamp'  [number]        Unix timestamp of the message
+-- return:      [string]        Formatted relative time string
+function DBB2.api.FormatRelativeTime(timestamp)
+  if not timestamp then return "?" end
+  
+  local now = time()
+  local diff = now - timestamp
+  
+  -- Handle edge cases
+  if diff < 0 then diff = 0 end
+  
+  if diff < 60 then
+    -- Less than 1 minute
+    return "<1m"
+  elseif diff < 120 then
+    -- 1-2 minutes, skip "1m" and show 2m
+    return "2m"
+  elseif diff < 3600 then
+    -- Less than 1 hour, show minutes
+    local minutes = math.floor(diff / 60)
+    return minutes .. "m"
+  else
+    -- 1 hour or more
+    local hours = math.floor(diff / 3600)
+    local minutes = math.floor(math.mod(diff, 3600) / 60)
+    if minutes > 0 then
+      return hours .. "h" .. minutes .. "m"
+    else
+      return hours .. "h"
+    end
+  end
+end
+
+-- [ FormatMessageTime ]
+-- Returns either absolute or relative time based on config setting
+-- timeDisplayMode: 0 = Timestamp (HH:MM:SS), 1 = Relative (2m, 15m, 1h)
+-- 'timestamp'  [number]        Unix timestamp of the message
+-- return:      [string]        Formatted time string
+function DBB2.api.FormatMessageTime(timestamp)
+  if DBB2_Config.timeDisplayMode == 1 then
+    return DBB2.api.FormatRelativeTime(timestamp)
+  else
+    return date("%H:%M:%S", timestamp)
+  end
+end
