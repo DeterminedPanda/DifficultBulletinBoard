@@ -190,6 +190,19 @@ DBB2:RegisterModule("gui", function()
             end
           end
         end
+        
+        -- Update elapsed timestamps every second (mode 2)
+        if DBB2_Config.timeDisplayMode == 2 and DBB2.gui:IsShown() then
+          if DBB2.gui.tabs and DBB2.gui.tabs.activeTab then
+            local activeTab = DBB2.gui.tabs.activeTab
+            if activeTab == "Logs" then
+              if DBB2.gui.UpdateTimestampsOnly then DBB2.gui:UpdateTimestampsOnly() end
+            else
+              local panel = DBB2.gui.tabs.panels[activeTab]
+              if panel and panel.UpdateTimestampsOnly then panel.UpdateTimestampsOnly() end
+            end
+          end
+        end
       end
       
       -- Update relative timestamps every 30 seconds (to keep them fresh)
@@ -413,6 +426,7 @@ DBB2:RegisterModule("gui", function()
               local classColor = "|cffffffff"
               
               row:SetData(msg.sender, msg.message, timeStr, classColor)
+              row._msgTime = msg.time  -- Store for lightweight time updates
               
               -- Apply filter styling
               if hasFilter and not matches then
@@ -439,6 +453,17 @@ DBB2:RegisterModule("gui", function()
     end
     
     DBB2.gui.scroll:SetVerticalScroll(0)
+  end
+  
+  -- Lightweight function to update only timestamps (no row rebuilding)
+  function DBB2.gui:UpdateTimestampsOnly()
+    for i = 1, MAX_ROWS do
+      local row = DBB2.gui.messageRows[i]
+      if row:IsShown() and row._msgTime then
+        local timeStr = DBB2.api.FormatMessageTime(row._msgTime)
+        row.time:SetText(timeStr)
+      end
+    end
   end
   
   -- =====================
@@ -898,6 +923,7 @@ DBB2:RegisterModule("gui", function()
                   
                   local timeStr = DBB2.api.FormatMessageTime(msg.time)
                   row:SetData(msg.sender, msg.message, timeStr, "|cffffffff")
+                  row._msgTime = msg.time  -- Store for lightweight time updates
                   row.message:SetTextColor(0.9, 0.9, 0.9, 1)
                   -- Only set charName color if not currently hovered
                   if not row.charNameBtn or not row.charNameBtn.isHovered then
@@ -935,6 +961,17 @@ DBB2:RegisterModule("gui", function()
       scroll:SetScrollChild(scrollchild)
       -- Defer UpdateScrollState to next frame so WoW can recalculate scroll range
       scroll._needsScrollUpdate = true
+    end
+    
+    -- Lightweight function to update only timestamps (no row rebuilding)
+    panel.UpdateTimestampsOnly = function()
+      for i = 1, panel.rowPoolIndex do
+        local row = panel.rowPool[i]
+        if row and row:IsShown() and row._msgTime then
+          local timeStr = DBB2.api.FormatMessageTime(row._msgTime)
+          row.time:SetText(timeStr)
+        end
+      end
     end
     
     -- Update scroll child width on size change

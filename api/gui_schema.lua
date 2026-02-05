@@ -35,8 +35,14 @@ function DBB2.schema.InitLayout()
   
   -- Timestamp column
   S.TIMESTAMP_WIDTH = DBB2:ScaleSize(55)
-  S.TIMESTAMP_RIGHT_OFFSET = 3  -- Offset from row right edge
-  S.TIMESTAMP_GAP = 5  -- Gap between message and timestamp
+  S.TIMESTAMP_RIGHT_OFFSET = 10
+  S.TIMESTAMP_GAP = -10
+  
+  -- Timestamp column (Relative mode - narrower container, right-aligned text)
+  S.TIMESTAMP_WIDTH_RELATIVE = DBB2:ScaleSize(22)
+  S.TIMESTAMP_WIDTH_RELATIVE_CALC = DBB2:ScaleSize(20)
+  S.TIMESTAMP_RIGHT_OFFSET_RELATIVE = 3
+  S.TIMESTAMP_GAP_RELATIVE = -35
   
   -- Filter bar
   S.FILTER_HEIGHT = DBB2:ScaleSize(22)
@@ -267,9 +273,9 @@ function DBB2.schema.CreateMessageRow(name, parent)
     end
   end)
   
-  -- Timestamp
+  -- Timestamp (using bundled monospace font for perfect alignment)
   row.time = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-  row.time:SetFont("Fonts\\FRIZQT__.TTF", DBB2:GetFontSize(10))
+  row.time:SetFont("Interface\\AddOns\\DifficultBulletinBoard\\fonts\\IBMPlexMono-SemiBold.ttf", DBB2:GetFontSize(10))
   row.time:SetPoint("RIGHT", row, "RIGHT", S.TIMESTAMP_RIGHT_OFFSET, 0)
   row.time:SetWidth(S.TIMESTAMP_WIDTH)
   row.time:SetJustifyH("LEFT")
@@ -310,6 +316,25 @@ function DBB2.schema.CreateMessageRow(name, parent)
     
     self.time:SetText(timeStr or "")
     
+    -- Relative uses right-align (text ends at same position, message gets more space)
+    -- Others use left-align (stable rendering for per-second updates)
+    self.time:ClearAllPoints()
+    self.messageBtn:ClearAllPoints()
+    self.messageBtn:SetPoint("LEFT", self, "LEFT", S.CHARNAME_OFFSET, 0)
+    
+    if DBB2_Config.timeDisplayMode == 1 then
+      self.time:SetJustifyH("RIGHT")
+      self.time:SetPoint("RIGHT", self, "RIGHT", S.TIMESTAMP_RIGHT_OFFSET_RELATIVE, 0)
+      self.time:SetWidth(S.TIMESTAMP_WIDTH_RELATIVE)
+      -- Anchor message button to timestamp's left edge with small gap
+      self.messageBtn:SetPoint("RIGHT", self.time, "LEFT", -10, 0)
+    else
+      self.time:SetJustifyH("LEFT")
+      self.time:SetPoint("RIGHT", self, "RIGHT", S.TIMESTAMP_RIGHT_OFFSET, 0)
+      self.time:SetWidth(S.TIMESTAMP_WIDTH)
+      self.messageBtn:SetPoint("RIGHT", self.time, "LEFT", -S.TIMESTAMP_GAP, 0)
+    end
+    
     -- Calculate available width from GUI
     local availableWidth = 0
     if DBB2.gui then
@@ -317,7 +342,17 @@ function DBB2.schema.CreateMessageRow(name, parent)
       if guiWidth and guiWidth > 0 then
         local scrollWidth = guiWidth - (S.GUI_PADDING * 2) - (S.CONTENT_PADDING * 2)
         local rowWidth = scrollWidth - S.ROW_LEFT_PADDING - S.SCROLLBAR_SPACE
-        availableWidth = rowWidth - S.CHARNAME_OFFSET - S.TIMESTAMP_WIDTH - S.TIMESTAMP_RIGHT_OFFSET - S.TIMESTAMP_GAP
+        -- Relative mode: use actual text width for proper truncation
+        local tsOffset = DBB2_Config.timeDisplayMode == 1 and S.TIMESTAMP_RIGHT_OFFSET_RELATIVE or S.TIMESTAMP_RIGHT_OFFSET
+        local tsWidth
+        if DBB2_Config.timeDisplayMode == 1 then
+          -- Use actual rendered timestamp width for relative mode
+          tsWidth = self.time:GetStringWidth() or S.TIMESTAMP_WIDTH_RELATIVE_CALC
+        else
+          tsWidth = S.TIMESTAMP_WIDTH
+        end
+        -- Use same gap for all modes (TIMESTAMP_GAP is negative, subtracted = adds space)
+        availableWidth = rowWidth - S.CHARNAME_OFFSET - tsWidth - tsOffset - S.TIMESTAMP_GAP
       end
     end
     
@@ -328,10 +363,16 @@ function DBB2.schema.CreateMessageRow(name, parent)
       
       if self.message:GetStringWidth() > availableWidth and string.len(self._fullMessage) > 3 then
         local truncated = self._fullMessage
-        while self.message:GetStringWidth() > availableWidth - 15 and string.len(truncated) > 3 do
+        while self.message:GetStringWidth() > availableWidth and string.len(truncated) > 3 do
           truncated = string.sub(truncated, 1, string.len(truncated) - 1)
-          self.message:SetText(truncated .. "...")
+          -- Trim trailing spaces before adding ellipsis
+          truncated = string.gsub(truncated, "%s+$", "")
+          self.message:SetText(truncated .. "\226\128\166")
         end
+        -- Final trim to ensure no trailing space before ellipsis
+        local finalText = self.message:GetText()
+        local trimmedFinal = string.gsub(finalText, "%s+\226\128\166$", "\226\128\166")
+        self.message:SetText(trimmedFinal)
         self._isTruncated = true
       end
       self._needsWidthRecalc = false
@@ -445,7 +486,16 @@ function DBB2.schema.CreateMessageRow(name, parent)
       if guiWidth and guiWidth > 0 then
         local scrollWidth = guiWidth - (S.GUI_PADDING * 2) - (S.CONTENT_PADDING * 2)
         local rowWidth = scrollWidth - S.ROW_LEFT_PADDING - S.SCROLLBAR_SPACE
-        availableWidth = rowWidth - S.CHARNAME_OFFSET - S.TIMESTAMP_WIDTH - S.TIMESTAMP_RIGHT_OFFSET - S.TIMESTAMP_GAP
+        local tsOffset = DBB2_Config.timeDisplayMode == 1 and S.TIMESTAMP_RIGHT_OFFSET_RELATIVE or S.TIMESTAMP_RIGHT_OFFSET
+        local tsWidth
+        if DBB2_Config.timeDisplayMode == 1 then
+          -- Use actual rendered timestamp width for relative mode
+          tsWidth = this.time:GetStringWidth() or S.TIMESTAMP_WIDTH_RELATIVE_CALC
+        else
+          tsWidth = S.TIMESTAMP_WIDTH
+        end
+        -- Use same gap for all modes (TIMESTAMP_GAP is negative, subtracted = adds space)
+        availableWidth = rowWidth - S.CHARNAME_OFFSET - tsWidth - tsOffset - S.TIMESTAMP_GAP
       end
     end
     
@@ -456,10 +506,16 @@ function DBB2.schema.CreateMessageRow(name, parent)
       
       if this.message:GetStringWidth() > availableWidth and string.len(this._fullMessage) > 3 then
         local truncated = this._fullMessage
-        while this.message:GetStringWidth() > availableWidth - 15 and string.len(truncated) > 3 do
+        while this.message:GetStringWidth() > availableWidth and string.len(truncated) > 3 do
           truncated = string.sub(truncated, 1, string.len(truncated) - 1)
-          this.message:SetText(truncated .. "...")
+          -- Trim trailing spaces before adding ellipsis
+          truncated = string.gsub(truncated, "%s+$", "")
+          this.message:SetText(truncated .. "\226\128\166")
         end
+        -- Final trim to ensure no trailing space before ellipsis
+        local finalText = this.message:GetText()
+        local trimmedFinal = string.gsub(finalText, "%s+\226\128\166$", "\226\128\166")
+        this.message:SetText(trimmedFinal)
         this._isTruncated = true
       end
     end
@@ -554,7 +610,7 @@ function DBB2.schema.CreateCurrentTimeDisplay(parent)
   local S = DBB2.schema
   
   local f = parent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-  f:SetFont("Fonts\\FRIZQT__.TTF", DBB2:GetFontSize(10))
+  f:SetFont("Interface\\AddOns\\DifficultBulletinBoard\\fonts\\IBMPlexMono-SemiBold.ttf", DBB2:GetFontSize(10))
   f:SetJustifyH("LEFT")
   f:SetTextColor(0.5, 0.5, 0.5, 1)
   f:SetText(date("%H:%M:%S"))
