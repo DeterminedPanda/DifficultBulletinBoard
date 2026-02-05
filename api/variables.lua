@@ -8,7 +8,7 @@
 DBB2.versions = {
   -- Groups category tags and filter tags (LF/LFG/LFM)
   -- Increment when: Adding/removing dungeon/raid categories, changing group tags
-  GROUPS = 8,
+  GROUPS = 9,
   
   -- Professions category tags and filter tags (LFW/WTB/WTS)
   -- Increment when: Adding/removing profession categories, changing profession tags
