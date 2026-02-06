@@ -251,15 +251,10 @@ end
 
 -- [ ShouldDismissTooltip ]
 -- Check if tooltip should be dismissed
--- Returns false if mouse is still over the trigger frame or tooltip
+-- Returns false if mouse is still over the trigger frame
 function DBB2.api.ShouldDismissTooltip()
   local tooltip = DBB2.tooltip
   if not tooltip or not tooltip.activeData then return true end
-  
-  -- Keep visible if mouse is over the tooltip itself
-  if MouseIsOver(tooltip) then
-    return false
-  end
   
   -- Keep visible if mouse is still over the trigger frame
   if tooltip.triggerFrame and MouseIsOver(tooltip.triggerFrame) then

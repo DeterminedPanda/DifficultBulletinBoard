@@ -282,9 +282,10 @@ function DBB2.schema.CreateMessageRow(name, parent)
   row.time:SetTextColor(0.5, 0.5, 0.5, 1)
   
   -- Message button (for tooltip on truncated messages)
+  -- Width is set explicitly in SetData based on calculated availableWidth
   row.messageBtn = CreateFrame("Button", nil, row)
   row.messageBtn:SetPoint("LEFT", row, "LEFT", S.CHARNAME_OFFSET, 0)
-  row.messageBtn:SetPoint("RIGHT", row.time, "LEFT", -S.TIMESTAMP_GAP, 0)
+  row.messageBtn:SetWidth(100)  -- Default width, updated in SetData
   row.messageBtn:SetHeight(S.ROW_HEIGHT)
   row.messageBtn:EnableMouse(true)
   row.messageBtn:SetFrameLevel(row:GetFrameLevel() + 5)
@@ -320,19 +321,17 @@ function DBB2.schema.CreateMessageRow(name, parent)
     -- Others use left-align (stable rendering for per-second updates)
     self.time:ClearAllPoints()
     self.messageBtn:ClearAllPoints()
+    -- Only set LEFT anchor - width is set explicitly based on availableWidth
     self.messageBtn:SetPoint("LEFT", self, "LEFT", S.CHARNAME_OFFSET, 0)
     
     if DBB2_Config.timeDisplayMode == 1 then
       self.time:SetJustifyH("RIGHT")
       self.time:SetPoint("RIGHT", self, "RIGHT", S.TIMESTAMP_RIGHT_OFFSET_RELATIVE, 0)
       self.time:SetWidth(S.TIMESTAMP_WIDTH_RELATIVE)
-      -- Anchor message button to timestamp's left edge with small gap
-      self.messageBtn:SetPoint("RIGHT", self.time, "LEFT", -10, 0)
     else
       self.time:SetJustifyH("LEFT")
       self.time:SetPoint("RIGHT", self, "RIGHT", S.TIMESTAMP_RIGHT_OFFSET, 0)
       self.time:SetWidth(S.TIMESTAMP_WIDTH)
-      self.messageBtn:SetPoint("RIGHT", self.time, "LEFT", -S.TIMESTAMP_GAP, 0)
     end
     
     -- Calculate available width from GUI
@@ -342,23 +341,24 @@ function DBB2.schema.CreateMessageRow(name, parent)
       if guiWidth and guiWidth > 0 then
         local scrollWidth = guiWidth - (S.GUI_PADDING * 2) - (S.CONTENT_PADDING * 2)
         local rowWidth = scrollWidth - S.ROW_LEFT_PADDING - S.SCROLLBAR_SPACE
-        -- Relative mode: use actual text width for proper truncation
         local tsOffset = DBB2_Config.timeDisplayMode == 1 and S.TIMESTAMP_RIGHT_OFFSET_RELATIVE or S.TIMESTAMP_RIGHT_OFFSET
         local tsWidth
         if DBB2_Config.timeDisplayMode == 1 then
-          -- Use actual rendered timestamp width for relative mode
-          tsWidth = self.time:GetStringWidth() or S.TIMESTAMP_WIDTH_RELATIVE_CALC
+          -- Relative mode: use actual text width + explicit gap for proper truncation
+          tsWidth = (self.time:GetStringWidth() or S.TIMESTAMP_WIDTH_RELATIVE_CALC) + (-S.TIMESTAMP_GAP)
         else
+          -- Timestamp/Elapsed: fixed container width already includes visual spacing
           tsWidth = S.TIMESTAMP_WIDTH
         end
-        -- Use same gap for all modes (TIMESTAMP_GAP is negative, subtracted = adds space)
-        availableWidth = rowWidth - S.CHARNAME_OFFSET - tsWidth - tsOffset - S.TIMESTAMP_GAP
+        availableWidth = rowWidth - S.CHARNAME_OFFSET - tsWidth - tsOffset
       end
     end
     
     -- Set message text and truncate if needed
     if availableWidth > 20 then
       self.message:SetWidth(availableWidth)
+      -- Set messageBtn width to match actual message area (fixes tooltip hover bounds)
+      self.messageBtn:SetWidth(availableWidth)
       self.message:SetText(self._fullMessage)
       
       if self.message:GetStringWidth() > availableWidth and string.len(self._fullMessage) > 3 then
@@ -489,19 +489,21 @@ function DBB2.schema.CreateMessageRow(name, parent)
         local tsOffset = DBB2_Config.timeDisplayMode == 1 and S.TIMESTAMP_RIGHT_OFFSET_RELATIVE or S.TIMESTAMP_RIGHT_OFFSET
         local tsWidth
         if DBB2_Config.timeDisplayMode == 1 then
-          -- Use actual rendered timestamp width for relative mode
-          tsWidth = this.time:GetStringWidth() or S.TIMESTAMP_WIDTH_RELATIVE_CALC
+          -- Relative mode: use actual text width + explicit gap for proper truncation
+          tsWidth = (this.time:GetStringWidth() or S.TIMESTAMP_WIDTH_RELATIVE_CALC) + (-S.TIMESTAMP_GAP)
         else
+          -- Timestamp/Elapsed: fixed container width already includes visual spacing
           tsWidth = S.TIMESTAMP_WIDTH
         end
-        -- Use same gap for all modes (TIMESTAMP_GAP is negative, subtracted = adds space)
-        availableWidth = rowWidth - S.CHARNAME_OFFSET - tsWidth - tsOffset - S.TIMESTAMP_GAP
+        availableWidth = rowWidth - S.CHARNAME_OFFSET - tsWidth - tsOffset
       end
     end
     
     if availableWidth > 20 then
       this._needsWidthRecalc = false
       this.message:SetWidth(availableWidth)
+      -- Set messageBtn width to match actual message area (fixes tooltip hover bounds)
+      this.messageBtn:SetWidth(availableWidth)
       this.message:SetText(this._fullMessage)
       
       if this.message:GetStringWidth() > availableWidth and string.len(this._fullMessage) > 3 then
