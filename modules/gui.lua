@@ -345,8 +345,8 @@ DBB2:RegisterModule("gui", function()
     if scrollWidth ~= lastScrollWidth then
       lastScrollWidth = scrollWidth
       DBB2.gui.scrollchild:SetWidth(scrollWidth)
-      -- Refresh messages to recalculate truncation
-      DBB2.gui:UpdateMessages()
+      -- Defer message refresh to coalesce with resize updates
+      DBB2.gui._resizePending = true
     end
     
     -- Calculate content height based on visible rows
@@ -362,9 +362,7 @@ DBB2:RegisterModule("gui", function()
     
     if newChildHeight ~= lastChildHeight then
       DBB2.gui.scrollchild:SetHeight(newChildHeight)
-      -- Use the same calculated width (scrollWidth) instead of GetWidth() for consistency
       DBB2.gui.scrollchild:SetWidth(scrollWidth)
-      this:SetScrollChild(DBB2.gui.scrollchild)
       lastChildHeight = newChildHeight
     end
     
@@ -973,8 +971,7 @@ DBB2:RegisterModule("gui", function()
       local scrollHeight = scroll:GetHeight()
       local newChildHeight = math_max(yOffset + bottomPadding, scrollHeight)
       scrollchild:SetHeight(newChildHeight)
-      scrollchild:SetWidth(scroll:GetWidth() or 1)  -- Ensure width is set before SetScrollChild
-      scroll:SetScrollChild(scrollchild)
+      scrollchild:SetWidth(scroll:GetWidth() or 1)
       -- Defer UpdateScrollState to next frame so WoW can recalculate scroll range
       scroll._needsScrollUpdate = true
     end
@@ -1019,9 +1016,8 @@ DBB2:RegisterModule("gui", function()
       if scrollWidth > 0 and scrollWidth ~= lastCatScrollWidth then
         lastCatScrollWidth = scrollWidth
         scrollchild:SetWidth(scrollWidth)
-        -- Refresh categories to recalculate truncation
-        panel.UpdateCategories()
-        this.UpdateScrollState()
+        -- Defer category refresh to coalesce with resize updates
+        DBB2.gui._resizePending = true
       end
     end)
   end
@@ -1053,24 +1049,27 @@ DBB2:RegisterModule("gui", function()
     this._needsDeferredUpdate = true
   end)
   
-  -- Handle deferred update after OnShow (ensures layout dimensions are ready)
+  -- Handle deferred update after OnShow AND deferred resize updates
   DBB2.gui:SetScript("OnUpdate", function()
-    if this._needsDeferredUpdate then
-      this._needsDeferredUpdate = nil
-      local activeTab = DBB2.gui.tabs.activeTab
-      if activeTab == "Logs" then
-        DBB2.gui:UpdateMessages()
-        if DBB2.gui.scroll and DBB2.gui.scroll.UpdateScrollState then
-          DBB2.gui.scroll.UpdateScrollState()
-        end
-      elseif activeTab == "Groups" or activeTab == "Professions" or activeTab == "Hardcore" then
-        local panel = DBB2.gui.tabs.panels[activeTab]
-        if panel and panel.UpdateCategories then
-          panel.UpdateCategories()
-        end
-        if panel and panel.scroll and panel.scroll.UpdateScrollState then
-          panel.scroll.UpdateScrollState()
-        end
+    local needsUpdate = this._needsDeferredUpdate or DBB2.gui._resizePending
+    if not needsUpdate then return end
+    
+    this._needsDeferredUpdate = nil
+    DBB2.gui._resizePending = false
+    
+    local activeTab = DBB2.gui.tabs.activeTab
+    if activeTab == "Logs" then
+      DBB2.gui:UpdateMessages()
+      if DBB2.gui.scroll and DBB2.gui.scroll.UpdateScrollState then
+        DBB2.gui.scroll.UpdateScrollState()
+      end
+    elseif activeTab == "Groups" or activeTab == "Professions" or activeTab == "Hardcore" then
+      local panel = DBB2.gui.tabs.panels[activeTab]
+      if panel and panel.UpdateCategories then
+        panel.UpdateCategories()
+      end
+      if panel and panel.scroll and panel.scroll.UpdateScrollState then
+        panel.scroll.UpdateScrollState()
       end
     end
   end)
@@ -1097,25 +1096,12 @@ DBB2:RegisterModule("gui", function()
     DBB2.gui:SetHeight(minH)
   end
   
-  -- Update messages when window is resized
+  -- Update messages when window is resized (throttled to avoid client crash)
+  -- The 1.12 client can ACCESS_VIOLATION if we rebuild all rows on every pixel
+  -- of a drag resize, so we defer the heavy update to the next frame instead.
+  DBB2.gui._resizePending = false
   DBB2.gui:SetScript("OnSizeChanged", function()
-    local activeTab = DBB2.gui.tabs.activeTab
-    if activeTab == "Logs" then
-      DBB2.gui:UpdateMessages()
-      -- Force scroll state update after resize
-      if DBB2.gui.scroll and DBB2.gui.scroll.UpdateScrollState then
-        DBB2.gui.scroll.UpdateScrollState()
-      end
-    elseif activeTab == "Groups" or activeTab == "Professions" or activeTab == "Hardcore" then
-      local panel = DBB2.gui.tabs.panels[activeTab]
-      if panel and panel.UpdateCategories then
-        panel.UpdateCategories()
-      end
-      -- Force scroll state update after resize
-      if panel and panel.scroll and panel.scroll.UpdateScrollState then
-        panel.scroll.UpdateScrollState()
-      end
-    end
+    DBB2.gui._resizePending = true
   end)
   
   -- Set default tab based on config

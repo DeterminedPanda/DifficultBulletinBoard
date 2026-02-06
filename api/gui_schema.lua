@@ -120,16 +120,22 @@ function DBB2.schema.TruncateMessage(row, availableWidth)
   row._isTruncated = false
   
   if row.message:GetStringWidth() > availableWidth and string.len(row._fullMessage) > 3 then
-    local truncated = row._fullMessage
-    while row.message:GetStringWidth() > availableWidth and string.len(truncated) > 3 do
-      truncated = string.sub(truncated, 1, string.len(truncated) - 1)
-      truncated = string.gsub(truncated, "%s+$", "")
-      row.message:SetText(truncated .. "\226\128\166")
+    -- Binary search for the right truncation point instead of char-by-char
+    local lo, hi = 3, string.len(row._fullMessage)
+    while lo < hi do
+      local mid = math.floor((lo + hi + 1) / 2)
+      local candidate = string.sub(row._fullMessage, 1, mid)
+      candidate = string.gsub(candidate, "%s+$", "")
+      row.message:SetText(candidate .. "\226\128\166")
+      if row.message:GetStringWidth() <= availableWidth then
+        lo = mid
+      else
+        hi = mid - 1
+      end
     end
-    -- Final trim to ensure no trailing space before ellipsis
-    local finalText = row.message:GetText()
-    local trimmedFinal = string.gsub(finalText, "%s+\226\128\166$", "\226\128\166")
-    row.message:SetText(trimmedFinal)
+    local truncated = string.sub(row._fullMessage, 1, lo)
+    truncated = string.gsub(truncated, "%s+$", "")
+    row.message:SetText(truncated .. "\226\128\166")
     row._isTruncated = true
   end
 end
