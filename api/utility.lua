@@ -585,11 +585,12 @@ function DBB2.api.FormatRelativeTime(timestamp)
 end
 
 -- [ FormatRelativeTimeHMS ]
--- Formats a timestamp as relative time in HH:MM:SS format
+-- Formats a timestamp as relative time in MM:SS format
+-- Caps at 59:59 and returns a flag if over 1 hour for red coloring
 -- 'timestamp'  [number]        Unix timestamp of the message
--- return:      [string]        Formatted relative time string (e.g., "00:05:30")
+-- return:      [string, boolean] Formatted time string (e.g., "05:30") and isOverHour flag
 function DBB2.api.FormatRelativeTimeHMS(timestamp)
-  if not timestamp then return "00:00:00" end
+  if not timestamp then return "00:00", false end
   
   local now = time()
   local diff = now - timestamp
@@ -601,25 +602,25 @@ function DBB2.api.FormatRelativeTimeHMS(timestamp)
   local minutes = math.floor(math.mod(diff, 3600) / 60)
   local seconds = math.floor(math.mod(diff, 60))
   
-  -- Cap at 99:59:59 to keep 8 characters
-  if hours > 99 then
-    return "99:59:59"
+  -- Cap at 59:59 if over an hour
+  if hours >= 1 then
+    return "59:59", true
   end
   
-  return string.format("%02d:%02d:%02d", hours, minutes, seconds)
+  return string.format("%02d:%02d", minutes, seconds), false
 end
 
 -- [ FormatMessageTime ]
 -- Returns either absolute or relative time based on config setting
--- timeDisplayMode: 0 = Timestamp (HH:MM:SS), 1 = Relative (2m, 15m, 1h), 2 = Relative HH:MM:SS
+-- timeDisplayMode: 0 = Timestamp (HH:MM:SS), 1 = Relative (2m, 15m, 1h), 2 = Elapsed MM:SS
 -- 'timestamp'  [number]        Unix timestamp of the message
--- return:      [string]        Formatted time string
+-- return:      [string, boolean] Formatted time string and isOverHour flag (for elapsed mode)
 function DBB2.api.FormatMessageTime(timestamp)
   if DBB2_Config.timeDisplayMode == 1 then
-    return DBB2.api.FormatRelativeTime(timestamp)
+    return DBB2.api.FormatRelativeTime(timestamp), false
   elseif DBB2_Config.timeDisplayMode == 2 then
     return DBB2.api.FormatRelativeTimeHMS(timestamp)
   else
-    return date("%H:%M:%S", timestamp)
+    return date("%H:%M:%S", timestamp), false
   end
 end

@@ -35,14 +35,18 @@ function DBB2.schema.InitLayout()
   
   -- Timestamp column
   S.TIMESTAMP_WIDTH = DBB2:ScaleSize(55)
-  S.TIMESTAMP_RIGHT_OFFSET = 10
-  S.TIMESTAMP_GAP = -10
+  S.TIMESTAMP_RIGHT_OFFSET = 5
+  S.TIMESTAMP_GAP = -5
   
   -- Timestamp column (Relative mode - narrower container, right-aligned text)
   S.TIMESTAMP_WIDTH_RELATIVE = DBB2:ScaleSize(22)
   S.TIMESTAMP_WIDTH_RELATIVE_CALC = DBB2:ScaleSize(20)
-  S.TIMESTAMP_RIGHT_OFFSET_RELATIVE = 3
-  S.TIMESTAMP_GAP_RELATIVE = -35
+  S.TIMESTAMP_RIGHT_OFFSET_RELATIVE = -3
+  S.TIMESTAMP_GAP_RELATIVE = -5
+  
+  -- Timestamp column (Elapsed mode - left-aligned, fixed MM:SS format)
+  S.TIMESTAMP_WIDTH_ELAPSED = DBB2:ScaleSize(38)
+  S.TIMESTAMP_RIGHT_OFFSET_ELAPSED = 6
   
   -- Filter bar
   S.FILTER_HEIGHT = DBB2:ScaleSize(22)
@@ -317,18 +321,25 @@ function DBB2.schema.CreateMessageRow(name, parent)
     
     self.time:SetText(timeStr or "")
     
-    -- Relative uses right-align (text ends at same position, message gets more space)
-    -- Others use left-align (stable rendering for per-second updates)
+    -- Relative and Elapsed use right-align (text ends at same position, message gets more space)
+    -- Timestamp uses left-align (fixed width for stable HH:MM:SS display)
     self.time:ClearAllPoints()
     self.messageBtn:ClearAllPoints()
     -- Only set LEFT anchor - width is set explicitly based on availableWidth
     self.messageBtn:SetPoint("LEFT", self, "LEFT", S.CHARNAME_OFFSET, 0)
     
     if DBB2_Config.timeDisplayMode == 1 then
+      -- Relative: right-aligned, dynamic width, tighter spacing
       self.time:SetJustifyH("RIGHT")
       self.time:SetPoint("RIGHT", self, "RIGHT", S.TIMESTAMP_RIGHT_OFFSET_RELATIVE, 0)
       self.time:SetWidth(S.TIMESTAMP_WIDTH_RELATIVE)
+    elseif DBB2_Config.timeDisplayMode == 2 then
+      -- Elapsed: left-aligned like timestamp to avoid jumping on update
+      self.time:SetJustifyH("LEFT")
+      self.time:SetPoint("RIGHT", self, "RIGHT", S.TIMESTAMP_RIGHT_OFFSET_ELAPSED, 0)
+      self.time:SetWidth(S.TIMESTAMP_WIDTH_ELAPSED)
     else
+      -- Timestamp: left-aligned, fixed width
       self.time:SetJustifyH("LEFT")
       self.time:SetPoint("RIGHT", self, "RIGHT", S.TIMESTAMP_RIGHT_OFFSET, 0)
       self.time:SetWidth(S.TIMESTAMP_WIDTH)
@@ -341,13 +352,23 @@ function DBB2.schema.CreateMessageRow(name, parent)
       if guiWidth and guiWidth > 0 then
         local scrollWidth = guiWidth - (S.GUI_PADDING * 2) - (S.CONTENT_PADDING * 2)
         local rowWidth = scrollWidth - S.ROW_LEFT_PADDING - S.SCROLLBAR_SPACE
-        local tsOffset = DBB2_Config.timeDisplayMode == 1 and S.TIMESTAMP_RIGHT_OFFSET_RELATIVE or S.TIMESTAMP_RIGHT_OFFSET
+        local tsOffset
+        if DBB2_Config.timeDisplayMode == 1 then
+          tsOffset = S.TIMESTAMP_RIGHT_OFFSET_RELATIVE
+        elseif DBB2_Config.timeDisplayMode == 2 then
+          tsOffset = S.TIMESTAMP_RIGHT_OFFSET_ELAPSED
+        else
+          tsOffset = S.TIMESTAMP_RIGHT_OFFSET
+        end
         local tsWidth
         if DBB2_Config.timeDisplayMode == 1 then
-          -- Relative mode: use actual text width + explicit gap for proper truncation
-          tsWidth = (self.time:GetStringWidth() or S.TIMESTAMP_WIDTH_RELATIVE_CALC) + (-S.TIMESTAMP_GAP)
+          -- Relative mode: use actual text width + scaled gap
+          tsWidth = (self.time:GetStringWidth() or S.TIMESTAMP_WIDTH_RELATIVE_CALC) + DBB2:ScaleSize(11)
+        elseif DBB2_Config.timeDisplayMode == 2 then
+          -- Elapsed: use actual text width + gap (text is always MM:SS)
+          tsWidth = (self.time:GetStringWidth() or S.TIMESTAMP_WIDTH_ELAPSED) + (-S.TIMESTAMP_GAP)
         else
-          -- Timestamp/Elapsed: fixed container width already includes visual spacing
+          -- Timestamp: fixed container width already includes visual spacing
           tsWidth = S.TIMESTAMP_WIDTH
         end
         availableWidth = rowWidth - S.CHARNAME_OFFSET - tsWidth - tsOffset
@@ -486,13 +507,23 @@ function DBB2.schema.CreateMessageRow(name, parent)
       if guiWidth and guiWidth > 0 then
         local scrollWidth = guiWidth - (S.GUI_PADDING * 2) - (S.CONTENT_PADDING * 2)
         local rowWidth = scrollWidth - S.ROW_LEFT_PADDING - S.SCROLLBAR_SPACE
-        local tsOffset = DBB2_Config.timeDisplayMode == 1 and S.TIMESTAMP_RIGHT_OFFSET_RELATIVE or S.TIMESTAMP_RIGHT_OFFSET
+        local tsOffset
+        if DBB2_Config.timeDisplayMode == 1 then
+          tsOffset = S.TIMESTAMP_RIGHT_OFFSET_RELATIVE
+        elseif DBB2_Config.timeDisplayMode == 2 then
+          tsOffset = S.TIMESTAMP_RIGHT_OFFSET_ELAPSED
+        else
+          tsOffset = S.TIMESTAMP_RIGHT_OFFSET
+        end
         local tsWidth
         if DBB2_Config.timeDisplayMode == 1 then
-          -- Relative mode: use actual text width + explicit gap for proper truncation
-          tsWidth = (this.time:GetStringWidth() or S.TIMESTAMP_WIDTH_RELATIVE_CALC) + (-S.TIMESTAMP_GAP)
+          -- Relative mode: use actual text width + scaled gap
+          tsWidth = (this.time:GetStringWidth() or S.TIMESTAMP_WIDTH_RELATIVE_CALC) + DBB2:ScaleSize(11)
+        elseif DBB2_Config.timeDisplayMode == 2 then
+          -- Elapsed: use actual text width + gap (text is always MM:SS)
+          tsWidth = (this.time:GetStringWidth() or S.TIMESTAMP_WIDTH_ELAPSED) + (-S.TIMESTAMP_GAP)
         else
-          -- Timestamp/Elapsed: fixed container width already includes visual spacing
+          -- Timestamp: fixed container width already includes visual spacing
           tsWidth = S.TIMESTAMP_WIDTH
         end
         availableWidth = rowWidth - S.CHARNAME_OFFSET - tsWidth - tsOffset

@@ -199,7 +199,7 @@ DBB2:RegisterModule("config", function()
       end },
     { type = "slider", key = "timeDisplayMode", label = "Time Format", min = 0, max = 2, step = 1,
       valueLabels = {[0] = "Timestamp", [1] = "Relative", [2] = "Elapsed"},
-      tooltip = {{"Time Format", "highlight"}, "Timestamp: 14:32:15", "Relative: <1m, 2m, 15m, 1h", "Elapsed: 00:05:30"},
+      tooltip = {{"Time Format", "highlight"}, "Timestamp: 14:32:15", "Relative: <1m, 2m, 15m, 1h", "Elapsed: 05:30 (red at 59:59)"},
       onChange = function(val)
         -- Refresh all panels to update timestamp display
         if DBB2.gui and DBB2.gui:IsShown() then

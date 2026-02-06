@@ -407,7 +407,7 @@ DBB2:RegisterModule("gui", function()
             -- Only show messages that match at least one category
             if matchesCategory then
               local row = DBB2.gui.messageRows[rowIndex]
-              local timeStr = DBB2.api.FormatMessageTime(msg.time)
+              local timeStr, isOverHour = DBB2.api.FormatMessageTime(msg.time)
               
               -- Check if message matches filter
               local matches = true
@@ -441,7 +441,12 @@ DBB2:RegisterModule("gui", function()
                 if not row.charNameBtn or not row.charNameBtn.isHovered then
                   row.charName:SetTextColor(1, 1, 1, 1)
                 end
-                row.time:SetTextColor(0.5, 0.5, 0.5, 1)
+                -- Red if over 1 hour in elapsed mode
+                if isOverHour then
+                  row.time:SetTextColor(1, 0.3, 0.3, 1)
+                else
+                  row.time:SetTextColor(0.5, 0.5, 0.5, 1)
+                end
               end
               
               row:Show()
@@ -460,8 +465,14 @@ DBB2:RegisterModule("gui", function()
     for i = 1, MAX_ROWS do
       local row = DBB2.gui.messageRows[i]
       if row:IsShown() and row._msgTime then
-        local timeStr = DBB2.api.FormatMessageTime(row._msgTime)
+        local timeStr, isOverHour = DBB2.api.FormatMessageTime(row._msgTime)
         row.time:SetText(timeStr)
+        -- Red if over 1 hour in elapsed mode
+        if isOverHour then
+          row.time:SetTextColor(1, 0.3, 0.3, 1)
+        else
+          row.time:SetTextColor(0.5, 0.5, 0.5, 1)
+        end
       end
     end
   end
@@ -921,7 +932,7 @@ DBB2:RegisterModule("gui", function()
                   row:SetPoint("TOPLEFT", catFrame, "TOPLEFT", S.ROW_LEFT_PADDING, -(headerHeight + (i-1) * ROW_HEIGHT))
                   row:SetPoint("RIGHT", catFrame, "RIGHT", 0, 0)
                   
-                  local timeStr = DBB2.api.FormatMessageTime(msg.time)
+                  local timeStr, isOverHour = DBB2.api.FormatMessageTime(msg.time)
                   row:SetData(msg.sender, msg.message, timeStr, "|cffffffff")
                   row._msgTime = msg.time  -- Store for lightweight time updates
                   row.message:SetTextColor(0.9, 0.9, 0.9, 1)
@@ -929,7 +940,12 @@ DBB2:RegisterModule("gui", function()
                   if not row.charNameBtn or not row.charNameBtn.isHovered then
                     row.charName:SetTextColor(1, 1, 1, 1)
                   end
-                  row.time:SetTextColor(0.5, 0.5, 0.5, 1)
+                  -- Red if over 1 hour in elapsed mode
+                  if isOverHour then
+                    row.time:SetTextColor(1, 0.3, 0.3, 1)
+                  else
+                    row.time:SetTextColor(0.5, 0.5, 0.5, 1)
+                  end
                   row:Show()
                   visibleMessages = visibleMessages + 1
                 end
@@ -968,8 +984,14 @@ DBB2:RegisterModule("gui", function()
       for i = 1, panel.rowPoolIndex do
         local row = panel.rowPool[i]
         if row and row:IsShown() and row._msgTime then
-          local timeStr = DBB2.api.FormatMessageTime(row._msgTime)
+          local timeStr, isOverHour = DBB2.api.FormatMessageTime(row._msgTime)
           row.time:SetText(timeStr)
+          -- Red if over 1 hour in elapsed mode
+          if isOverHour then
+            row.time:SetTextColor(1, 0.3, 0.3, 1)
+          else
+            row.time:SetTextColor(0.5, 0.5, 0.5, 1)
+          end
         end
       end
     end
