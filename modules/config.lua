@@ -187,6 +187,12 @@ DBB2:RegisterModule("config", function()
     { type = "colorpicker", key = "highlightColor", label = "Highlight Color",
       default = {r = 0.2, g = 1, b = 0.8, a = 1},
       tooltip = {{"Highlight Color", "highlight"}, {"Requires /reload", "gray"}} },
+    { type = "toggle", key = "showLevelFilteredGroups", label = "Level Filter (Groups)",
+      tooltip = {{"Level Filter", "highlight"}, "Only show level-appropriate categories."},
+      onChange = function()
+        local gp = DBB2.gui.tabs.panels["Groups"]
+        if gp and gp.UpdateCategories and gp:IsVisible() then gp.UpdateCategories() end
+      end },
     { type = "toggle", key = "showCurrentTime", label = "Show Current Time",
       tooltip = {{"Show Current Time", "highlight"}, "Display current time above timestamps."},
       onChange = function(enabled)
@@ -221,12 +227,6 @@ DBB2:RegisterModule("config", function()
       end },
     { type = "slider", key = "scrollSpeed", label = "Scroll Speed", min = 10, max = 100, step = 5,
       tooltip = {{"Scroll Speed", "highlight"}, "Pixels per mouse wheel tick."} },
-    { type = "toggle", key = "showLevelFilteredGroups", label = "Level Filter (Groups)",
-      tooltip = {{"Level Filter", "highlight"}, "Only show level-appropriate categories."},
-      onChange = function()
-        local gp = DBB2.gui.tabs.panels["Groups"]
-        if gp and gp.UpdateCategories and gp:IsVisible() then gp.UpdateCategories() end
-      end },
     
     { type = "section", label = "Notifications" },
     { type = "slider", key = "notificationMode", label = "Mode", min = 0, max = 3, step = 1,
