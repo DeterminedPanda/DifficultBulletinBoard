@@ -33,20 +33,19 @@ function DBB2.schema.InitLayout()
   S.CHARNAME_WIDTH = DBB2:ScaleSize(80)
   S.CHARNAME_OFFSET = DBB2:ScaleSize(85)  -- Where message starts (after charname)
   
-  -- Timestamp column
+  -- Timestamp column (default: HH:MM:SS, left-aligned)
   S.TIMESTAMP_WIDTH = DBB2:ScaleSize(55)
   S.TIMESTAMP_RIGHT_OFFSET = 5
-  S.TIMESTAMP_GAP = -5
   
-  -- Timestamp column (Relative mode - narrower container, right-aligned text)
+  -- Timestamp column (Relative mode: right-aligned, dynamic width)
   S.TIMESTAMP_WIDTH_RELATIVE = DBB2:ScaleSize(22)
   S.TIMESTAMP_WIDTH_RELATIVE_CALC = DBB2:ScaleSize(20)
   S.TIMESTAMP_RIGHT_OFFSET_RELATIVE = -3
-  S.TIMESTAMP_GAP_RELATIVE = -5
   
-  -- Timestamp column (Elapsed mode - left-aligned, fixed MM:SS format)
+  -- Timestamp column (Elapsed mode: left-aligned, fixed MM:SS)
   S.TIMESTAMP_WIDTH_ELAPSED = DBB2:ScaleSize(38)
   S.TIMESTAMP_RIGHT_OFFSET_ELAPSED = 6
+  S.TIMESTAMP_ELAPSED_GAP = 5
   
   -- Filter bar
   S.FILTER_HEIGHT = DBB2:ScaleSize(22)
@@ -62,6 +61,77 @@ function DBB2.schema.InitLayout()
   
   -- Calculate derived values
   S.TIME_COLUMN_WIDTH = S.TIMESTAMP_WIDTH + S.SCROLLBAR_SPACE
+end
+
+-- =====================
+-- TIME FORMAT HELPERS
+-- =====================
+
+--- Get the timestamp right offset for the current time display mode.
+-- @return (number) The right offset value
+function DBB2.schema.GetTimestampOffset()
+  local S = DBB2.schema
+  if DBB2_Config.timeDisplayMode == 1 then
+    return S.TIMESTAMP_RIGHT_OFFSET_RELATIVE
+  elseif DBB2_Config.timeDisplayMode == 2 then
+    return S.TIMESTAMP_RIGHT_OFFSET_ELAPSED
+  else
+    return S.TIMESTAMP_RIGHT_OFFSET
+  end
+end
+
+--- Calculate the effective timestamp column width for available-width math.
+-- For Relative mode, uses actual rendered text width; for others, uses fixed constants.
+-- @param timeFont (FontString) The time font string to measure
+-- @return (number) The effective timestamp width including gap
+function DBB2.schema.GetTimestampWidth(timeFont)
+  local S = DBB2.schema
+  if DBB2_Config.timeDisplayMode == 1 then
+    return (timeFont:GetStringWidth() or S.TIMESTAMP_WIDTH_RELATIVE_CALC) + DBB2:ScaleSize(11)
+  elseif DBB2_Config.timeDisplayMode == 2 then
+    return (timeFont:GetStringWidth() or S.TIMESTAMP_WIDTH_ELAPSED) + S.TIMESTAMP_ELAPSED_GAP
+  else
+    return S.TIMESTAMP_WIDTH
+  end
+end
+
+--- Calculate the available width for message text in a row.
+-- @param timeFont (FontString) The time font string to measure
+-- @return (number) Available pixel width for the message, or 0 if not calculable
+function DBB2.schema.CalcMessageWidth(timeFont)
+  local S = DBB2.schema
+  if not DBB2.gui then return 0 end
+  local guiWidth = DBB2.gui:GetWidth()
+  if not guiWidth or guiWidth <= 0 then return 0 end
+  
+  local scrollWidth = guiWidth - (S.GUI_PADDING * 2) - (S.CONTENT_PADDING * 2)
+  local rowWidth = scrollWidth - S.ROW_LEFT_PADDING - S.SCROLLBAR_SPACE
+  return rowWidth - S.CHARNAME_OFFSET - S.GetTimestampWidth(timeFont) - S.GetTimestampOffset()
+end
+
+--- Truncate message text to fit within available width, adding ellipsis.
+-- Sets the font string text and messageBtn width. Returns true if truncated.
+-- @param row (Frame) The message row frame
+-- @param availableWidth (number) Available pixel width
+function DBB2.schema.TruncateMessage(row, availableWidth)
+  row.message:SetWidth(availableWidth)
+  row.messageBtn:SetWidth(availableWidth)
+  row.message:SetText(row._fullMessage)
+  row._isTruncated = false
+  
+  if row.message:GetStringWidth() > availableWidth and string.len(row._fullMessage) > 3 then
+    local truncated = row._fullMessage
+    while row.message:GetStringWidth() > availableWidth and string.len(truncated) > 3 do
+      truncated = string.sub(truncated, 1, string.len(truncated) - 1)
+      truncated = string.gsub(truncated, "%s+$", "")
+      row.message:SetText(truncated .. "\226\128\166")
+    end
+    -- Final trim to ensure no trailing space before ellipsis
+    local finalText = row.message:GetText()
+    local trimmedFinal = string.gsub(finalText, "%s+\226\128\166$", "\226\128\166")
+    row.message:SetText(trimmedFinal)
+    row._isTruncated = true
+  end
 end
 
 -- =====================
@@ -321,20 +391,18 @@ function DBB2.schema.CreateMessageRow(name, parent)
     
     self.time:SetText(timeStr or "")
     
-    -- Relative and Elapsed use right-align (text ends at same position, message gets more space)
-    -- Timestamp uses left-align (fixed width for stable HH:MM:SS display)
+    -- Position timestamp based on display mode
     self.time:ClearAllPoints()
     self.messageBtn:ClearAllPoints()
-    -- Only set LEFT anchor - width is set explicitly based on availableWidth
     self.messageBtn:SetPoint("LEFT", self, "LEFT", S.CHARNAME_OFFSET, 0)
     
     if DBB2_Config.timeDisplayMode == 1 then
-      -- Relative: right-aligned, dynamic width, tighter spacing
+      -- Relative: right-aligned, dynamic width
       self.time:SetJustifyH("RIGHT")
       self.time:SetPoint("RIGHT", self, "RIGHT", S.TIMESTAMP_RIGHT_OFFSET_RELATIVE, 0)
       self.time:SetWidth(S.TIMESTAMP_WIDTH_RELATIVE)
     elseif DBB2_Config.timeDisplayMode == 2 then
-      -- Elapsed: left-aligned like timestamp to avoid jumping on update
+      -- Elapsed: left-aligned to avoid jumping on update
       self.time:SetJustifyH("LEFT")
       self.time:SetPoint("RIGHT", self, "RIGHT", S.TIMESTAMP_RIGHT_OFFSET_ELAPSED, 0)
       self.time:SetWidth(S.TIMESTAMP_WIDTH_ELAPSED)
@@ -345,57 +413,11 @@ function DBB2.schema.CreateMessageRow(name, parent)
       self.time:SetWidth(S.TIMESTAMP_WIDTH)
     end
     
-    -- Calculate available width from GUI
-    local availableWidth = 0
-    if DBB2.gui then
-      local guiWidth = DBB2.gui:GetWidth()
-      if guiWidth and guiWidth > 0 then
-        local scrollWidth = guiWidth - (S.GUI_PADDING * 2) - (S.CONTENT_PADDING * 2)
-        local rowWidth = scrollWidth - S.ROW_LEFT_PADDING - S.SCROLLBAR_SPACE
-        local tsOffset
-        if DBB2_Config.timeDisplayMode == 1 then
-          tsOffset = S.TIMESTAMP_RIGHT_OFFSET_RELATIVE
-        elseif DBB2_Config.timeDisplayMode == 2 then
-          tsOffset = S.TIMESTAMP_RIGHT_OFFSET_ELAPSED
-        else
-          tsOffset = S.TIMESTAMP_RIGHT_OFFSET
-        end
-        local tsWidth
-        if DBB2_Config.timeDisplayMode == 1 then
-          -- Relative mode: use actual text width + scaled gap
-          tsWidth = (self.time:GetStringWidth() or S.TIMESTAMP_WIDTH_RELATIVE_CALC) + DBB2:ScaleSize(11)
-        elseif DBB2_Config.timeDisplayMode == 2 then
-          -- Elapsed: use actual text width + gap (text is always MM:SS)
-          tsWidth = (self.time:GetStringWidth() or S.TIMESTAMP_WIDTH_ELAPSED) + (-S.TIMESTAMP_GAP)
-        else
-          -- Timestamp: fixed container width already includes visual spacing
-          tsWidth = S.TIMESTAMP_WIDTH
-        end
-        availableWidth = rowWidth - S.CHARNAME_OFFSET - tsWidth - tsOffset
-      end
-    end
+    -- Calculate available width and truncate message
+    local availableWidth = S.CalcMessageWidth(self.time)
     
-    -- Set message text and truncate if needed
     if availableWidth > 20 then
-      self.message:SetWidth(availableWidth)
-      -- Set messageBtn width to match actual message area (fixes tooltip hover bounds)
-      self.messageBtn:SetWidth(availableWidth)
-      self.message:SetText(self._fullMessage)
-      
-      if self.message:GetStringWidth() > availableWidth and string.len(self._fullMessage) > 3 then
-        local truncated = self._fullMessage
-        while self.message:GetStringWidth() > availableWidth and string.len(truncated) > 3 do
-          truncated = string.sub(truncated, 1, string.len(truncated) - 1)
-          -- Trim trailing spaces before adding ellipsis
-          truncated = string.gsub(truncated, "%s+$", "")
-          self.message:SetText(truncated .. "\226\128\166")
-        end
-        -- Final trim to ensure no trailing space before ellipsis
-        local finalText = self.message:GetText()
-        local trimmedFinal = string.gsub(finalText, "%s+\226\128\166$", "\226\128\166")
-        self.message:SetText(trimmedFinal)
-        self._isTruncated = true
-      end
+      S.TruncateMessage(self, availableWidth)
       self._needsWidthRecalc = false
     else
       self.message:SetText(self._fullMessage)
@@ -501,56 +523,11 @@ function DBB2.schema.CreateMessageRow(name, parent)
     if not this._needsWidthRecalc then return end
     if not this:IsVisible() then return end
     
-    local availableWidth = 0
-    if DBB2.gui then
-      local guiWidth = DBB2.gui:GetWidth()
-      if guiWidth and guiWidth > 0 then
-        local scrollWidth = guiWidth - (S.GUI_PADDING * 2) - (S.CONTENT_PADDING * 2)
-        local rowWidth = scrollWidth - S.ROW_LEFT_PADDING - S.SCROLLBAR_SPACE
-        local tsOffset
-        if DBB2_Config.timeDisplayMode == 1 then
-          tsOffset = S.TIMESTAMP_RIGHT_OFFSET_RELATIVE
-        elseif DBB2_Config.timeDisplayMode == 2 then
-          tsOffset = S.TIMESTAMP_RIGHT_OFFSET_ELAPSED
-        else
-          tsOffset = S.TIMESTAMP_RIGHT_OFFSET
-        end
-        local tsWidth
-        if DBB2_Config.timeDisplayMode == 1 then
-          -- Relative mode: use actual text width + scaled gap
-          tsWidth = (this.time:GetStringWidth() or S.TIMESTAMP_WIDTH_RELATIVE_CALC) + DBB2:ScaleSize(11)
-        elseif DBB2_Config.timeDisplayMode == 2 then
-          -- Elapsed: use actual text width + gap (text is always MM:SS)
-          tsWidth = (this.time:GetStringWidth() or S.TIMESTAMP_WIDTH_ELAPSED) + (-S.TIMESTAMP_GAP)
-        else
-          -- Timestamp: fixed container width already includes visual spacing
-          tsWidth = S.TIMESTAMP_WIDTH
-        end
-        availableWidth = rowWidth - S.CHARNAME_OFFSET - tsWidth - tsOffset
-      end
-    end
+    local availableWidth = S.CalcMessageWidth(this.time)
     
     if availableWidth > 20 then
       this._needsWidthRecalc = false
-      this.message:SetWidth(availableWidth)
-      -- Set messageBtn width to match actual message area (fixes tooltip hover bounds)
-      this.messageBtn:SetWidth(availableWidth)
-      this.message:SetText(this._fullMessage)
-      
-      if this.message:GetStringWidth() > availableWidth and string.len(this._fullMessage) > 3 then
-        local truncated = this._fullMessage
-        while this.message:GetStringWidth() > availableWidth and string.len(truncated) > 3 do
-          truncated = string.sub(truncated, 1, string.len(truncated) - 1)
-          -- Trim trailing spaces before adding ellipsis
-          truncated = string.gsub(truncated, "%s+$", "")
-          this.message:SetText(truncated .. "\226\128\166")
-        end
-        -- Final trim to ensure no trailing space before ellipsis
-        local finalText = this.message:GetText()
-        local trimmedFinal = string.gsub(finalText, "%s+\226\128\166$", "\226\128\166")
-        this.message:SetText(trimmedFinal)
-        this._isTruncated = true
-      end
+      S.TruncateMessage(this, availableWidth)
     end
   end)
   
