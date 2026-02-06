@@ -25,8 +25,10 @@ local function ShowUpgradeNotification(newVersion)
   if notifiedThisSession then return end
   notifiedThisSession = true
   
-  DEFAULT_CHAT_FRAME:AddMessage("|cff33ffccDBB2|r: A new version |cff00ff00v" .. newVersion .. "|r is available!")
-  DEFAULT_CHAT_FRAME:AddMessage("|cff33ffccDBB2|r: |cff88aaffhttps://github.com/DeterminedPanda/DifficultBulletinBoard|r")
+  local hr, hg, hb = DBB2:GetHighlightColor()
+  local hexColor = string.format("%02x%02x%02x", hr * 255, hg * 255, hb * 255)
+  DEFAULT_CHAT_FRAME:AddMessage("|cff" .. hexColor .. "DBB2|r: A new version |cff00ff00v" .. newVersion .. "|r is available!")
+  DEFAULT_CHAT_FRAME:AddMessage("|cff" .. hexColor .. "DBB2|r: |cff88aaffhttps://github.com/DeterminedPanda/DifficultBulletinBoard|r")
 end
 
 -- Check if we should show notification (called 10s after login)

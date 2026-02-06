@@ -543,7 +543,9 @@ function DBB2.api.AutoJoinRequiredChannels()
     if not joinedLookup[lowerName] then
       -- Channel not joined, join it
       JoinChannelByName(channelName)
-      DEFAULT_CHAT_FRAME:AddMessage("|cff33ffccDBB2|r: Auto-joined |cffffffff" .. channelName .. "|r channel.")
+      local hr, hg, hb = DBB2:GetHighlightColor()
+      local hexColor = string.format("%02x%02x%02x", hr * 255, hg * 255, hb * 255)
+      DEFAULT_CHAT_FRAME:AddMessage("|cff" .. hexColor .. "DBB2|r: Auto-joined |cffffffff" .. channelName .. "|r channel.")
     end
   end
 end
