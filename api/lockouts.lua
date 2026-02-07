@@ -1,5 +1,6 @@
 -- DBB2 Lockouts API
 -- Tracks raid lockouts and maps them to categories
+-- Depends on: env/tables.lua (DBB2.env.instanceAliases)
 
 -- Localize frequently used globals for performance
 local string_lower = string.lower
@@ -10,15 +11,6 @@ local pairs = pairs
 
 -- Storage for lockout data
 DBB2.lockouts = {}
-
--- Alias map for instance names that differ from category names
--- Only needed when GetSavedInstanceInfo returns a different name than our category
-DBB2.INSTANCE_ALIASES = {
-  ["ahn'qiraj temple"] = "Temple of Ahn'Qiraj",
-  ["ahn'qiraj ruins"] = "Ruins of Ahn'Qiraj",
-  ["karazhan halls"] = "Upper Karazhan Halls",
-  ["black morass"] = "Caverns of Time: Black Morass",
-}
 
 -- [ InitLockouts ]
 -- Initializes the lockout tracking system
@@ -77,16 +69,16 @@ function DBB2.api.GetCategoryLockout(categoryName)
   if not categoryName then return nil end
   
   local lowerCat = string_lower(categoryName)
+  local instanceAliases = DBB2.env.instanceAliases  -- Reference env table
   
-  -- Check each lockout
   for instanceKey, lockoutData in pairs(DBB2.lockouts) do
-    -- First check aliases for non-standard instance names
-    local aliasedCategory = DBB2.INSTANCE_ALIASES[instanceKey]
+    -- Check aliases for non-standard instance names
+    local aliasedCategory = instanceAliases[instanceKey]  -- Use env reference
     if aliasedCategory and aliasedCategory == categoryName then
       return lockoutData
     end
     
-    -- Direct match: instance name (lowercase) matches category name (lowercase)
+    -- Direct match
     if instanceKey == lowerCat then
       return lockoutData
     end

@@ -428,10 +428,10 @@ DBB2:RegisterModule("gui", function()
               
               -- Apply filter styling
               if hasFilter and not matches then
-                -- Greyed out: subtle dimmed text
+                -- Greyed out: subtle dimmed text (only message content, not time)
                 row.message:SetTextColor(0.35, 0.35, 0.35, 1)
                 row.charName:SetTextColor(0.35, 0.35, 0.35, 1)
-                row.time:SetTextColor(0.25, 0.25, 0.25, 1)
+                row._isFiltered = true  -- Track filter state for UpdateTimestampsOnly
               else
                 -- Normal colors (no filter or matches)
                 row.message:SetTextColor(0.9, 0.9, 0.9, 1)
@@ -439,12 +439,14 @@ DBB2:RegisterModule("gui", function()
                 if not row.charNameBtn or not row.charNameBtn.isHovered then
                   row.charName:SetTextColor(1, 1, 1, 1)
                 end
-                -- Red if over 1 hour in elapsed mode
-                if isOverHour then
-                  row.time:SetTextColor(1, 0.3, 0.3, 1)
-                else
-                  row.time:SetTextColor(0.5, 0.5, 0.5, 1)
-                end
+                row._isFiltered = false  -- Track filter state for UpdateTimestampsOnly
+              end
+              
+              -- Timestamp color is independent of filter state
+              if isOverHour then
+                row.time:SetTextColor(1, 0.3, 0.3, 1)
+              else
+                row.time:SetTextColor(0.5, 0.5, 0.5, 1)
               end
               
               row:Show()
@@ -454,8 +456,6 @@ DBB2:RegisterModule("gui", function()
         end
       end
     end
-    
-    DBB2.gui.scroll:SetVerticalScroll(0)
   end
   
   -- Lightweight function to update only timestamps (no row rebuilding)
@@ -465,7 +465,6 @@ DBB2:RegisterModule("gui", function()
       if row:IsShown() and row._msgTime then
         local timeStr, isOverHour = DBB2.api.FormatMessageTime(row._msgTime)
         row.time:SetText(timeStr)
-        -- Red if over 1 hour in elapsed mode
         if isOverHour then
           row.time:SetTextColor(1, 0.3, 0.3, 1)
         else

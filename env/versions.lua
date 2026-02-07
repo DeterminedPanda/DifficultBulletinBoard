@@ -1,4 +1,4 @@
--- DBB2 Variables API
+-- DBB2 Version Numbers
 -- Centralized version numbers for auto-reset functionality
 --
 -- Each version number controls a specific set of defaults.

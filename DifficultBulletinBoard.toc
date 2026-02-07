@@ -6,16 +6,31 @@
 ## SavedVariablesPerCharacter: DBB2_Config
 
 DifficultBulletinBoard.lua
-api\variables.lua
-api\version_check.lua
-api\utility.lua
+
+-- Environment files (static data, constants, exclusion rules)
+env\defaults.lua
+env\versions.lua
+env\constants.lua
+env\tables.lua
+env\tag_exclusions.lua
+
+-- API files
+api\utils.lua
+api\hardcore.lua
+api\channels.lua
 api\wildcards.lua
-api\categories_api.lua
+api\categories.lua
+api\blacklist.lua
+api\chat_filter.lua
+api\notifications.lua
 api\lockouts.lua
 api\messages.lua
 api\tooltip.lua
 api\gui_schema.lua
 api\config_schema.lua
+api\config_widgets.lua
+
+modules\version_check.lua
 modules\categories.lua
 modules\gui.lua
 modules\config.lua

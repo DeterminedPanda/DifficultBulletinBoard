@@ -1,8 +1,19 @@
 -- DBB2 Categories API
--- Category management functions for message filtering
+-- Core category management functions for message filtering
 --
 -- NOTE: Default category data and initialization is in modules/categories.lua
 -- This file provides the API functions that operate on category data.
+--
+-- Includes:
+-- - Category collapse state (UI)
+-- - Category management (get, update, select)
+-- - Tag parsing utilities
+-- - Filter tags (AND-condition filtering for groups/professions)
+-- - Level range filtering (dungeon/raid level appropriateness)
+-- - Message matching and categorization
+--
+-- Related files:
+-- - env/tag_exclusions.lua: Tag false positive exclusion rules (DBB2.env.IsTagExcluded)
 
 -- Localize frequently used globals for performance
 local string_lower = string.lower
@@ -16,187 +27,6 @@ local table_concat = table.concat
 local table_getn = table.getn
 local ipairs = ipairs
 local math_abs = math.abs
-
--- =====================================================
--- TAG FALSE POSITIVE EXCLUSIONS
--- =====================================================
--- Some short tags can match unintended patterns in messages.
--- This table defines exclusion rules to prevent false positives.
---
--- Format: tagExclusions[tag] = { check functions that return true if match should be REJECTED }
--- Each function receives: (lowerMsg, foundPos, tagLen)
---   lowerMsg  = lowercase message string
---   foundPos  = position where tag was found
---   tagLen    = length of the tag
---
--- Return true to REJECT the match (false positive), false to allow it.
--- =====================================================
-
-local tagExclusions = {}
-
--- [ ST exclusion ]
--- "ST" is a tag for Sunken Temple, but also commonly used for "Server Time"
--- Reject matches like "20:30 ST", "8:00 ST", "19:45ST"
--- Pattern: digit(s) + colon + digit(s) + optional space + ST
-tagExclusions["st"] = {
-  function(lowerMsg, foundPos, tagLen)
-    -- Check if preceded by time pattern: look for "HH:MM " or "H:MM " before ST
-    -- We need at least 4-6 chars before: "8:00 " (5) or "20:30 " (6) or "8:00" (4) or "20:30" (5)
-    if foundPos < 3 then return false end
-    
-    -- Check for optional space right before ST
-    local checkPos = foundPos - 1
-    local charBeforeST = string_sub(lowerMsg, checkPos, checkPos)
-    if charBeforeST == " " then
-      checkPos = checkPos - 1
-    end
-
-    -- Now check for minutes (2 digits)
-    if checkPos < 2 then return false end
-    local min2 = string_sub(lowerMsg, checkPos, checkPos)
-    local min1 = string_sub(lowerMsg, checkPos - 1, checkPos - 1)
-    if not string_find(min1, "%d") or not string_find(min2, "%d") then
-      return false
-    end
-    checkPos = checkPos - 2
-    
-    -- Check for colon
-    if checkPos < 1 then return false end
-    local colon = string_sub(lowerMsg, checkPos, checkPos)
-    if colon ~= ":" then return false end
-    checkPos = checkPos - 1
-    
-    -- Check for hour (1-2 digits)
-    if checkPos < 1 then return false end
-    local hour1 = string_sub(lowerMsg, checkPos, checkPos)
-    if not string_find(hour1, "%d") then return false end
-    
-    -- Optional second hour digit
-    if checkPos > 1 then
-      local hour2 = string_sub(lowerMsg, checkPos - 1, checkPos - 1)
-      if string_find(hour2, "%d") then
-        checkPos = checkPos - 1
-      end
-    end
-    
-    -- Verify word boundary before the time
-    if checkPos > 1 then
-      local charBeforeTime = string_sub(lowerMsg, checkPos - 1, checkPos - 1)
-      if string_find(charBeforeTime, "[%w]") then
-        return false
-      end
-    end
-    
-    return true
-  end
-}
-
--- [ DM exclusion ]
--- "DM" is a tag for Dire Maul and Deadmines, but also commonly used for "Direct Message"
--- Reject matches like "DM me", "DM us" (direct message me/us)
--- Also reject "DM:" patterns (DM:E, DM:W, DM:N are Dire Maul wings, not generic DM)
-tagExclusions["dm"] = {
-  function(lowerMsg, foundPos, tagLen)
-    local msgLen = string_len(lowerMsg)
-    local afterPos = foundPos + tagLen
-    
-    -- Check for colon after DM (indicates Dire Maul wing like DM:E, DM:W, DM:N)
-    -- This prevents the generic "dm" tag from matching when a specific wing is mentioned
-    if afterPos <= msgLen then
-      local charAfter = string_sub(lowerMsg, afterPos, afterPos)
-      if charAfter == ":" then
-        return true  -- "DM:" - reject generic dm match, let specific dm:e/dm:w/dm:n tags handle it
-      end
-    end
-    
-    -- Check for space after DM (for "DM me" / "DM us" patterns)
-    if afterPos > msgLen then return false end
-    local charAfter = string_sub(lowerMsg, afterPos, afterPos)
-    if charAfter ~= " " then return false end
-    
-    -- Check for "me" or "us" after the space
-    local wordStart = afterPos + 1
-    if wordStart > msgLen then return false end
-    
-    -- Check for "me"
-    if wordStart + 1 <= msgLen then
-      local nextWord = string_sub(lowerMsg, wordStart, wordStart + 1)
-      if nextWord == "me" then
-        -- Verify word boundary after "me"
-        local afterMe = wordStart + 2
-        if afterMe > msgLen or not string_find(string_sub(lowerMsg, afterMe, afterMe), "[%w]") then
-          return true  -- "DM me" - reject as direct message
-        end
-      end
-      if nextWord == "us" then
-        -- Verify word boundary after "us"
-        local afterUs = wordStart + 2
-        if afterUs > msgLen or not string_find(string_sub(lowerMsg, afterUs, afterUs), "[%w]") then
-          return true  -- "DM us" - reject as direct message
-        end
-      end
-    end
-    
-    return false
-  end
-}
-
--- [ Helper function to check tag exclusions ]
--- Returns true if the match should be REJECTED (is a false positive)
-local function IsTagExcluded(tag, lowerMsg, foundPos, tagLen)
-  -- Global exclusion: reject matches inside hyperlink brackets |h[...]|h
-  -- This prevents item/spell/quest links like [Maul] from matching tags
-  -- Only excludes REAL hyperlinks (with |h prefix), not manually typed [brackets]
-  -- Search backwards for '[' and check if preceded by '|h'
-  local bracketStart = nil
-  for i = foundPos, 1, -1 do
-    local char = string_sub(lowerMsg, i, i)
-    if char == "[" then
-      -- Check if this bracket is part of a hyperlink (preceded by |h)
-      if i >= 3 then
-        local prefix = string_sub(lowerMsg, i - 2, i - 1)
-        if prefix == "|h" then
-          bracketStart = i
-        end
-      end
-      break
-    elseif char == "]" then
-      break
-    end
-  end
-  
-  if bracketStart then
-    local matchEnd = foundPos + tagLen - 1
-    local msgLen = string_len(lowerMsg)
-    for i = matchEnd, msgLen do
-      local char = string_sub(lowerMsg, i, i)
-      if char == "]" then
-        -- Check if followed by |h (closing hyperlink)
-        if i + 2 <= msgLen then
-          local suffix = string_sub(lowerMsg, i + 1, i + 2)
-          if suffix == "|h" then
-            return true  -- Match is inside |h[...]|h hyperlink - reject it
-          end
-        end
-        break
-      elseif char == "[" then
-        break
-      end
-    end
-  end
-  
-  -- Check tag-specific exclusions
-  local exclusions = tagExclusions[tag]
-  if not exclusions then return false end
-  
-  for _, checkFunc in ipairs(exclusions) do
-    if checkFunc(lowerMsg, foundPos, tagLen) then
-      return true  -- Match should be rejected
-    end
-  end
-  return false  -- Match is valid
-end
-
 
 -- =====================================================
 -- CATEGORY COLLAPSE STATE API
@@ -249,181 +79,6 @@ function DBB2.api.ToggleCategoryCollapsed(categoryType, categoryName)
   local isCollapsed = DBB2.api.IsCategoryCollapsed(categoryType, categoryName)
   DBB2.api.SetCategoryCollapsed(categoryType, categoryName, not isCollapsed)
   return not isCollapsed
-end
-
--- =====================================================
--- FILTER TAGS API
--- =====================================================
--- Filter tags are additional tags that must ALSO match (in addition to category tags)
--- when enabled. This allows filtering for specific message types like LFG/LFM for groups
--- or LFW/WTB/WTS for professions.
-
--- [ GetFilterTags ]
--- Returns the filter tags configuration for a category type.
--- Filter tags are additional tags that must ALSO match (AND condition)
--- when enabled, allowing filtering for specific message types.
---
--- @param categoryType  [string] Category type: "groups" or "professions"
--- @return              [table]  Config table { enabled = boolean, tags = {string...} }, or nil if not found
-function DBB2.api.GetFilterTags(categoryType)
-  if not categoryType then return nil end
-  if not DBB2_Config.filterTags then return nil end
-  return DBB2_Config.filterTags[categoryType]
-end
-
--- [ IsFilterTagsEnabled ]
--- Checks whether filter tags are currently enabled for a category type.
--- When enabled, messages must match both category tags AND filter tags.
---
--- @param categoryType  [string]  Category type: "groups" or "professions"
--- @return              [boolean] true if filter tags are enabled, false otherwise
-function DBB2.api.IsFilterTagsEnabled(categoryType)
-  local filter = DBB2.api.GetFilterTags(categoryType)
-  if not filter then return false end
-  return filter.enabled or false
-end
-
--- [ SetFilterTagsEnabled ]
--- Enables or disables filter tags for a category type.
--- Creates the necessary config tables if they don't exist.
---
--- @param categoryType  [string]  Category type: "groups" or "professions"
--- @param enabled       [boolean] true to enable filter tags, false to disable
--- @return              [boolean] true if set successfully, false if invalid params
-function DBB2.api.SetFilterTagsEnabled(categoryType, enabled)
-  if not categoryType then return false end
-  if not DBB2_Config.filterTags then
-    DBB2_Config.filterTags = {}
-  end
-  if not DBB2_Config.filterTags[categoryType] then
-    DBB2_Config.filterTags[categoryType] = { enabled = false, tags = {} }
-  end
-  DBB2_Config.filterTags[categoryType].enabled = enabled and true or false
-  return true
-end
-
--- [ UpdateFilterTags ]
--- Updates the filter tags array for a category type.
--- Creates the necessary config tables if they don't exist.
---
--- @param categoryType  [string] Category type: "groups" or "professions"
--- @param newTags       [table]  Array of tag strings (e.g., {"lfg", "lfm", "lf1m"})
--- @return              [boolean] true if updated successfully, false if invalid params
-function DBB2.api.UpdateFilterTags(categoryType, newTags)
-  if not categoryType then return false end
-  if not DBB2_Config.filterTags then
-    DBB2_Config.filterTags = {}
-  end
-  if not DBB2_Config.filterTags[categoryType] then
-    DBB2_Config.filterTags[categoryType] = { enabled = false, tags = {} }
-  end
-  DBB2_Config.filterTags[categoryType].tags = newTags or {}
-  return true
-end
-
-
--- [ MatchFilterTags ]
--- Checks if a message matches any of the filter tags for a category type.
--- Uses word boundary matching for plain tags and wildcard matching for patterns.
--- Returns true if filter is disabled (pass-through behavior).
---
--- Supports wildcard patterns: * (any chars), ? (one char), [abc], [a-z], {a,b,c}
--- Also matches tags followed by digits (e.g., "lf1m", "lf2m" for "lf" tag).
---
--- @param message       [string]  The message text to check
--- @param categoryType  [string]  Category type: "groups" or "professions"
--- @return              [boolean] true if matches any filter tag, or if filter is disabled
-function DBB2.api.MatchFilterTags(message, categoryType)
-  -- If filter is disabled, always return true (no filtering)
-  if not DBB2.api.IsFilterTagsEnabled(categoryType) then
-    return true
-  end
-  
-  local filter = DBB2.api.GetFilterTags(categoryType)
-  if not filter or not filter.tags then
-    return true  -- No tags defined, pass through
-  end
-  
-  -- Quick check: any tags at all?
-  local hasAnyTags = false
-  for _ in ipairs(filter.tags) do
-    hasAnyTags = true
-    break
-  end
-  if not hasAnyTags then
-    return true  -- No tags, pass through
-  end
-  
-  local lowerMsg = string_lower(message or "")
-  if lowerMsg == "" then return false end
-  
-  local msgLen = string_len(lowerMsg)
-  
-  for _, tag in ipairs(filter.tags) do
-    local lowerTag = string_lower(tag)
-    local tagLen = string_len(lowerTag)
-    
-    -- Check if tag contains wildcard special characters
-    local isWildcard = string_find(lowerTag, "[%*%?%[%]%{%}\\]")
-    
-    if isWildcard then
-      -- Use wildcard matching
-      if DBB2.api.MatchWildcard(lowerMsg, lowerTag) then
-        return true
-      end
-    else
-      -- Plain text matching with word boundaries
-      local startPos = 1
-      while true do
-        local foundPos = string_find(lowerMsg, lowerTag, startPos, true)
-        if not foundPos then
-          break
-        end
-        
-        -- Check word boundaries
-        local charBefore = ""
-        if foundPos > 1 then
-          charBefore = string_sub(lowerMsg, foundPos - 1, foundPos - 1)
-        end
-        
-        local afterPos = foundPos + tagLen
-        local charAfter = ""
-        if afterPos <= msgLen then
-          charAfter = string_sub(lowerMsg, afterPos, afterPos)
-        end
-        
-        local validBefore = (foundPos == 1) or not string_find(charBefore, "[%w]")
-        local validAfter = (afterPos > msgLen) or not string_find(charAfter, "[%w]")
-        
-        -- Also allow digits after (like LF1M, LF2M)
-        if not validAfter and string_find(charAfter, "%d") then
-          local digitEndPos = afterPos
-          while digitEndPos <= msgLen and string_find(string_sub(lowerMsg, digitEndPos, digitEndPos), "%d") do
-            digitEndPos = digitEndPos + 1
-          end
-          -- Check for 'M' after digits (for patterns like LF1M, LF2M)
-          if digitEndPos <= msgLen then
-            local afterDigits = string_sub(lowerMsg, digitEndPos, digitEndPos)
-            if string_lower(afterDigits) == "m" then
-              digitEndPos = digitEndPos + 1
-            end
-          end
-          -- Check boundary after digits/M
-          if digitEndPos > msgLen or not string_find(string_sub(lowerMsg, digitEndPos, digitEndPos), "[%w]") then
-            validAfter = true
-          end
-        end
-        
-        if validBefore and validAfter then
-          return true
-        end
-        
-        startPos = foundPos + 1
-      end
-    end
-  end
-  
-  return false
 end
 
 -- =====================================================
@@ -590,6 +245,219 @@ function DBB2.api.TagsToString(tags)
   return table_concat(tags, ", ")
 end
 
+
+-- =====================================================
+-- FILTER TAGS API
+-- =====================================================
+-- Filter tags are additional tags that must ALSO match (AND condition)
+-- when enabled, allowing filtering for specific message types like LFG/LFM
+-- for groups or LFW/WTB/WTS for professions.
+
+-- [ GetFilterTags ]
+-- Returns the filter tags configuration for a category type.
+-- Filter tags are additional tags that must ALSO match (AND condition)
+-- when enabled, allowing filtering for specific message types.
+--
+-- @param categoryType  [string] Category type: "groups" or "professions"
+-- @return              [table]  Config table { enabled = boolean, tags = {string...} }, or nil if not found
+function DBB2.api.GetFilterTags(categoryType)
+  if not categoryType then return nil end
+  if not DBB2_Config.filterTags then return nil end
+  return DBB2_Config.filterTags[categoryType]
+end
+
+-- [ IsFilterTagsEnabled ]
+-- Checks whether filter tags are currently enabled for a category type.
+-- When enabled, messages must match both category tags AND filter tags.
+--
+-- @param categoryType  [string]  Category type: "groups" or "professions"
+-- @return              [boolean] true if filter tags are enabled, false otherwise
+function DBB2.api.IsFilterTagsEnabled(categoryType)
+  local filter = DBB2.api.GetFilterTags(categoryType)
+  if not filter then return false end
+  return filter.enabled or false
+end
+
+-- [ SetFilterTagsEnabled ]
+-- Enables or disables filter tags for a category type.
+-- Creates the necessary config tables if they don't exist.
+--
+-- @param categoryType  [string]  Category type: "groups" or "professions"
+-- @param enabled       [boolean] true to enable filter tags, false to disable
+-- @return              [boolean] true if set successfully, false if invalid params
+function DBB2.api.SetFilterTagsEnabled(categoryType, enabled)
+  if not categoryType then return false end
+  if not DBB2_Config.filterTags then
+    DBB2_Config.filterTags = {}
+  end
+  if not DBB2_Config.filterTags[categoryType] then
+    DBB2_Config.filterTags[categoryType] = { enabled = false, tags = {} }
+  end
+  DBB2_Config.filterTags[categoryType].enabled = enabled and true or false
+  return true
+end
+
+-- [ UpdateFilterTags ]
+-- Updates the filter tags array for a category type.
+-- Creates the necessary config tables if they don't exist.
+--
+-- @param categoryType  [string] Category type: "groups" or "professions"
+-- @param newTags       [table]  Array of tag strings (e.g., {"lfg", "lfm", "lf1m"})
+-- @return              [boolean] true if updated successfully, false if invalid params
+function DBB2.api.UpdateFilterTags(categoryType, newTags)
+  if not categoryType then return false end
+  if not DBB2_Config.filterTags then
+    DBB2_Config.filterTags = {}
+  end
+  if not DBB2_Config.filterTags[categoryType] then
+    DBB2_Config.filterTags[categoryType] = { enabled = false, tags = {} }
+  end
+  DBB2_Config.filterTags[categoryType].tags = newTags or {}
+  return true
+end
+
+-- [ MatchFilterTags ]
+-- Checks if a message matches any of the filter tags for a category type.
+-- Uses word boundary matching for plain tags and wildcard matching for patterns.
+-- Returns true if filter is disabled (pass-through behavior).
+--
+-- Supports wildcard patterns: * (any chars), ? (one char), [abc], [a-z], {a,b,c}
+-- Also matches tags followed by digits (e.g., "lf1m", "lf2m" for "lf" tag).
+--
+-- @param message       [string]  The message text to check
+-- @param categoryType  [string]  Category type: "groups" or "professions"
+-- @return              [boolean] true if matches any filter tag, or if filter is disabled
+function DBB2.api.MatchFilterTags(message, categoryType)
+  -- If filter is disabled, always return true (no filtering)
+  if not DBB2.api.IsFilterTagsEnabled(categoryType) then
+    return true
+  end
+  
+  local filter = DBB2.api.GetFilterTags(categoryType)
+  if not filter or not filter.tags then
+    return true  -- No tags defined, pass through
+  end
+  
+  -- Quick check: any tags at all?
+  local hasAnyTags = false
+  for _ in ipairs(filter.tags) do
+    hasAnyTags = true
+    break
+  end
+  if not hasAnyTags then
+    return true  -- No tags, pass through
+  end
+  
+  local lowerMsg = string_lower(message or "")
+  if lowerMsg == "" then return false end
+  
+  local msgLen = string_len(lowerMsg)
+  
+  for _, tag in ipairs(filter.tags) do
+    local lowerTag = string_lower(tag)
+    local tagLen = string_len(lowerTag)
+    
+    -- Check if tag contains wildcard special characters
+    local isWildcard = string_find(lowerTag, "[%*%?%[%]%{%}\\]")
+    
+    if isWildcard then
+      -- Use wildcard matching
+      if DBB2.api.MatchWildcard(lowerMsg, lowerTag) then
+        return true
+      end
+    else
+      -- Plain text matching with word boundaries
+      local startPos = 1
+      while true do
+        local foundPos = string_find(lowerMsg, lowerTag, startPos, true)
+        if not foundPos then
+          break
+        end
+        
+        -- Check word boundaries
+        local charBefore = ""
+        if foundPos > 1 then
+          charBefore = string_sub(lowerMsg, foundPos - 1, foundPos - 1)
+        end
+        
+        local afterPos = foundPos + tagLen
+        local charAfter = ""
+        if afterPos <= msgLen then
+          charAfter = string_sub(lowerMsg, afterPos, afterPos)
+        end
+        
+        local validBefore = (foundPos == 1) or not string_find(charBefore, "[%w]")
+        local validAfter = (afterPos > msgLen) or not string_find(charAfter, "[%w]")
+        
+        -- Also allow digits after (like LF1M, LF2M)
+        if not validAfter and string_find(charAfter, "%d") then
+          local digitEndPos = afterPos
+          while digitEndPos <= msgLen and string_find(string_sub(lowerMsg, digitEndPos, digitEndPos), "%d") do
+            digitEndPos = digitEndPos + 1
+          end
+          -- Check for 'M' after digits (for patterns like LF1M, LF2M)
+          if digitEndPos <= msgLen then
+            local afterDigits = string_sub(lowerMsg, digitEndPos, digitEndPos)
+            if string_lower(afterDigits) == "m" then
+              digitEndPos = digitEndPos + 1
+            end
+          end
+          -- Check boundary after digits/M
+          if digitEndPos > msgLen or not string_find(string_sub(lowerMsg, digitEndPos, digitEndPos), "[%w]") then
+            validAfter = true
+          end
+        end
+        
+        if validBefore and validAfter then
+          return true
+        end
+        
+        startPos = foundPos + 1
+      end
+    end
+  end
+  
+  return false
+end
+
+-- =====================================================
+-- LEVEL RANGE API
+-- =====================================================
+-- Functions for level-based category filtering.
+-- Level ranges define the appropriate player level for dungeon/raid content.
+-- Level ranges are populated by modules/categories.lua during initialization
+-- and stored in DBB2.categoryLevelRanges lookup table.
+
+-- [ GetCategoryLevelRange ]
+-- Returns the level range for a category (used for level filtering).
+-- Level ranges define the appropriate player level for dungeon/raid content.
+--
+-- @param categoryName  [string] The display name of the category
+-- @return              [table]  Level range table { minLevel = number, maxLevel = number }, or nil if not found
+function DBB2.api.GetCategoryLevelRange(categoryName)
+  if DBB2.categoryLevelRanges and DBB2.categoryLevelRanges[categoryName] then
+    return DBB2.categoryLevelRanges[categoryName]
+  end
+  return nil
+end
+
+-- [ IsLevelAppropriate ]
+-- Checks if a category is appropriate for the given player level.
+-- Used to filter out content that is too high or too low level.
+-- Categories without defined level ranges are considered appropriate for all levels.
+--
+-- @param categoryName  [string] The display name of the category
+-- @param playerLevel   [number] Player's level (optional, defaults to UnitLevel("player"))
+-- @return              [boolean] true if player level is within category's range, or if no range defined
+function DBB2.api.IsLevelAppropriate(categoryName, playerLevel)
+  playerLevel = playerLevel or UnitLevel("player")
+  local levelRange = DBB2.api.GetCategoryLevelRange(categoryName)
+  if levelRange then
+    return playerLevel >= levelRange.minLevel and playerLevel <= levelRange.maxLevel
+  end
+  -- If no level range defined, assume it's appropriate for all levels
+  return true
+end
 
 -- =====================================================
 -- MESSAGE MATCHING API
@@ -767,8 +635,8 @@ function DBB2.api.MatchMessageToCategory(message, category, ignoreSelected, cate
         end
 
         if validBefore and validAfter then
-          -- Check tag exclusions for false positives
-          if not IsTagExcluded(lowerTag, lowerMsg, foundPos, tagLen) then
+          -- Check tag exclusions for false positives (uses DBB2.env.IsTagExcluded)
+          if not DBB2.env.IsTagExcluded(lowerTag, lowerMsg, foundPos, tagLen) then
             return true
           end
         end
@@ -910,42 +778,4 @@ function DBB2.api.GetCategorizedMessages(categoryType)
   end
   
   return categorized
-end
-
--- =====================================================
--- LEVEL RANGE API
--- =====================================================
--- Functions for level-based category filtering.
--- Level ranges are populated by modules/categories.lua during initialization
--- and stored in DBB2.categoryLevelRanges lookup table.
-
--- [ GetCategoryLevelRange ]
--- Returns the level range for a category (used for level filtering).
--- Level ranges define the appropriate player level for dungeon/raid content.
---
--- @param categoryName  [string] The display name of the category
--- @return              [table]  Level range table { minLevel = number, maxLevel = number }, or nil if not found
-function DBB2.api.GetCategoryLevelRange(categoryName)
-  if DBB2.categoryLevelRanges and DBB2.categoryLevelRanges[categoryName] then
-    return DBB2.categoryLevelRanges[categoryName]
-  end
-  return nil
-end
-
--- [ IsLevelAppropriate ]
--- Checks if a category is appropriate for the given player level.
--- Used to filter out content that is too high or too low level.
--- Categories without defined level ranges are considered appropriate for all levels.
---
--- @param categoryName  [string] The display name of the category
--- @param playerLevel   [number] Player's level (optional, defaults to UnitLevel("player"))
--- @return              [boolean] true if player level is within category's range, or if no range defined
-function DBB2.api.IsLevelAppropriate(categoryName, playerLevel)
-  playerLevel = playerLevel or UnitLevel("player")
-  local levelRange = DBB2.api.GetCategoryLevelRange(categoryName)
-  if levelRange then
-    return playerLevel >= levelRange.minLevel and playerLevel <= levelRange.maxLevel
-  end
-  -- If no level range defined, assume it's appropriate for all levels
-  return true
 end

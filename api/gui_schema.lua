@@ -6,6 +6,19 @@
 -- because the functions are called infrequently (UI setup, not per-frame)
 
 -- =====================
+-- CONSTANT DOMAINS
+-- =====================
+-- Static config panel constants (widget spacing, font sizes) are in env/constants.lua
+-- as DBB2.env.SPACING and DBB2.env.FONT_SIZE - used by config_schema.lua and config_widgets.lua
+--
+-- This file (gui_schema.lua) contains dynamic layout constants computed with DBB2:ScaleSize()
+-- as DBB2.schema.* - used by the main GUI (message rows, scroll frames, tabs)
+--
+-- The two domains are intentionally separate:
+--   DBB2.env    -> Config panels (settings UI)
+--   DBB2.schema -> Main GUI (message display, tabs, scrolling)
+
+-- =====================
 -- LAYOUT CONSTANTS
 -- =====================
 -- Single source of truth for all spacing and sizing values
@@ -355,7 +368,7 @@ function DBB2.schema.CreateMessageRow(name, parent)
   
   -- Timestamp (using bundled monospace font for perfect alignment)
   row.time = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-  row.time:SetFont("Interface\\AddOns\\DifficultBulletinBoard\\fonts\\IBMPlexMono-SemiBold.ttf", DBB2:GetFontSize(10))
+  row.time:SetFont("Interface\\AddOns\\DifficultBulletinBoard\\font\\IBMPlexMono-SemiBold.ttf", DBB2:GetFontSize(10))
   row.time:SetPoint("RIGHT", row, "RIGHT", S.TIMESTAMP_RIGHT_OFFSET, 0)
   row.time:SetWidth(S.TIMESTAMP_WIDTH)
   row.time:SetJustifyH("LEFT")
@@ -626,7 +639,7 @@ function DBB2.schema.CreateCurrentTimeDisplay(parent)
   local S = DBB2.schema
   
   local f = parent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-  f:SetFont("Interface\\AddOns\\DifficultBulletinBoard\\fonts\\IBMPlexMono-SemiBold.ttf", DBB2:GetFontSize(10))
+  f:SetFont("Interface\\AddOns\\DifficultBulletinBoard\\font\\IBMPlexMono-SemiBold.ttf", DBB2:GetFontSize(10))
   f:SetJustifyH("LEFT")
   f:SetTextColor(0.5, 0.5, 0.5, 1)
   f:SetText(date("%H:%M:%S"))

@@ -101,7 +101,7 @@ DBB2:RegisterModule("config", function()
     DBB2_Config.minimapFreeMode = false
     DBB2_Config.minimapFreePos = nil
     DBB2_Config.notifications = { mode = 0 }
-    DBB2_Config.blacklist = { enabled = true, hideFromChat = true, players = {}, keywords = {"recruit*", "recrut*", "<*>", "\\[???\\]", "\\[??\\]"} }
+    DBB2_Config.blacklist = { enabled = true, hideFromChat = true, players = {}, keywords = DBB2.api.DeepCopy(DBB2.env.defaultBlacklistKeywords) }
     DBB2_Config.hardcoreChannelsInitialized = nil
     DBB2.api.ResetChannelDefaults()
     DBB2_Config.position = nil
