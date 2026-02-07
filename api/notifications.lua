@@ -321,21 +321,34 @@ end
 
 -- [ CheckAndNotify ]
 -- Checks if message matches any category with notifications enabled and sends notification
+-- IMPORTANT: System messages (CHAT_MSG_SYSTEM) only trigger hardcore notifications,
+-- never groups/professions. This prevents zone names in death messages from triggering dungeon alerts.
 -- 'message'    [string]        the message text
 -- 'sender'     [string]        the message sender
-function DBB2.api.CheckAndNotify(message, sender)
+-- 'msgType'    [string]        optional message type (CHAT_MSG_SYSTEM, CHAT_MSG_CHANNEL, etc)
+function DBB2.api.CheckAndNotify(message, sender, msgType)
   if not DBB2.notificationState then return end
+  
+  -- System messages should ONLY trigger hardcore notifications
+  -- This prevents false positives like "Golbolar Quarry" in death messages
+  -- triggering alerts for "Hateforge Quarry"
+  local isSystemMessage = (msgType == "CHAT_MSG_SYSTEM")
   
   local categoryTypes = {"groups", "professions", "hardcore"}
   
   for _, categoryType in ipairs(categoryTypes) do
-    local categories = DBB2.api.GetCategories(categoryType)
-    if categories then
-      for _, cat in ipairs(categories) do
-        if cat.selected and DBB2.api.IsNotificationEnabled(categoryType, cat.name) then
-          if DBB2.api.MatchMessageToCategory(message, cat, nil, categoryType) then
-            DBB2.api.SendNotification(cat.name, sender, message)
-            return  -- Only notify once per message
+    -- Skip groups/professions for system messages
+    if isSystemMessage and categoryType ~= "hardcore" then
+      -- Do nothing, skip this category type
+    else
+      local categories = DBB2.api.GetCategories(categoryType)
+      if categories then
+        for _, cat in ipairs(categories) do
+          if cat.selected and DBB2.api.IsNotificationEnabled(categoryType, cat.name) then
+            if DBB2.api.MatchMessageToCategory(message, cat, nil, categoryType) then
+              DBB2.api.SendNotification(cat.name, sender, message)
+              return  -- Only notify once per message
+            end
           end
         end
       end

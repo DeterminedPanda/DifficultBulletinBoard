@@ -246,7 +246,8 @@ function DBB2.api.AddMessage(message, sender, channel, msgType)
   
   -- Check for notifications before storing (only for selected categories)
   -- Uses DBB2.api.CheckAndNotify from notifications.lua
-  DBB2.api.CheckAndNotify(message, sender)
+  -- Pass msgType so system messages only trigger hardcore notifications
+  DBB2.api.CheckAndNotify(message, sender, msgType)
   
   -- Store message
   table_insert(DBB2.messages, {
