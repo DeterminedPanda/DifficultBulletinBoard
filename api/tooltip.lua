@@ -62,12 +62,12 @@ function DBB2.api.ShowTooltip(owner, anchor, lines)
   local spacing = DBB2:ScaleSize(2)
   local fontSize = DBB2:GetFontSize(10)
   local hr, hg, hb = DBB2:GetHighlightColor()
-  local maxWidth = 0
-  local totalHeight = padding
+  local lineCount = 0
   
   -- Process lines
   for i, lineData in ipairs(lines) do
     if i > tooltip.maxLines then break end
+    lineCount = i
     
     local text, r, g, b
     
@@ -103,7 +103,19 @@ function DBB2.api.ShowTooltip(owner, anchor, lines)
     end
     
     line:Show()
-    
+  end
+  
+  -- Force one invisible layout pass so first-hover sizing is correct.
+  tooltip:SetWidth(1)
+  tooltip:SetHeight(1)
+  tooltip:SetAlpha(0)
+  tooltip:Show()
+  
+  local maxWidth = 0
+  local totalHeight = padding
+  
+  for i = 1, lineCount do
+    local line = tooltip.lines[i]
     local lineWidth = line:GetStringWidth()
     if lineWidth > maxWidth then
       maxWidth = lineWidth
@@ -115,6 +127,7 @@ function DBB2.api.ShowTooltip(owner, anchor, lines)
   
   tooltip:SetWidth(maxWidth + padding * 2)
   tooltip:SetHeight(totalHeight)
+  DBB2:CreateBackdrop(tooltip, nil, nil, 0.95, true)
   
   -- Position based on anchor
   tooltip:ClearAllPoints()
@@ -159,6 +172,7 @@ function DBB2.api.ShowTooltip(owner, anchor, lines)
     tooltip:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", x + 15, y + 10)
   end
   
+  tooltip:SetAlpha(1)
   tooltip:Show()
 end
 
@@ -212,14 +226,44 @@ function DBB2.api.ShowMessageTooltip(owner, sender, message)
   msgLine:SetPoint("TOPLEFT", titleLine, "BOTTOMLEFT", 0, -spacing)
   msgLine:Show()
   
+  -- Force one invisible layout pass so first-hover sizing is correct.
+  tooltip:SetWidth(1)
+  tooltip:SetHeight(1)
+  tooltip:SetAlpha(0)
+  tooltip:Show()
+  
+  -- Tighten wrapped message width so the tooltip doesn't reserve excessive
+  -- empty space on the right. We keep the smallest width that preserves the
+  -- current wrapped height.
+  local wrappedHeight = msgLine:GetHeight()
+  local minWidth = math_max(DBB2:ScaleSize(120), titleLine:GetStringWidth())
+  local low = minWidth
+  local high = maxWidth
+  local bestWidth = maxWidth
+  
+  while low <= high do
+    local mid = math.floor((low + high) / 2)
+    msgLine:SetWidth(mid)
+    if msgLine:GetHeight() <= wrappedHeight then
+      bestWidth = mid
+      high = mid - 1
+    else
+      low = mid + 1
+    end
+  end
+  
+  msgLine:SetWidth(bestWidth)
+  
   -- Calculate size
-  local textWidth = math_min(msgLine:GetStringWidth(), maxWidth)
+  local textWidth = math_min(msgLine:GetStringWidth(), bestWidth)
   local titleWidth = titleLine:GetStringWidth()
-  local tooltipWidth = math_max(textWidth, titleWidth) + (padding * 2)
+  local contentWidth = math_max(bestWidth, titleWidth, textWidth)
+  local tooltipWidth = contentWidth + (padding * 2)
   local tooltipHeight = titleLine:GetHeight() + msgLine:GetHeight() + spacing + (padding * 2)
   
   tooltip:SetWidth(tooltipWidth)
   tooltip:SetHeight(tooltipHeight)
+  DBB2:CreateBackdrop(tooltip, nil, nil, 0.95, true)
   
   -- Position near cursor
   local x, y = GetCursorPosition()
@@ -246,6 +290,7 @@ function DBB2.api.ShowMessageTooltip(owner, sender, message)
   tooltip.activeData = {sender = sender, message = message}
   tooltip.triggerFrame = owner
   
+  tooltip:SetAlpha(1)
   tooltip:Show()
 end
 
