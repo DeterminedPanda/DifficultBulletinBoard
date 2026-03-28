@@ -92,7 +92,7 @@ DBB2:RegisterModule("config", function()
     DBB2_Config.defaultTab = 0
     DBB2_Config.notificationSound = 1
     DBB2_Config.showCurrentTime = false
-    DBB2_Config.timeDisplayMode = 0
+    DBB2_Config.timeDisplayMode = 2
     DBB2_Config.showLevelFilteredGroups = false
     DBB2_Config.clearNotificationsOnGroupJoin = true
     DBB2_Config.autoJoinChannels = true
