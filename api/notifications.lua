@@ -66,7 +66,7 @@ end
 function DBB2.api.InitNotificationConfig()
   if not DBB2_Config.notifications then
     DBB2_Config.notifications = {
-      mode = 0  -- Default: off
+      mode = 3  -- Default: both
     }
   end
   -- Migrate old config format (chat/raidWarn booleans) to new mode format
@@ -88,7 +88,7 @@ function DBB2.api.InitNotificationConfig()
   end
   -- Ensure mode is valid
   if not DBB2_Config.notifications.mode or DBB2_Config.notifications.mode < 0 or DBB2_Config.notifications.mode > 3 then
-    DBB2_Config.notifications.mode = 0
+    DBB2_Config.notifications.mode = 3
   end
 end
 

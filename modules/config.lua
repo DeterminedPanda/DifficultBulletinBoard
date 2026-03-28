@@ -100,7 +100,7 @@ DBB2:RegisterModule("config", function()
     DBB2_Config.minimapAngle = 45
     DBB2_Config.minimapFreeMode = false
     DBB2_Config.minimapFreePos = nil
-    DBB2_Config.notifications = { mode = 0 }
+    DBB2_Config.notifications = { mode = 3 }
     DBB2_Config.blacklist = { enabled = true, hideFromChat = true, players = {}, keywords = DBB2.api.DeepCopy(DBB2.env.defaultBlacklistKeywords) }
     DBB2_Config.hardcoreChannelsInitialized = nil
     DBB2.api.ResetChannelDefaults()
@@ -222,7 +222,7 @@ DBB2:RegisterModule("config", function()
     { type = "section", label = "Notifications" },
     { type = "description", text = "Choose when notifications appear and how they get your attention.", fontSize = 9 },
     { type = "slider", key = "notificationMode", label = "Mode", min = 0, max = 3, step = 1,
-      valueLabels = {[0] = "Off", [1] = "Chat", [2] = "Raid Warning", [3] = "Both"},
+      valueLabels = {[0] = "Off", [1] = "Chat", [2] = "Raid Warning", [3] = "Chat & Raid Warning"},
       tooltip = {{"Notification Mode", "highlight"}, "Choose how notifications are shown."},
       onChange = function(val) DBB2.api.SetNotificationMode(val) end },
     { type = "slider", key = "notificationSound", label = "Sound", min = 0, max = 1, step = 1,
