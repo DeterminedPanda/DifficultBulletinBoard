@@ -262,11 +262,11 @@ DBB2:RegisterModule("config", function()
   -- CHANNELS TAB
   -- =====================
   DBB2.api.RenderConfigSchema(DBB2.gui.configTabs.panels["Channels"], {
-    { type = "section", label = "Monitored Channels" },
-    { type = "description", text = "Select which channels to monitor for LFG messages." },
-    { type = "checkbox", key = "autoJoinChannels", label = "Auto-join World & LookingForGroup", default = true,
+    { type = "section", label = "Channels" },
+    { type = "description", text = "Choose which chat channels are monitored for messages.", fontSize = 9 },
+    { type = "toggle", key = "autoJoinChannels", label = "Auto-join World & LookingForGroup", default = true,
       tooltip = {{"Auto-Join", "highlight"}, "Automatically join these channels when you log in."} },
-    { type = "section", label = "Channel List" },
+    { type = "section", label = "Available Channels" },
     { type = "channelList" },
   })
 
@@ -274,9 +274,9 @@ DBB2:RegisterModule("config", function()
   -- GROUPS TAB
   -- =====================
   DBB2.api.RenderConfigSchema(DBB2.gui.configTabs.panels["Groups"], {
-    { type = "section", label = "Groups - Edit Tags" },
-    { type = "description", text = "Edit tags to customize which messages match each category." },
-    { type = "description", text = "Wildcards: * (any), ? (one char), [a-z], {a,b}", fontSize = 8 },
+    { type = "section", label = "Group Categories" },
+    { type = "description", text = "Edit the tags used to match messages for each category.", fontSize = 9 },
+    { type = "description", text = "Wildcard support: * (any), ? (one char), [a-z], {a,b}", fontSize = 8 },
     { type = "categoryList", categoryType = "groups", showFilterTags = true },
   })
 
@@ -284,9 +284,9 @@ DBB2:RegisterModule("config", function()
   -- PROFESSIONS TAB
   -- =====================
   DBB2.api.RenderConfigSchema(DBB2.gui.configTabs.panels["Professions"], {
-    { type = "section", label = "Professions - Edit Tags" },
-    { type = "description", text = "Edit tags to customize which messages match each category." },
-    { type = "description", text = "Wildcards: * (any), ? (one char), [a-z], {a,b}", fontSize = 8 },
+    { type = "section", label = "Profession Categories" },
+    { type = "description", text = "Edit the tags used to match messages for each category.", fontSize = 9 },
+    { type = "description", text = "Wildcard support: * (any), ? (one char), [a-z], {a,b}", fontSize = 8 },
     { type = "categoryList", categoryType = "professions", showFilterTags = true },
   })
 
@@ -294,9 +294,9 @@ DBB2:RegisterModule("config", function()
   -- HARDCORE TAB
   -- =====================
   DBB2.api.RenderConfigSchema(DBB2.gui.configTabs.panels["Hardcore"], {
-    { type = "section", label = "Hardcore - Edit Tags" },
-    { type = "description", text = "Edit tags to customize which messages match each category." },
-    { type = "description", text = "Wildcards: * (any), ? (one char), [a-z], {a,b}", fontSize = 8 },
+    { type = "section", label = "Hardcore Categories" },
+    { type = "description", text = "Edit the tags used to match messages for each category.", fontSize = 9 },
+    { type = "description", text = "Wildcard support: * (any), ? (one char), [a-z], {a,b}", fontSize = 8 },
     { type = "categoryList", categoryType = "hardcore", showFilterTags = false },
   })
 
@@ -308,18 +308,19 @@ DBB2:RegisterModule("config", function()
   DBB2_Config.blacklistHideFromChat = DBB2.api.IsBlacklistHideFromChatEnabled()
   
   DBB2.api.RenderConfigSchema(DBB2.gui.configTabs.panels["Blacklist"], {
-    { type = "section", label = "Blacklist Management" },
-    { type = "description", text = "Block messages containing specific keywords." },
-    { type = "checkbox", key = "blacklistEnabled", label = "Enable Blacklist Filtering",
+    { type = "section", label = "Blacklist" },
+    { type = "description", text = "Block messages containing keywords you do not want to see.", fontSize = 9 },
+    { type = "toggle", key = "blacklistEnabled", label = "Enable Blacklist Filtering",
+      tooltip = {{"Enable Blacklist Filtering", "highlight"}, "Turn blacklist filtering on or off."},
       onChange = function(checked) DBB2.api.SetBlacklistEnabled(checked) end },
-    { type = "checkbox", key = "blacklistHideFromChat", label = "Hide messages from Chat",
-      tooltip = {{"Hide from Chat", "highlight"}, "Also hide blacklisted messages from your chat window."},
+    { type = "toggle", key = "blacklistHideFromChat", label = "Hide messages from Chat",
+      tooltip = {{"Hide from Chat", "highlight"}, "Hide blacklisted messages from your chat window."},
       onChange = function(checked) DBB2.api.SetBlacklistHideFromChat(checked) end },
-    { type = "section", label = "Import / Export" },
-    { type = "description", text = "Copy to export, paste and press Enter to import.", fontSize = 8 },
+    { type = "section", label = "Import & Export" },
+    { type = "description", text = "Copy your blacklist to export it, or paste one here and press Enter to import.", fontSize = 9 },
     { type = "keywordImportExport" },
     { type = "section", label = "Keywords" },
-    { type = "description", text = "Wildcards: * (any), ? (one char), [a-z], {a,b}", fontSize = 8 },
+    { type = "description", text = "Wildcard support: * (any), ? (one char), [a-z], {a,b}", fontSize = 8 },
     { type = "keywordList" },
   })
 
