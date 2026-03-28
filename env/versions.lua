@@ -8,19 +8,19 @@
 DBB2.versions = {
   -- Groups category tags and filter tags (LF/LFG/LFM)
   -- Increment when: Adding/removing dungeon/raid categories, changing group tags
-  GROUPS = 11,
+  GROUPS = 12,
   
   -- Professions category tags and filter tags (LFW/WTB/WTS)
   -- Increment when: Adding/removing profession categories, changing profession tags
-  PROFESSIONS = 9,
+  PROFESSIONS = 10,
   
   -- Hardcore category tags
   -- Increment when: Changing hardcore category tags (deaths, level ups)
-  HARDCORE = 9,
+  HARDCORE = 10,
   
   -- Blacklist keywords
   -- Increment when: Adding/removing default blacklist patterns
-  BLACKLIST = 4,
+  BLACKLIST = 5,
   
   -- Monitored channels
   -- Increment when: Changing default channel selections
