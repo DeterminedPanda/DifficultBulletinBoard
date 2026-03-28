@@ -172,11 +172,11 @@ DBB2:RegisterModule("config", function()
     { type = "slider", key = "defaultTab", label = "Default Tab", min = 0, max = 3, step = 1,
       valueLabels = {[0] = "Logs", [1] = "Groups", [2] = "Professions", [3] = "Hardcore"},
       tooltip = {{"Default Tab", "highlight"}, "The tab shown when opening the GUI."} },
-    { type = "slider", key = "fontOffset", label = "Font Size Offset", min = -4, max = 4, step = 1,
+    { type = "slider", key = "fontOffset", label = "Font Size Offset", min = -6, max = 6, step = 1,
       tooltip = {{"Font Size Offset", "highlight"}, "Adjusts all text sizes.", {"Requires /reload", "gray"}},
       onChange = function(val)
         if DBB2.gui.resizeGrip then
-          local s = 1 + (val * 0.1)
+          local s = 1 + ((val * 0.5) * 0.1)
           DBB2.gui.resizeGrip.minWidth = math.floor(410 * s + 0.5)
           DBB2.gui.resizeGrip.minHeight = math.floor(275 * s + 0.5)
         end

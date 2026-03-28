@@ -150,7 +150,7 @@ end
 --   local schema = {
 --     { type = "section", label = "Display Settings" },
 --     { type = "slider", key = "fontOffset", label = "Font Size",
---       min = -4, max = 4, step = 1, default = 0 },
+--       min = -6, max = 6, step = 1, default = 0 },
 --     { type = "toggle", key = "showCurrentTime", label = "Show Time",
 --       default = false },
 --   }

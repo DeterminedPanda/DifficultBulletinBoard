@@ -112,7 +112,7 @@ DBB2:SetScript("OnEvent", function()
       DBB2_Config.initialized = true
       DBB2_Config.version = "1.0.0"
       DBB2_Config.position = {}
-      DBB2_Config.fontOffset = 0  -- Font size offset (-4 to +4)
+      DBB2_Config.fontOffset = 0  -- Font size offset (-6 to +6)
       DBB2_Config.highlightColor = {r = 0.667, g = 0.655, b = 0.8, a = 1}  -- Default highlight color (#aaa7cc)
       DBB2_Config.backgroundColor = {r = 0.08, g = 0.08, b = 0.10, a = 0.85}  -- Default background color (dark charcoal)
       DBB2_Config.spamFilterSeconds = 150  -- Duplicate message filter time
@@ -135,11 +135,11 @@ DBB2:SetScript("OnEvent", function()
     if DBB2_Config.fontOffset == nil or type(DBB2_Config.fontOffset) ~= "number" then
       DBB2_Config.fontOffset = 0
     end
-    -- Clamp fontOffset to safe range (-4 to +4) to prevent crashes
-    if DBB2_Config.fontOffset < -4 then
-      DBB2_Config.fontOffset = -4
-    elseif DBB2_Config.fontOffset > 4 then
-      DBB2_Config.fontOffset = 4
+    -- Clamp fontOffset to safe range (-6 to +6) to prevent crashes
+    if DBB2_Config.fontOffset < -6 then
+      DBB2_Config.fontOffset = -6
+    elseif DBB2_Config.fontOffset > 6 then
+      DBB2_Config.fontOffset = 6
     end
     
     -- Ensure highlightColor exists for existing configs
@@ -423,6 +423,19 @@ end
 DBB2._fontCache = {}
 DBB2._scaledCache = {}
 
+-- [ GetEffectiveFontOffset ]
+-- Converts the UI font offset step into the actual font-size delta.
+-- Each visible step is 0.5 font size to allow finer adjustments while
+-- keeping the saved/configured slider values at whole numbers.
+-- return:      [number]        actual font size delta
+function DBB2:GetEffectiveFontOffset()
+  local offset = DBB2_Config.fontOffset
+  if type(offset) ~= "number" then offset = 0 end
+  if offset < -6 then offset = -6 end
+  if offset > 6 then offset = 6 end
+  return offset * 0.5
+end
+
 -- Get font size with offset applied (cached)
 -- 'baseSize'   [number]        the base font size
 -- return:      [number]        font size with offset applied (minimum 6, maximum 24)
@@ -431,10 +444,7 @@ function DBB2:GetFontSize(baseSize)
   if self._fontCache[baseSize] then
     return self._fontCache[baseSize]
   end
-  local offset = DBB2_Config.fontOffset
-  -- Ensure offset is a valid number
-  if type(offset) ~= "number" then offset = 0 end
-  local size = baseSize + offset
+  local size = baseSize + DBB2:GetEffectiveFontOffset()
   -- Clamp between 6 and 24 to prevent crashes in WoW 1.12.1
   -- Using conservative limits as vanilla WoW has strict font rendering constraints
   if size < 6 then size = 6 end
@@ -447,14 +457,9 @@ end
 -- Returns a scale factor based on font offset for scaling UI element widths/heights
 -- return:      [number]        scale factor (1.0 at offset 0, increases with positive offset)
 function DBB2:GetScaleFactor()
-  local offset = DBB2_Config.fontOffset
-  -- Ensure offset is a valid number
-  if type(offset) ~= "number" then offset = 0 end
-  -- Clamp offset to safe range to prevent extreme scaling
-  if offset < -4 then offset = -4 end
-  if offset > 4 then offset = 4 end
-  -- Scale by ~10% per font size increase (offset of +4 = 1.4x scale)
-  return 1 + (offset * 0.1)
+  local effectiveOffset = DBB2:GetEffectiveFontOffset()
+  -- Scale by ~10% per actual font size increase (UI step of +6 = 1.3x scale)
+  return 1 + (effectiveOffset * 0.1)
 end
 
 -- [ ScaleSize ]

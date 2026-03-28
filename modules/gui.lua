@@ -1077,10 +1077,7 @@ DBB2:RegisterModule("gui", function()
   local baseMinWidth = 410
   local baseMinHeight = 275
   -- Calculate scale factor directly to avoid cache issues
-  local fontOffset = DBB2_Config.fontOffset or 0
-  if fontOffset < -4 then fontOffset = -4 end
-  if fontOffset > 4 then fontOffset = 4 end
-  local scaleFactor = 1 + (fontOffset * 0.1)
+  local scaleFactor = DBB2:GetScaleFactor()
   local scaledMinWidth = math.floor(baseMinWidth * scaleFactor + 0.5)
   local scaledMinHeight = math.floor(baseMinHeight * scaleFactor + 0.5)
   DBB2.gui.resizeGrip = S.CreateResizeGrip(DBB2.gui, scaledMinWidth, scaledMinHeight)
