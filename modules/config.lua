@@ -168,7 +168,8 @@ DBB2:RegisterModule("config", function()
   -- GENERAL TAB
   -- =====================
   DBB2.api.RenderConfigSchema(DBB2.gui.configTabs.panels["General"], {
-    { type = "section", label = "Display Settings" },
+    { type = "section", label = "Appearance" },
+    { type = "description", text = "Customize how the window and text look.", fontSize = 9 },
     { type = "slider", key = "defaultTab", label = "Default Tab", min = 0, max = 3, step = 1,
       valueLabels = {[0] = "Logs", [1] = "Groups", [2] = "Professions", [3] = "Hardcore"},
       tooltip = {{"Default Tab", "highlight"}, "Choose which tab opens by default."} },
@@ -187,12 +188,9 @@ DBB2:RegisterModule("config", function()
     { type = "colorpicker", key = "highlightColor", label = "Highlight Color",
       default = {r = 0.2, g = 1, b = 0.8, a = 1},
       tooltip = {{"Highlight Color", "highlight"}, "Set the color used for highlights.", {"Requires /reload", "gray"}} },
-    { type = "toggle", key = "showLevelFilteredGroups", label = "Level Filter (Groups)",
-      tooltip = {{"Level Filter", "highlight"}, "Only show categories within your level range."},
-      onChange = function()
-        local gp = DBB2.gui.tabs.panels["Groups"]
-        if gp and gp.UpdateCategories and gp:IsVisible() then gp.UpdateCategories() end
-      end },
+
+    { type = "section", label = "Time & Display" },
+    { type = "description", text = "Control how messages are shown and how much information is visible.", fontSize = 9 },
     { type = "toggle", key = "showCurrentTime", label = "Show Current Time",
       tooltip = {{"Show Current Time", "highlight"}, "Show the current time above message timestamps."},
       onChange = function(enabled)
@@ -216,19 +214,13 @@ DBB2:RegisterModule("config", function()
           end
         end
       end },
-    
-    { type = "section", label = "Miscellaneous" },
-    { type = "toggle", key = "clampToScreen", label = "Clamp to Screen", default = true,
-      tooltip = {{"Clamp to Screen", "highlight"}, "Keep the main window on screen."},
-      onChange = function(enabled)
-        if DBB2.gui then
-          DBB2.gui:SetClampedToScreen(enabled)
-        end
-      end },
+    { type = "slider", key = "maxMessagesPerCategory", label = "Messages per Category", min = 0, max = 10, step = 1,
+      tooltip = {{"Messages per Category", "highlight"}, "Limit how many messages are shown in each category.", {"0 = unlimited", "gray"}} },
     { type = "slider", key = "scrollSpeed", label = "Scroll Speed", min = 10, max = 100, step = 5,
       tooltip = {{"Scroll Speed", "highlight"}, "Adjust how fast lists scroll with the mouse wheel."} },
     
     { type = "section", label = "Notifications" },
+    { type = "description", text = "Choose when notifications appear and how they get your attention.", fontSize = 9 },
     { type = "slider", key = "notificationMode", label = "Mode", min = 0, max = 3, step = 1,
       valueLabels = {[0] = "Off", [1] = "Chat", [2] = "Raid Warning", [3] = "Both"},
       tooltip = {{"Notification Mode", "highlight"}, "Choose how notifications are shown."},
@@ -239,16 +231,31 @@ DBB2:RegisterModule("config", function()
     { type = "toggle", key = "clearNotificationsOnGroupJoin", label = "Auto-Clear", default = true,
       tooltip = {{"Auto-Clear", "highlight"}, "Clear active notifications when you join a group."} },
     
-    { type = "section", label = "Spam Prevention" },
-    { type = "slider", key = "messageExpireMinutes", label = "Auto-Remove (minutes)", min = 0, max = 30, step = 1,
-      tooltip = {{"Auto-Remove", "highlight"}, "Automatically remove old messages after a set time.", {"0 = disabled", "gray"}} },
+    { type = "section", label = "Filtering & Cleanup" },
+    { type = "description", text = "Reduce spam, control repeats, and manage how messages are handled.", fontSize = 9 },
     { type = "slider", key = "spamFilterSeconds", label = "Duplicate Filter (seconds)", min = 0, max = 300, step = 10,
       tooltip = {{"Duplicate Filter", "highlight"}, "Ignore repeated messages within the selected time.", {"0 = disabled", "gray"}} },
+    { type = "slider", key = "messageExpireMinutes", label = "Auto-Remove (minutes)", min = 0, max = 30, step = 1,
+      tooltip = {{"Auto-Remove", "highlight"}, "Automatically remove old messages after a set time.", {"0 = disabled", "gray"}} },
     { type = "slider", key = "hideFromChat", label = "Hide from Chat", min = 0, max = 2, step = 1,
       valueLabels = {[0] = "Disabled", [1] = "Selected", [2] = "All"},
       tooltip = {{"Hide from Chat", "highlight"}, "Hide captured messages from your chat window."} },
-    { type = "slider", key = "maxMessagesPerCategory", label = "Messages per Category", min = 0, max = 10, step = 1,
-      tooltip = {{"Messages per Category", "highlight"}, "Limit how many messages are shown in each category.", {"0 = unlimited", "gray"}} },
+    { type = "toggle", key = "showLevelFilteredGroups", label = "Level Filter (Groups)",
+      tooltip = {{"Level Filter", "highlight"}, "Only show categories within your level range."},
+      onChange = function()
+        local gp = DBB2.gui.tabs.panels["Groups"]
+        if gp and gp.UpdateCategories and gp:IsVisible() then gp.UpdateCategories() end
+      end },
+
+    { type = "section", label = "Window" },
+    { type = "description", text = "Control how the window behaves on your screen.", fontSize = 9 },
+    { type = "toggle", key = "clampToScreen", label = "Clamp to Screen", default = true,
+      tooltip = {{"Clamp to Screen", "highlight"}, "Keep the main window on screen."},
+      onChange = function(enabled)
+        if DBB2.gui then
+          DBB2.gui:SetClampedToScreen(enabled)
+        end
+      end },
   })
 
   -- =====================

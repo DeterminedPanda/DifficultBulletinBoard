@@ -196,7 +196,12 @@ function DBB2.api.RenderConfigSchema(panel, schema, options)
       
       -- Calculate spacing
       local spacing = SPACING.widget
-      if lastType == "section" then spacing = SPACING.afterSection
+      if lastType == "section" then
+        if item.type == "description" then
+          spacing = 2
+        else
+          spacing = SPACING.afterSection
+        end
       elseif lastType == "description" then spacing = SPACING.description
       elseif item.type == "section" then spacing = SPACING.section
       end
@@ -237,17 +242,38 @@ function DBB2.api.RenderConfigSchema(panel, schema, options)
       
       -- Get widget height
       if item.type == "section" or item.type == "description" then
-        widgetHeight = DBB2:ScaleSize(12)
         if widget.SetPoint then
           widget:ClearAllPoints()
           widget:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", xOffset, yOffset)
         end
+        if item.type == "description" then
+          local descriptionWidth = (scrollChild:GetWidth() or 0) - xOffset - DBB2:ScaleSize(SPACING.padding)
+          if descriptionWidth < 1 then descriptionWidth = 1 end
+          if widget.SetWidth then
+            widget:SetWidth(descriptionWidth)
+          end
+          widgetHeight = math.max(DBB2:ScaleSize(12), math.ceil(widget:GetHeight() or 0))
+        else
+          widgetHeight = DBB2:ScaleSize(12)
+        end
       elseif item.type == "slider" or item.type == "toggle" then
         widgetHeight = DBB2:ScaleSize(30)
+        if widget and widget.SetPoint then
+          widget:ClearAllPoints()
+          widget:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", xOffset, yOffset)
+        end
       elseif item.type == "colorpicker" then
         widgetHeight = DBB2:ScaleSize(20)
+        if widget and widget.SetPoint then
+          widget:ClearAllPoints()
+          widget:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", xOffset, yOffset)
+        end
       elseif item.type == "checkbox" then
         widgetHeight = DBB2:ScaleSize(16)
+        if widget and widget.SetPoint then
+          widget:ClearAllPoints()
+          widget:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", xOffset, yOffset)
+        end
       elseif item.type == "channelList" or item.type == "categoryList" or item.type == "keywordList" or item.type == "keywordImportExport" then
         -- Dynamic widgets - rebuild and get height
         if widget and widget.rebuild then
@@ -264,6 +290,10 @@ function DBB2.api.RenderConfigSchema(panel, schema, options)
         end
       elseif item.type == "editbox" then
         widgetHeight = DBB2:ScaleSize(20)
+        if widget and widget.SetPoint then
+          widget:ClearAllPoints()
+          widget:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", xOffset, yOffset)
+        end
       end
       
       yOffset = yOffset - widgetHeight
@@ -299,6 +329,7 @@ function DBB2.api.RenderConfigSchema(panel, schema, options)
   scrollFrame:SetScript("OnUpdate", function()
     if not this:IsVisible() then return end
     if UpdateScrollWidth() then
+      RenderAllWidgets()
       this.UpdateScrollState()
     end
   end)
