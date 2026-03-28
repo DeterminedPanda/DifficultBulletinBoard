@@ -121,7 +121,7 @@ DBB2:SetScript("OnEvent", function()
       DBB2_Config.maxMessagesPerCategory = 5  -- Max messages shown per category (0 = unlimited)
       DBB2_Config.scrollSpeed = 55  -- Scroll speed (pixels per wheel tick)
       DBB2_Config.defaultTab = 0  -- Default tab (0=Logs, 1=Groups, 2=Professions, 3=Hardcore)
-      DBB2_Config.showCurrentTime = false  -- Show current time above timestamps
+      DBB2_Config.showCurrentTime = true  -- Show current time above timestamps
       DBB2_Config.timeDisplayMode = 2  -- Time format (0=timestamp, 1=relative, 2=elapsed)
       DBB2_Config.showLevelFilteredGroups = false  -- Level filter for groups tab
       DBB2_Config.notificationSound = 1  -- Notification sound (0=off, 1=on)
@@ -197,9 +197,9 @@ DBB2:SetScript("OnEvent", function()
       DBB2_Config.defaultTab = 0
     end
     
-    -- Ensure showCurrentTime exists for existing configs (default off)
+    -- Ensure showCurrentTime exists for existing configs (default on)
     if DBB2_Config.showCurrentTime == nil then
-      DBB2_Config.showCurrentTime = false
+      DBB2_Config.showCurrentTime = true
     end
     
     -- Ensure timeDisplayMode exists for existing configs (default elapsed)

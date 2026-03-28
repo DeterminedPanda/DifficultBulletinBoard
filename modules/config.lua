@@ -91,7 +91,7 @@ DBB2:RegisterModule("config", function()
     DBB2_Config.scrollSpeed = 55
     DBB2_Config.defaultTab = 0
     DBB2_Config.notificationSound = 1
-    DBB2_Config.showCurrentTime = false
+    DBB2_Config.showCurrentTime = true
     DBB2_Config.timeDisplayMode = 2
     DBB2_Config.showLevelFilteredGroups = false
     DBB2_Config.clearNotificationsOnGroupJoin = true
