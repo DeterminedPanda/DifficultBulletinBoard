@@ -275,8 +275,7 @@ DBB2:RegisterModule("config", function()
   -- =====================
   DBB2.api.RenderConfigSchema(DBB2.gui.configTabs.panels["Groups"], {
     { type = "section", label = "Group Categories" },
-    { type = "description", text = "Edit the tags used to match messages for each category.", fontSize = 9 },
-    { type = "description", text = "Wildcard support: * (any), ? (one char), [a-z], {a,b}", fontSize = 8 },
+    { type = "description", text = "Wildcard support: * (any), ? (one char), [a-z], {a,b}", fontSize = 9 },
     { type = "categoryList", categoryType = "groups", showFilterTags = true },
   })
 
@@ -285,8 +284,7 @@ DBB2:RegisterModule("config", function()
   -- =====================
   DBB2.api.RenderConfigSchema(DBB2.gui.configTabs.panels["Professions"], {
     { type = "section", label = "Profession Categories" },
-    { type = "description", text = "Edit the tags used to match messages for each category.", fontSize = 9 },
-    { type = "description", text = "Wildcard support: * (any), ? (one char), [a-z], {a,b}", fontSize = 8 },
+    { type = "description", text = "Wildcard support: * (any), ? (one char), [a-z], {a,b}", fontSize = 9 },
     { type = "categoryList", categoryType = "professions", showFilterTags = true },
   })
 
@@ -295,9 +293,8 @@ DBB2:RegisterModule("config", function()
   -- =====================
   DBB2.api.RenderConfigSchema(DBB2.gui.configTabs.panels["Hardcore"], {
     { type = "section", label = "Hardcore Categories" },
-    { type = "description", text = "Edit the tags used to match messages for each category.", fontSize = 9 },
-    { type = "description", text = "Wildcard support: * (any), ? (one char), [a-z], {a,b}", fontSize = 8 },
-    { type = "categoryList", categoryType = "hardcore", showFilterTags = false },
+    { type = "description", text = "Wildcard support: * (any), ? (one char), [a-z], {a,b}", fontSize = 9 },
+    { type = "categoryList", categoryType = "hardcore", showFilterTags = true },
   })
 
   -- =====================
@@ -320,7 +317,7 @@ DBB2:RegisterModule("config", function()
     { type = "description", text = "Copy your blacklist to export it, or paste one here and press Enter to import.", fontSize = 9 },
     { type = "keywordImportExport" },
     { type = "section", label = "Keywords" },
-    { type = "description", text = "Wildcard support: * (any), ? (one char), [a-z], {a,b}", fontSize = 8 },
+    { type = "description", text = "Wildcard support: * (any), ? (one char), [a-z], {a,b}", fontSize = 9 },
     { type = "keywordList" },
   })
 

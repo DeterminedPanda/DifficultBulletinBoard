@@ -42,6 +42,9 @@ DBB2:RegisterModule("categories", function()
   if not DBB2_Config.filterTags.professions then
     DBB2_Config.filterTags.professions = DBB2.api.DeepCopy(DBB2.env.defaultFilterTags.professions)
   end
+  if not DBB2_Config.filterTags.hardcore then
+    DBB2_Config.filterTags.hardcore = DBB2.api.DeepCopy(DBB2.env.defaultFilterTags.hardcore)
+  end
   
   -- Helper to check if a table has any array elements (more reliable than table.getn in Lua 5.0)
   local function hasArrayElements(t)
@@ -77,6 +80,19 @@ DBB2:RegisterModule("categories", function()
   ensureTagsField(DBB2_Config.categories.groups)
   ensureTagsField(DBB2_Config.categories.professions)
   ensureTagsField(DBB2_Config.categories.hardcore)
+
+  local function ensureCustomCategory(categories)
+    for _, cat in ipairs(categories) do
+      if cat.name == "Custom Category" then
+        return
+      end
+    end
+    table.insert(categories, 1, { name = "Custom Category", selected = false, tags = {} })
+  end
+
+  ensureCustomCategory(DBB2_Config.categories.groups)
+  ensureCustomCategory(DBB2_Config.categories.professions)
+  ensureCustomCategory(DBB2_Config.categories.hardcore)
   
   -- Initialize collapsed states if not present
   if not DBB2_Config.categoryCollapsed then
@@ -110,6 +126,7 @@ DBB2:RegisterModule("categories", function()
   local savedHardcoreVersion = DBB2_Config.hardcoreVersion or 0
   if savedHardcoreVersion < DBB2.versions.HARDCORE then
     DBB2_Config.categories.hardcore = DBB2.api.DeepCopy(DBB2.env.defaultHardcore)
+    DBB2_Config.filterTags.hardcore = DBB2.api.DeepCopy(DBB2.env.defaultFilterTags.hardcore)
     DBB2_Config.hardcoreVersion = DBB2.versions.HARDCORE
     DBB2:QueueMessage("|cff33ffccDBB2:|r Hardcore tags updated to v" .. DBB2.versions.HARDCORE .. " defaults.")
   end
@@ -141,7 +158,8 @@ DBB2:RegisterModule("categories", function()
     DBB2_Config.categories.hardcore = DBB2.api.DeepCopy(DBB2.env.defaultHardcore)
     DBB2_Config.filterTags = {
       groups = DBB2.api.DeepCopy(DBB2.env.defaultFilterTags.groups),
-      professions = DBB2.api.DeepCopy(DBB2.env.defaultFilterTags.professions)
+      professions = DBB2.api.DeepCopy(DBB2.env.defaultFilterTags.professions),
+      hardcore = DBB2.api.DeepCopy(DBB2.env.defaultFilterTags.hardcore)
     }
     -- Reset blacklist keywords (preserves enabled state and player list)
     if DBB2_Config.blacklist then

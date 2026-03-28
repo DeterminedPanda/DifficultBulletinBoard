@@ -80,6 +80,10 @@ DBB2.env.defaultFilterTags = {
   professions = {
     enabled = false,
     tags = { "LF", "LFW", "WTB", "WTS" }
+  },
+  hardcore = {
+    enabled = false,
+    tags = {}
   }
 }
 
@@ -87,7 +91,7 @@ DBB2.env.defaultFilterTags = {
 -- Level ranges: minLevel = minimum recommended level, maxLevel = maximum useful level (60 = endgame)
 -- Each category has: name, selected (default state), tags (matching keywords), minLevel, maxLevel
 DBB2.env.defaultGroups = {
-  { name = "Custom Topic",                  selected = false, tags = {}, minLevel = 1, maxLevel = 60 },
+  { name = "Custom Category",               selected = false, tags = {}, minLevel = 1, maxLevel = 60 },
   { name = "Upper Karazhan Halls",          selected = true, tags = { "kara40", "ukh"}, minLevel = 60, maxLevel = 60 },
   { name = "Naxxramas",                     selected = true, tags = { "naxxramas", "naxx" }, minLevel = 60, maxLevel = 60 },
   { name = "Temple of Ahn'Qiraj",           selected = true, tags = { "ahn'qiraj", "ahnqiraj", "aq40", "aq" }, minLevel = 60, maxLevel = 60 },
@@ -134,6 +138,7 @@ DBB2.env.defaultGroups = {
 -- Default profession categories
 -- Each category has: name, selected (default state), tags (matching keywords)
 DBB2.env.defaultProfessions = {
+  { name = "Custom Category",  selected = false, tags = {} },
   { name = "Alchemy",        selected = true, tags = { "alchemist", "alchemy", "alch" } },
   { name = "Blacksmithing",  selected = true, tags = { "blacksmithing", "blacksmith", "bs" } },
   { name = "Enchanting",     selected = true, tags = { "enchanting", "enchanter", "enchant", "ench" } },
@@ -150,6 +155,7 @@ DBB2.env.defaultProfessions = {
 -- Deaths: Tracks player death announcements
 -- Level Ups: Tracks level up announcements
 DBB2.env.defaultHardcore = {
+  { name = "Custom Category", selected = false, tags = {} },
   { name = "Deaths",    selected = true, tags = { "tragedy" } },
   { name = "Level Ups", selected = true, tags = { "reached", "inferno" } },
 }

@@ -189,29 +189,136 @@ function RenderCategoryList(parent, panel, item, x, y)
   -- Filter tags row (for groups/professions)
   local filterRowHeight = 0
   local filterRow = nil
+  local filterSectionHeight = 0
+  local filterHeader = nil
+  local filterSectionHelp = nil
+
+  local customCategoryName = nil
+  local customSectionTitle = nil
+  local customSectionHelpText = nil
+  local customToggleLabel = nil
+  local customToggleTooltipTitle = nil
+  local customToggleTooltipText = nil
+  local customSectionHeight = 0
+  local customHeader = nil
+  local customHelp = nil
+  local customToggle = nil
+  local customInput = nil
+  local customToggleNames = { [0] = "Off", [1] = "On" }
+  local customHeaderHeight = DBB2:ScaleSize(12)
+  local customHeaderGap = DBB2:ScaleSize(2)
+  local customDescGap = DBB2:ScaleSize(SPACING.description)
+  local customSliderHeight = DBB2:ScaleSize(30)
+  local customInputGap = DBB2:ScaleSize(SPACING.widget)
+  local customBottomGap = DBB2:ScaleSize(SPACING.section)
+
+  if categoryType == "groups" or categoryType == "professions" or categoryType == "hardcore" then
+    customCategoryName = "Custom Category"
+    customSectionTitle = "Custom Category"
+    customSectionHelpText = "Enable a custom category and enter the tags used to match it."
+    customToggleLabel = "Enable Custom Category"
+    customToggleTooltipTitle = "Custom Category"
+    customToggleTooltipText = "Enable your own custom category."
+  end
+
+  if customCategoryName then
+    customHeader = DBB2.schema.CreateLabel(container, customSectionTitle, SECTION_FONT_SIZE)
+    customHeader:SetTextColor(hr, hg, hb, 1)
+
+    customHelp = DBB2.schema.CreateLabel(container, customSectionHelpText, FONT_SIZE)
+    customHelp:SetTextColor(0.5, 0.5, 0.5, 1)
+
+    customToggle = DBB2.schema.CreateSlider(nil, container, customToggleLabel, 0, 1, 1, FONT_SIZE)
+    customToggle:SetWidth(DBB2:ScaleSize(DBB2.env.DEFAULT_WIDTH))
+    customToggle.value:SetText(customToggleNames[0])
+    customToggle.label:SetText(customToggleLabel .. ": " .. customToggleNames[0])
+
+    customToggle.slider:SetScript("OnEnter", function()
+      local r, g, b = DBB2:GetHighlightColor()
+      local container = this:GetParent()
+      container.track:SetVertexColor(r, g, b, 1)
+      DBB2.api.ShowTooltip(this, "RIGHT", {{customToggleTooltipTitle, "highlight"}, customToggleTooltipText, {"Tags entered below will be used to match it.", "gray"}})
+    end)
+    customToggle.slider:SetScript("OnLeave", function()
+      local container = this:GetParent()
+      container.track:SetVertexColor(0.2, 0.2, 0.2, 1)
+      DBB2.api.HideTooltip()
+    end)
+
+    customInput = CreateConfigInput(nil, container)
+    customInput:SetHeight(inputHeight)
+    customInput:SetScript("OnEscapePressed", function() this:ClearFocus() end)
+  end
+
+  local categoryHeaderHeight = DBB2:ScaleSize(12)
+  local categoryHeaderGap = DBB2:ScaleSize(2)
+  local categorySectionGap = DBB2:ScaleSize(SPACING.description)
+
+  local categoryHeader = DBB2.schema.CreateLabel(container, "Categories", SECTION_FONT_SIZE)
+  categoryHeader:SetTextColor(hr, hg, hb, 1)
+  categoryHeader:SetPoint("TOPLEFT", container, "TOPLEFT", 0, -filterRowHeight)
+
+  local categoryHelp = DBB2.schema.CreateLabel(container, "Enable categories and edit the tags used to match messages.", FONT_SIZE)
+  categoryHelp:SetTextColor(0.5, 0.5, 0.5, 1)
+  categoryHelp:SetPoint("TOPLEFT", categoryHeader, "BOTTOMLEFT", 0, -categoryHeaderGap)
+  categoryHelp:SetPoint("TOPRIGHT", container, "TOPRIGHT", -DBB2:ScaleSize(5), -filterRowHeight - categoryHeaderHeight - categoryHeaderGap)
   
   if item.showFilterTags then
+    local filterHeaderHeight = DBB2:ScaleSize(12)
+    local filterHeaderGap = DBB2:ScaleSize(2)
+    local filterSectionHelpGap = DBB2:ScaleSize(SPACING.description)
+    local toggleNames = { [0] = "Off", [1] = "On" }
+    local filterSliderHeight = DBB2:ScaleSize(30)
+    local helperHeight = DBB2:ScaleSize(12)
+    local helperGap = DBB2:ScaleSize(2)
+    local inputGap = DBB2:ScaleSize(SPACING.description)
+    local rowBottomGap = DBB2:ScaleSize(SPACING.section)
+
+    filterHeader = DBB2.schema.CreateLabel(container, "Filter Tags", SECTION_FONT_SIZE)
+    filterHeader:SetTextColor(hr, hg, hb, 1)
+
+    filterSectionHelp = DBB2.schema.CreateLabel(container, "Require messages to match one of these tags before categories are checked.", FONT_SIZE)
+    filterSectionHelp:SetTextColor(0.5, 0.5, 0.5, 1)
+
     filterRow = CreateFrame("Frame", nil, container)
-    filterRow:SetHeight(rowHeight)
-    filterRow:SetPoint("TOPLEFT", container, "TOPLEFT", 0, 0)
+    filterRow:SetHeight(filterSliderHeight + helperGap + helperHeight + inputGap + inputHeight + rowBottomGap)
+    filterRow:SetPoint("TOPLEFT", container, "TOPLEFT", 0, -filterSectionHeight)
     filterRow:SetPoint("RIGHT", container, "RIGHT", 0, 0)
     
-    local filterCheck = DBB2.schema.CreateCheckBox(nil, filterRow)
-    filterCheck:SetPoint("LEFT", 0, 0)
-    filterCheck:SetWidth(checkSize)
-    filterCheck:SetHeight(checkSize)
-    filterCheck:SetChecked(DBB2.api.IsFilterTagsEnabled(categoryType))
-    filterCheck.OnChecked = function(checked)
-      DBB2.api.SetFilterTagsEnabled(categoryType, checked)
+    local filterEnabled = DBB2.api.IsFilterTagsEnabled(categoryType) and 1 or 0
+    local filterToggle = DBB2.schema.CreateSlider(nil, filterRow, "Filter Tags", 0, 1, 1, FONT_SIZE)
+    filterToggle:ClearAllPoints()
+    filterToggle:SetPoint("TOPLEFT", filterRow, "TOPLEFT", 0, 0)
+    filterToggle:SetWidth(DBB2:ScaleSize(DBB2.env.DEFAULT_WIDTH))
+    filterToggle:SetValue(filterEnabled)
+    filterToggle.value:SetText(toggleNames[filterEnabled])
+    filterToggle.label:SetText("Filter Tags: " .. toggleNames[filterEnabled])
+    filterToggle.OnValueChanged = function(val)
+      DBB2.api.SetFilterTagsEnabled(categoryType, val == 1)
+      filterToggle.value:SetText(toggleNames[val])
+      filterToggle.label:SetText("Filter Tags: " .. toggleNames[val])
     end
-    
-    local filterLabel = DBB2.schema.CreateLabel(filterRow, "Filter Tags", FONT_SIZE)
-    filterLabel:SetPoint("LEFT", filterCheck, "RIGHT", 8, 0)
-    filterLabel:SetWidth(nameWidth)
-    filterLabel:SetTextColor(hr, hg, hb, 0.9)
+
+    filterToggle.slider:SetScript("OnEnter", function()
+      local r, g, b = DBB2:GetHighlightColor()
+      local container = this:GetParent()
+      container.track:SetVertexColor(r, g, b, 1)
+      DBB2.api.ShowTooltip(this, "RIGHT", {{"Filter Tags", "highlight"}, "When enabled, messages must also match one of these tags.", {"Turn this off to match all tags.", "gray"}})
+    end)
+    filterToggle.slider:SetScript("OnLeave", function()
+      local container = this:GetParent()
+      container.track:SetVertexColor(0.2, 0.2, 0.2, 1)
+      DBB2.api.HideTooltip()
+    end)
+
+    local filterHelp = DBB2.schema.CreateLabel(filterRow, "When enabled, messages must also match one of these tags.", FONT_SIZE_SMALL)
+    filterHelp:SetPoint("TOPLEFT", filterToggle, "BOTTOMLEFT", 0, -helperGap)
+    filterHelp:SetPoint("TOPRIGHT", filterRow, "TOPRIGHT", -DBB2:ScaleSize(5), -filterSliderHeight - helperGap)
+    filterHelp:SetTextColor(0.5, 0.5, 0.5, 1)
+    filterRow.filterHelp = filterHelp
     
     local filterInput = CreateConfigInput(nil, filterRow)
-    filterInput:SetPoint("LEFT", filterLabel, "RIGHT", 5, 0)
+    filterInput:SetPoint("TOPLEFT", filterHelp, "BOTTOMLEFT", 0, -inputGap)
     filterInput:SetPoint("RIGHT", filterRow, "RIGHT", -DBB2:ScaleSize(5), 0)
     filterInput:SetHeight(inputHeight)
     
@@ -228,59 +335,182 @@ function RenderCategoryList(parent, panel, item, x, y)
     filterInput:SetScript("OnEditFocusLost", function()
       DBB2.api.UpdateFilterTags(categoryType, DBB2.api.ParseTagsString(this:GetText()))
     end)
-    filterInput:SetScript("OnEnter", function()
-      local r, g, b = DBB2:GetHighlightColor()
-      this.borderTop:SetTexture(r, g, b, 1)
-      this.borderBottom:SetTexture(r, g, b, 1)
-      this.borderLeft:SetTexture(r, g, b, 1)
-      this.borderRight:SetTexture(r, g, b, 1)
-      DBB2.api.ShowTooltip(this, "RIGHT", {{"Filter Tags", "highlight"}, "Messages must also match one of these.", {"Disable to match all.", "gray"}})
-    end)
-    filterInput:SetScript("OnLeave", function()
-      this.borderTop:SetTexture(0.2, 0.2, 0.2, 1)
-      this.borderBottom:SetTexture(0.2, 0.2, 0.2, 1)
-      this.borderLeft:SetTexture(0.2, 0.2, 0.2, 1)
-      this.borderRight:SetTexture(0.2, 0.2, 0.2, 1)
-      DBB2.api.HideTooltip()
-    end)
     
     panel.filterTagsInput = filterInput
     panel.filterCategoryType = categoryType
-    filterRowHeight = rowHeight + DBB2:ScaleSize(5)
+    filterRowHeight = filterSectionHeight + filterSliderHeight + helperGap + helperHeight + inputGap + inputHeight + rowBottomGap
   end
-  
+
+  local function GetWrappedLabelHeight(label, width)
+    local minHeight = DBB2:ScaleSize(12)
+    if not label or not label.SetWidth then
+      return minHeight
+    end
+    label:SetWidth(width)
+    return math.max(minHeight, math.ceil(label:GetHeight() or 0))
+  end
+
+  local function CreateCategoryRow()
+    local row = CreateFrame("Frame", nil, container)
+    row:SetHeight(rowHeight)
+    row.check = DBB2.schema.CreateCheckBox(nil, row)
+    row.check:SetPoint("LEFT", 0, 0)
+    row.check:SetWidth(checkSize)
+    row.check:SetHeight(checkSize)
+    row.nameLabel = DBB2.schema.CreateLabel(row, "", FONT_SIZE)
+    row.nameLabel:SetPoint("LEFT", row.check, "RIGHT", 8, 0)
+    row.nameLabel:SetWidth(nameWidth)
+    row.tagsInput = CreateConfigInput(nil, row)
+    row.tagsInput:SetPoint("LEFT", row.nameLabel, "RIGHT", 5, 0)
+    row.tagsInput:SetPoint("RIGHT", row, "RIGHT", -DBB2:ScaleSize(5), 0)
+    row.tagsInput:SetHeight(inputHeight)
+    row.tagsInput:SetScript("OnEscapePressed", function() this:ClearFocus() end)
+    return row
+  end
+
+  local function UpdateFilterLayout(contentWidth, helpWidth)
+    local filterSectionHelpHeight
+    local filterHelpHeight
+    local filterHelpWidth
+    local filterRowWidth
+    local topSectionGap
+
+    if not filterHeader or not filterSectionHelp then
+      filterSectionHeight = 0
+      filterRowHeight = 0
+      return 0
+    end
+
+    topSectionGap = DBB2:ScaleSize(SPACING.section)
+    filterSectionHelpHeight = GetWrappedLabelHeight(filterSectionHelp, helpWidth)
+    filterSectionHeight = DBB2:ScaleSize(12) + DBB2:ScaleSize(2) + filterSectionHelpHeight + DBB2:ScaleSize(SPACING.description)
+
+    filterHelpHeight = DBB2:ScaleSize(12)
+    if filterRow then
+      filterRow:SetPoint("TOPLEFT", container, "TOPLEFT", 0, -(topSectionGap + filterSectionHeight))
+      filterRowWidth = filterRow:GetWidth() or contentWidth
+      filterHelpWidth = filterRowWidth - DBB2:ScaleSize(5)
+      if filterHelpWidth < 1 then filterHelpWidth = 1 end
+      if filterRow.filterHelp and filterRow.filterHelp.SetWidth then
+        filterRow.filterHelp:SetWidth(filterHelpWidth)
+        filterHelpHeight = math.max(DBB2:ScaleSize(12), math.ceil(filterRow.filterHelp:GetHeight() or 0))
+      end
+      filterRow:SetHeight(DBB2:ScaleSize(30) + DBB2:ScaleSize(2) + filterHelpHeight + DBB2:ScaleSize(SPACING.description) + inputHeight + DBB2:ScaleSize(SPACING.section))
+    end
+
+    filterRowHeight = topSectionGap + filterSectionHeight + DBB2:ScaleSize(30) + DBB2:ScaleSize(2) + filterHelpHeight + DBB2:ScaleSize(SPACING.description) + inputHeight + DBB2:ScaleSize(SPACING.section)
+    return filterRowHeight
+  end
+
+  local function UpdateCustomSection(customCategory, activeFilterRowHeight, helpWidth)
+    local customHelpHeight
+    local customValue
+
+    customSectionHeight = 0
+    if customHelp then
+      customHelpHeight = GetWrappedLabelHeight(customHelp, helpWidth)
+      customSectionHeight = customHeaderHeight + customHeaderGap + customHelpHeight + customDescGap + customSliderHeight + customInputGap + inputHeight + customBottomGap
+    end
+
+    if not (customHeader and customHelp and customToggle and customInput and customCategory) then
+      if customHeader and customHelp and customToggle and customInput then
+        customHeader:Hide()
+        customHelp:Hide()
+        customToggle:Hide()
+        customInput:Hide()
+      end
+      return 0
+    end
+
+    customHeader:Show()
+    customHelp:Show()
+    customToggle:Show()
+    customInput:Show()
+    customHeader:ClearAllPoints()
+    customHeader:SetPoint("TOPLEFT", container, "TOPLEFT", 0, -activeFilterRowHeight)
+    customHelp:ClearAllPoints()
+    customHelp:SetPoint("TOPLEFT", customHeader, "BOTTOMLEFT", 0, -customHeaderGap)
+    customHelp:SetPoint("TOPRIGHT", container, "TOPRIGHT", -DBB2:ScaleSize(5), -activeFilterRowHeight - customHeaderHeight - customHeaderGap)
+    customToggle:ClearAllPoints()
+    customToggle:SetPoint("TOPLEFT", customHelp, "BOTTOMLEFT", 0, -customDescGap)
+    customValue = customCategory.selected and 1 or 0
+    customToggle:SetValue(customValue)
+    customToggle.value:SetText(customToggleNames[customValue])
+    customToggle.label:SetText(customToggleLabel .. ": " .. customToggleNames[customValue])
+    customToggle.OnValueChanged = function(val)
+      DBB2.api.SetCategorySelected(categoryType, customCategory.name, val == 1)
+      customToggle.value:SetText(customToggleNames[val])
+      customToggle.label:SetText(customToggleLabel .. ": " .. customToggleNames[val])
+    end
+    customInput:ClearAllPoints()
+    customInput:SetPoint("TOPLEFT", customToggle, "BOTTOMLEFT", 0, -customInputGap)
+    customInput:SetPoint("RIGHT", container, "RIGHT", -DBB2:ScaleSize(5), 0)
+    customInput:SetText(DBB2.api.TagsToString(customCategory.tags))
+    customInput:SetScript("OnEnterPressed", function()
+      DBB2.api.UpdateCategoryTags(categoryType, customCategory.name, DBB2.api.ParseTagsString(this:GetText()))
+      this:ClearFocus()
+    end)
+    customInput:SetScript("OnEditFocusLost", function()
+      DBB2.api.UpdateCategoryTags(categoryType, customCategory.name, DBB2.api.ParseTagsString(this:GetText()))
+    end)
+    return customSectionHeight
+  end
+
+  local function UpdateCategoryHeader(activeFilterRowHeight, effectiveCustomHeight)
+    categoryHeader:ClearAllPoints()
+    categoryHeader:SetPoint("TOPLEFT", container, "TOPLEFT", 0, -(activeFilterRowHeight + effectiveCustomHeight))
+    categoryHelp:ClearAllPoints()
+    categoryHelp:SetPoint("TOPLEFT", categoryHeader, "BOTTOMLEFT", 0, -categoryHeaderGap)
+    categoryHelp:SetPoint("TOPRIGHT", container, "TOPRIGHT", -DBB2:ScaleSize(5), -(activeFilterRowHeight + effectiveCustomHeight + categoryHeaderHeight + categoryHeaderGap))
+  end
+
   local function BuildRows()
+    local contentWidth = container:GetWidth() or 0
+    local helpWidth = contentWidth - DBB2:ScaleSize(5)
+    if helpWidth < 1 then helpWidth = 1 end
+
+    local categoryHelpHeight = GetWrappedLabelHeight(categoryHelp, helpWidth)
+    local categorySectionHeight = categoryHeaderHeight + categoryHeaderGap + categoryHelpHeight + categorySectionGap
+    local activeFilterRowHeight = UpdateFilterLayout(contentWidth, helpWidth)
+
     local categories = DBB2.api.GetCategories(categoryType)
     if not categories then
-      totalHeight = filterRowHeight + rowHeight
+      totalHeight = activeFilterRowHeight + customSectionHeight + categorySectionHeight + rowHeight
       container:SetHeight(totalHeight)
       return
     end
-    
-    local currentY = -filterRowHeight
-    
-    for i, cat in ipairs(categories) do
+
+    local visibleCategories = {}
+    local customCategory = nil
+    for _, cat in ipairs(categories) do
+      if customCategoryName and cat.name == customCategoryName then
+        customCategory = cat
+      else
+        table_insert(visibleCategories, cat)
+      end
+    end
+
+    local effectiveCustomHeight = UpdateCustomSection(customCategory, activeFilterRowHeight, helpWidth)
+
+    if filterHeader and filterSectionHelp then
+      filterHeader:Show()
+      filterSectionHelp:Show()
+      filterHeader:ClearAllPoints()
+      filterHeader:SetPoint("TOPLEFT", container, "TOPLEFT", 0, -DBB2:ScaleSize(SPACING.section))
+      filterSectionHelp:ClearAllPoints()
+      filterSectionHelp:SetPoint("TOPLEFT", filterHeader, "BOTTOMLEFT", 0, -2)
+      filterSectionHelp:SetPoint("TOPRIGHT", container, "TOPRIGHT", -DBB2:ScaleSize(5), -(DBB2:ScaleSize(SPACING.section) + DBB2:ScaleSize(12) + 2))
+    end
+
+    UpdateCategoryHeader(activeFilterRowHeight, effectiveCustomHeight)
+
+    local currentY = -(activeFilterRowHeight + effectiveCustomHeight + categorySectionHeight)
+
+    for i, cat in ipairs(visibleCategories) do
       local row = panel.categoryRows[i]
       if not row then
-        row = CreateFrame("Frame", nil, container)
-        row:SetHeight(rowHeight)
+        row = CreateCategoryRow()
         panel.categoryRows[i] = row
-        
-        row.check = DBB2.schema.CreateCheckBox(nil, row)
-        row.check:SetPoint("LEFT", 0, 0)
-        row.check:SetWidth(checkSize)
-        row.check:SetHeight(checkSize)
-        
-        row.nameLabel = DBB2.schema.CreateLabel(row, "", FONT_SIZE)
-        row.nameLabel:SetPoint("LEFT", row.check, "RIGHT", 8, 0)
-        row.nameLabel:SetWidth(nameWidth)
-        
-        row.tagsInput = CreateConfigInput(nil, row)
-        row.tagsInput:SetPoint("LEFT", row.nameLabel, "RIGHT", 5, 0)
-        row.tagsInput:SetPoint("RIGHT", row, "RIGHT", -DBB2:ScaleSize(5), 0)
-        row.tagsInput:SetHeight(inputHeight)
-        
-        row.tagsInput:SetScript("OnEscapePressed", function() this:ClearFocus() end)
       end
       
       row:ClearAllPoints()
@@ -311,7 +541,7 @@ function RenderCategoryList(parent, panel, item, x, y)
     
     -- Hide extra rows
     local catCount = 0
-    for _ in ipairs(categories) do catCount = catCount + 1 end
+    for _ in ipairs(visibleCategories) do catCount = catCount + 1 end
     local rowCount = 0
     for _ in ipairs(panel.categoryRows) do rowCount = rowCount + 1 end
     
@@ -319,7 +549,7 @@ function RenderCategoryList(parent, panel, item, x, y)
       if panel.categoryRows[i] then panel.categoryRows[i]:Hide() end
     end
     
-    totalHeight = filterRowHeight + (catCount * rowHeight)
+    totalHeight = activeFilterRowHeight + effectiveCustomHeight + categorySectionHeight + (catCount * rowHeight)
     if totalHeight < rowHeight then totalHeight = rowHeight end
     container:SetHeight(totalHeight)
   end
