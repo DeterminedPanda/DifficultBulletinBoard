@@ -13,6 +13,38 @@ local ipairs = ipairs
 local pcall = pcall
 local getglobal = getglobal
 
+-- [ ExtractFormattedMessageContent ]
+-- Strips the channel/sender wrappers from a rendered chat line so filtering uses
+-- the same plain message body that AddMessage receives from chat events.
+-- 'message'    [string]        the formatted message from the chat frame
+-- return:      [string]        plain message content
+-- return:      [string|nil]    extracted sender name, if present
+local function ExtractFormattedMessageContent(message)
+  if not message then return "", nil end
+  
+  local content = message
+  
+  -- Remove a single leading channel block such as "[5. World] ", "[5] ", or "[H] ".
+  content = string_gsub(content, "^%[[^%]]+%]%s*", "", 1)
+  
+  -- Extract "[Sender]: message"
+  local _, _, sender, body = string_find(content, "^%[([^%]]+)%]%s*:%s*(.*)$")
+  if sender then
+    return body or "", sender
+  end
+  
+  -- Fallback for formats like "Sender: message"
+  _, _, sender, body = string_find(content, "^([^:]+):%s*(.*)$")
+  if sender then
+    sender = string_gsub(sender, "^%s*(.-)%s*$", "%1")
+    if not string_find(sender, "^%d+$") and sender ~= "H" and sender ~= "" then
+      return body or "", sender
+    end
+  end
+  
+  return content, nil
+end
+
 -- =====================
 -- CHAT FILTER DETECTION
 -- =====================
@@ -157,9 +189,10 @@ end
 -- IMPORTANT: Never hides system messages (like /who results) even if they match category patterns
 -- IMPORTANT: Only filters messages from World, Hardcore, or Trade channels
 -- IMPORTANT: Never filters the player's own messages
-function DBB2.api.ShouldHideFromChat(message, sender)
+function DBB2.api.ShouldHideFromChat(message, sender, matchMessage)
   local mode = DBB2_Config.hideFromChat or 0
   local hideBlacklisted = DBB2.api.IsBlacklistHideFromChatEnabled()
+  local textToMatch = matchMessage or message or ""
   
   -- If both hideFromChat and hideBlacklisted are disabled, nothing to filter
   if (mode == 0 or mode == false) and not hideBlacklisted then
@@ -186,7 +219,7 @@ function DBB2.api.ShouldHideFromChat(message, sender)
   
   -- Check blacklist (hide if blacklist.hideFromChat is enabled, independent of hideFromChat mode)
   if hideBlacklisted and DBB2.api.IsMessageBlacklisted then
-    local blocked = DBB2.api.IsMessageBlacklisted(message, sender)
+    local blocked = DBB2.api.IsMessageBlacklisted(textToMatch, sender)
     if blocked then
       return true
     end
@@ -206,7 +239,7 @@ function DBB2.api.ShouldHideFromChat(message, sender)
     local categories = DBB2.api.GetCategories(categoryType)
     if categories then
       for _, cat in ipairs(categories) do
-        if DBB2.api.MatchMessageToCategory(message, cat, ignoreSelected, categoryType) then
+        if DBB2.api.MatchMessageToCategory(textToMatch, cat, ignoreSelected, categoryType) then
           matchesCategory = true
           break
         end
@@ -225,13 +258,7 @@ function DBB2.api.ShouldHideFromChat(message, sender)
   -- This catches the case where a duplicate comes in after the original was already stored
   -- Extract just the message content (after sender) for duplicate comparison
   if DBB2.api.IsDuplicateMessage then
-    local msgContent = message
-    -- Remove channel prefix like "[5. World] " or "5. World "
-    msgContent = string_gsub(msgContent, "^%[?%d+%.%s*%w+%]?%s*", "")
-    -- Remove sender prefix like "[Mam]: " or "Mam: "
-    msgContent = string_gsub(msgContent, "^%[?[^%]:]+%]?:%s*", "")
-    
-    if DBB2.api.IsDuplicateMessage(msgContent, sender) then
+    if DBB2.api.IsDuplicateMessage(textToMatch, sender) then
       return true
     end
   end
@@ -286,7 +313,8 @@ function DBB2.api.SetupChatFilter()
           local hideBlacklistedEnabled = DBB2_Config and DBB2_Config.blacklist and DBB2_Config.blacklist.hideFromChat
           
           if msg and (hideFromChatEnabled or hideBlacklistedEnabled) then
-            -- Extract the actual message text (remove color codes and sender info for matching)
+            -- Normalize the formatted chat line into the same plain message body
+            -- used by CHAT_MSG_* events before applying blacklist/category checks.
             local cleanMsg = msg
             -- Remove color codes |cXXXXXXXX and |r
             cleanMsg = string_gsub(cleanMsg, "|c%x%x%x%x%x%x%x%x", "")
@@ -294,30 +322,18 @@ function DBB2.api.SetupChatFilter()
             -- Remove hyperlinks |H[player:NAME]|h[NAME]|h -> NAME
             cleanMsg = string_gsub(cleanMsg, "|H[^|]*|h([^|]*)|h", "%1")
             
+            local msgContent, extractedSender = ExtractFormattedMessageContent(cleanMsg)
+            
             -- Try to extract sender name from message format
             -- World format: "[5] [Sender]: message" (number = channel)
             -- Hardcore format: "[H] [Sender]: message"
             -- Guild format: "[Sender]: message"
             local sender = nil
             
-            -- First try to match channel + sender format: [Channel/Number] [Sender]:
-            -- This handles "[5] [Name]:" and "[H] [Name]:"
-            local _, _, extractedSender = string_find(cleanMsg, "^%[[^%]]+%]%s*%[([^%]]+)%]%s*:")
-            if extractedSender then
-              sender = extractedSender
-            else
-              -- Try simple [Sender]: format (guild chat, etc.)
-              _, _, extractedSender = string_find(cleanMsg, "^%[([^%]]+)%]%s*:")
-              if extractedSender then
-                -- Make sure we didn't grab a channel number like "5" or "H"
-                if not string_find(extractedSender, "^%d+$") and extractedSender ~= "H" then
-                  sender = extractedSender
-                end
-              end
-            end
+            sender = extractedSender
             
             -- Wrap in pcall to prevent errors from breaking chat
-            local success, shouldHide = pcall(DBB2.api.ShouldHideFromChat, cleanMsg, sender)
+            local success, shouldHide = pcall(DBB2.api.ShouldHideFromChat, cleanMsg, sender, msgContent)
             if success and shouldHide then
               return  -- Don't show this message
             end

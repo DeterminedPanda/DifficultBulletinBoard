@@ -480,8 +480,9 @@ end
 -- @param category       [table]   Category object with .selected, .tags, ._tagsLower, ._tagsLen
 -- @param ignoreSelected [boolean] If true, skip the .selected check (for mode 2 filtering)
 -- @param categoryType   [string]  Optional: "groups", "professions", or "hardcore" for filter tag checking
+-- @param ignoreFilterTags [boolean] Optional: if true, skip the extra filter tag gate
 -- @return               [boolean] true if message matches the category
-function DBB2.api.MatchMessageToCategory(message, category, ignoreSelected, categoryType)
+function DBB2.api.MatchMessageToCategory(message, category, ignoreSelected, categoryType, ignoreFilterTags)
   if not category then
     return false
   end
@@ -507,7 +508,7 @@ function DBB2.api.MatchMessageToCategory(message, category, ignoreSelected, cate
   
   -- Check filter tags first (if enabled for this category type)
   -- This is an AND condition - message must match BOTH filter tags AND category tags
-  if categoryType and (categoryType == "groups" or categoryType == "professions") then
+  if not ignoreFilterTags and categoryType and (categoryType == "groups" or categoryType == "professions") then
     if not DBB2.api.MatchFilterTags(message, categoryType) then
       return false
     end
@@ -654,8 +655,9 @@ end
 -- Determines which categories a message belongs to across all category types.
 -- Checks groups, professions, and hardcore categories.
 --
--- @param message        [string]  The message text to categorize
--- @param ignoreSelected [boolean] If true, match against all categories regardless of enabled state
+-- @param message          [string]  The message text to categorize
+-- @param ignoreSelected   [boolean] If true, match against all categories regardless of enabled state
+-- @param ignoreFilterTags [boolean] If true, skip group/profession filter tag checks
 -- @return               [table]   Result table with structure:
 --                                 {
 --                                   groups = {string...},      -- Array of matched group category names
@@ -663,7 +665,7 @@ end
 --                                   hardcore = {string...},    -- Array of matched hardcore category names
 --                                   isHardcore = boolean       -- true if any hardcore category matched
 --                                 }
-function DBB2.api.CategorizeMessage(message, ignoreSelected)
+function DBB2.api.CategorizeMessage(message, ignoreSelected, ignoreFilterTags)
   -- Create fresh result table each call (safer than pooling)
   local result = {
     groups = {},
@@ -677,21 +679,21 @@ function DBB2.api.CategorizeMessage(message, ignoreSelected)
   
   -- Check groups (pass categoryType for filter tag checking)
   for _, cat in ipairs(DBB2_Config.categories.groups or {}) do
-    if DBB2.api.MatchMessageToCategory(message, cat, ignoreSelected, "groups") then
+    if DBB2.api.MatchMessageToCategory(message, cat, ignoreSelected, "groups", ignoreFilterTags) then
       table_insert(result.groups, cat.name)
     end
   end
   
   -- Check professions (pass categoryType for filter tag checking)
   for _, cat in ipairs(DBB2_Config.categories.professions or {}) do
-    if DBB2.api.MatchMessageToCategory(message, cat, ignoreSelected, "professions") then
+    if DBB2.api.MatchMessageToCategory(message, cat, ignoreSelected, "professions", ignoreFilterTags) then
       table_insert(result.professions, cat.name)
     end
   end
   
   -- Check hardcore (no filter tags for hardcore)
   for _, cat in ipairs(DBB2_Config.categories.hardcore or {}) do
-    if DBB2.api.MatchMessageToCategory(message, cat, ignoreSelected, "hardcore") then
+    if DBB2.api.MatchMessageToCategory(message, cat, ignoreSelected, "hardcore", ignoreFilterTags) then
       table_insert(result.hardcore, cat.name)
       result.isHardcore = true
     end

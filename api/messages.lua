@@ -127,8 +127,9 @@ end
 -- Hardcore messages are excluded from this deduplication
 -- 'sender'         [string]        the sender name
 -- 'newCategories'  [table]         categories the new message matches (from CategorizeMessage)
+-- 'ignoreFilterTags' [boolean]     if true, compare categories without the extra filter tag gate
 -- return:          [boolean]       true if a message was removed
-function DBB2.api.RemovePreviousMessageFromSameSender(sender, newCategories)
+function DBB2.api.RemovePreviousMessageFromSameSender(sender, newCategories, ignoreFilterTags)
   if not sender or not newCategories then return false end
   
   -- Skip deduplication for hardcore messages
@@ -158,7 +159,7 @@ function DBB2.api.RemovePreviousMessageFromSameSender(sender, newCategories)
     local msg = DBB2.messages[i]
     if msg and string_lower(msg.sender or "") == lowerSender then
       -- Check if this old message matches any of the same categories
-      local oldCategories = DBB2.api.CategorizeMessage(msg.message, true)
+      local oldCategories = DBB2.api.CategorizeMessage(msg.message, true, ignoreFilterTags)
       if oldCategories and not oldCategories.isHardcore then
         local hasOverlap = false
         
@@ -209,14 +210,24 @@ function DBB2.api.AddMessage(message, sender, channel, msgType)
   -- Clean up expired messages first
   DBB2.api.RemoveExpiredMessages()
   
+  -- Categorize twice:
+  -- 1) fullCategories respects filter tags and controls what is actually stored/shown
+  -- 2) baseCategories ignores filter tags so a newer reworded message can still clear
+  --    an older same-sender entry for the same run instead of leaving stale GUI data behind
+  local fullCategories = DBB2.api.CategorizeMessage(message, true)
+  local baseCategories = DBB2.api.CategorizeMessage(message, true, true)
+  
   -- Check if message matches any category (ignoring enabled state)
   -- This ensures duplicate filter works for all category patterns
-  local categories = DBB2.api.CategorizeMessage(message, true)  -- true = ignoreSelected
+  local categories = fullCategories
   local matchesAnyCategory = (table_getn(categories.groups) > 0) or 
                               (table_getn(categories.professions) > 0) or 
                               (table_getn(categories.hardcore) > 0)
+  local matchesBaseCategory = (table_getn(baseCategories.groups) > 0) or
+                              (table_getn(baseCategories.professions) > 0) or
+                              (table_getn(baseCategories.hardcore) > 0)
   
-  if not matchesAnyCategory then
+  if not matchesBaseCategory then
     return  -- Message doesn't match any category pattern, ignore it
   end
   
@@ -240,10 +251,19 @@ function DBB2.api.AddMessage(message, sender, channel, msgType)
     return
   end
   
+  -- Clear stale messages from the same sender using base category overlap so an
+  -- updated line can replace an older GUI entry even if it no longer passes the
+  -- optional filter tag requirement.
+  DBB2.api.RemovePreviousMessageFromSameSender(sender, baseCategories, true)
+  
+  -- If the message no longer passes the active filter tag gate, stop after clearing
+  -- any stale older entry. We do not store/show the new line in the GUI.
+  if not matchesAnyCategory then
+    return
+  end
+  
   -- Remove previous message from same sender in same category (Groups/Professions only)
   -- This ensures only the most recent message per sender is shown
-  DBB2.api.RemovePreviousMessageFromSameSender(sender, categories)
-  
   -- Check for notifications before storing (only for selected categories)
   -- Uses DBB2.api.CheckAndNotify from notifications.lua
   -- Pass msgType so system messages only trigger hardcore notifications
