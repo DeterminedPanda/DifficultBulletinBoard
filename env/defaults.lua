@@ -97,7 +97,7 @@ DBB2.env.defaultGroups = {
   { name = "Temple of Ahn'Qiraj",           selected = true, tags = { "ahn'qiraj", "ahnqiraj", "aq40", "aq" }, minLevel = 60, maxLevel = 60 },
   { name = "Emerald Sanctum",               selected = true, tags = { "emerald", "sanctum", "es", "esnormal", "eshardcore" }, minLevel = 60, maxLevel = 60 },
   { name = "Blackwing Lair",                selected = true, tags = { "blackwing", "bwl" }, minLevel = 60, maxLevel = 60 },
-  { name = "Lower Karazhan Halls",          selected = true, tags = { "karazhan", "kara", "kara10", "k10" }, minLevel = 60, maxLevel = 60 },
+  { name = "Lower Karazhan Halls",          selected = true, tags = { "karazhan", "kara", "kz", "kara10", "k10" }, minLevel = 60, maxLevel = 60 },
   { name = "Onyxia's Lair",                 selected = true, tags = { "onyxia", "ony", "onyx" }, minLevel = 60, maxLevel = 60 },
   { name = "Molten Core",                   selected = true, tags = { "molten", "mc" }, minLevel = 60, maxLevel = 60 },
   { name = "Ruins of Ahn'Qiraj",            selected = true, tags = { "ruins", "ahn'qiraj", "ahnqiraj", "aq20", "aq" }, minLevel = 60, maxLevel = 60 },
