@@ -470,7 +470,7 @@ end
 --
 -- Features:
 -- - Supports wildcard patterns: * (any chars), ? (one char), [abc], [a-z], [!abc], {a,b,c}
--- - Matches tags followed by 1-2 digits for raid sizes (e.g., "zg15", "ony12")
+-- - Matches tags followed by 1-2 digits or "x" + digits (e.g., "zg15", "ony12", "bmx2")
 -- - Special handling for "aq" tag to distinguish Temple (40) from Ruins (20)
 -- - Special handling for "kara" tag to distinguish Upper (40) from Lower (10)
 -- - Applies tag exclusion rules to prevent false positives (e.g., "ST" for server time)
@@ -559,8 +559,10 @@ function DBB2.api.MatchMessageToCategory(message, category, ignoreSelected, cate
         -- Check if boundaries are word boundaries (not letters or numbers)
         local validBefore = (foundPos == 1) or not string_find(charBefore, "[%w]")
 
-        -- For validAfter, we now allow 1-2 trailing digits (raid group sizes like "zg15", "ony12")
-        -- Special case: "aq" tag should only match "aq40" to distinguish from aq20 (Ruins)
+        -- For validAfter, we allow 1-2 trailing digits (raid group sizes like
+        -- "zg15", "ony12") and also "x" + digits for run-count shorthand like "bmx2".
+        -- Special case: "aq" tag should only use direct numeric suffixes to
+        -- distinguish Temple (40) from Ruins (20).
         local validAfter = false
         if afterPos > msgLen then
           -- End of message - valid
@@ -630,6 +632,37 @@ function DBB2.api.MatchMessageToCategory(message, category, ignoreSelected, cate
               end
             else
               -- For all other tags, allow any 1-2 digit suffix
+              validAfter = true
+            end
+          end
+        elseif charAfter == "x" then
+          -- Support shorthand like "bmx2" or "mcx3" where the tag is followed by
+          -- a run-count marker instead of a direct size suffix.
+          local digitPos = afterPos + 1
+          local digit1 = ""
+          local digit2 = ""
+          local charAfterDigits = ""
+          
+          if digitPos <= msgLen then
+            digit1 = string_sub(lowerMsg, digitPos, digitPos)
+          end
+          
+          if string_find(digit1, "%d") then
+            digitPos = digitPos + 1
+            
+            if digitPos <= msgLen then
+              local nextChar = string_sub(lowerMsg, digitPos, digitPos)
+              if string_find(nextChar, "%d") then
+                digit2 = nextChar
+                digitPos = digitPos + 1
+              end
+            end
+            
+            if digitPos <= msgLen then
+              charAfterDigits = string_sub(lowerMsg, digitPos, digitPos)
+            end
+            
+            if digitPos > msgLen or not string_find(charAfterDigits, "[%w]") then
               validAfter = true
             end
           end
