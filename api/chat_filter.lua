@@ -45,6 +45,46 @@ local function ExtractFormattedMessageContent(message)
   return content, nil
 end
 
+-- [ IsEnabledChatSource ]
+-- Checks whether the current chat event source is one DBB2 is actively watching.
+-- This keeps hide-from-chat aligned with the Channels config tab for all enabled
+-- source types, not just numbered chat channels.
+-- 'message'    [string]        formatted chat line (used for fallback parsing)
+-- return:      [boolean]       true if this line comes from an enabled source
+local function IsEnabledChatSource(message)
+  if event == "CHAT_MSG_CHANNEL" then
+    local channelName = arg9
+    return channelName and DBB2.api.IsChannelWhitelisted and DBB2.api.IsChannelWhitelisted(channelName) or false
+  end
+  
+  if event == "CHAT_MSG_GUILD" then
+    return DBB2.api.IsChannelMonitored and DBB2.api.IsChannelMonitored("Guild") or false
+  end
+  
+  if event == "CHAT_MSG_SAY" then
+    return DBB2.api.IsChannelMonitored and DBB2.api.IsChannelMonitored("Say") or false
+  end
+  
+  if event == "CHAT_MSG_YELL" then
+    return DBB2.api.IsChannelMonitored and DBB2.api.IsChannelMonitored("Yell") or false
+  end
+  
+  if event == "CHAT_MSG_PARTY" then
+    return DBB2.api.IsChannelMonitored and DBB2.api.IsChannelMonitored("Party") or false
+  end
+  
+  if event == "CHAT_MSG_WHISPER" then
+    return DBB2.api.IsChannelMonitored and DBB2.api.IsChannelMonitored("Whisper") or false
+  end
+  
+  if event == "CHAT_MSG_HARDCORE" then
+    return DBB2.api.IsChannelMonitored and DBB2.api.IsChannelMonitored("Hardcore") or false
+  end
+  
+  -- Fallback when the line is not being added during a live chat event.
+  return DBB2.api.IsFilterableChannel(message)
+end
+
 -- =====================
 -- CHAT FILTER DETECTION
 -- =====================
@@ -110,12 +150,14 @@ end
 
 -- [ IsFilterableChannel ]
 -- Checks if a formatted chat message is from a channel that should be filtered
--- Filterable channels: World, Hardcore, Trade
+-- Filterable channels: addon-whitelisted chat channels such as World, General,
+-- LookingForGroup, Trade, Hardcore, and custom channels the addon monitors.
 -- Custom channel format: "[X] [PlayerName]: message" (X = channel number only)
 -- Built-in channel format: "[X. ChannelName] [PlayerName]: message" (number + dot + name)
 -- Trade can also be "[2. Trade - City]" format
 -- Hardcore channel format: "[H] [PlayerName]: message"
--- Uses GetChannelName API to resolve channel number to name for custom channels
+-- Uses the channel whitelist so chat hiding matches what DBB2 actually captures
+-- from CHAT_MSG_CHANNEL.
 -- 'message'    [string]        the formatted message from chat frame
 -- return:      [boolean]       true if from a filterable channel
 function DBB2.api.IsFilterableChannel(message)
@@ -128,36 +170,23 @@ function DBB2.api.IsFilterableChannel(message)
     return true
   end
   
-  -- Check for built-in channel format containing "trade", "world", or "hardcore"
-  -- Examples: "[2. Trade]", "[2. Trade - Orgrimmar]", "[1. General - Durotar]"
-  -- Simply check if the message starts with a channel bracket containing our keywords
-  if string_find(lowerMsg, "^%[%d+%.") then
-    -- Message starts with "[X." format - check for our target channels
-    if string_find(lowerMsg, "^%[%d+%.%s*trade") then
-      return true
-    end
-    if string_find(lowerMsg, "^%[%d+%.%s*world") then
-      return true
-    end
-    if string_find(lowerMsg, "^%[%d+%.%s*hardcore") then
+  -- Check built-in channel format: "[X. ChannelName]"
+  local _, _, namedChannel = string_find(message, "^%[%d+%.%s*([^%]]+)%]")
+  if namedChannel then
+    if DBB2.api.IsChannelWhitelisted and DBB2.api.IsChannelWhitelisted(namedChannel) then
       return true
     end
   end
   
   -- Check for custom channel format: "[5]" at the start (number only, no dot)
-  -- This format is used by custom channels like World on private servers
-  -- Also handles built-in channels after color code stripping (e.g., Trade shows as [2])
+  -- This format is used by custom channels on private servers and also covers
+  -- chat frames that render only the channel number.
   local _, _, channelNum = string_find(message, "^%[(%d+)%]")
   if channelNum then
     -- GetChannelName returns: id, name (we need the second return value)
     local _, channelName = GetChannelName(tonumber(channelNum))
-    if channelName then
-      local lowerChannel = string_lower(channelName)
-      -- Filter World, Hardcore, and Trade channels
-      -- Use string_find because channel names can include zone (e.g., "Trade - City")
-      if string_find(lowerChannel, "^world") or string_find(lowerChannel, "^hardcore") or string_find(lowerChannel, "^trade") then
-        return true
-      end
+    if channelName and DBB2.api.IsChannelWhitelisted and DBB2.api.IsChannelWhitelisted(channelName) then
+      return true
     end
   end
   
@@ -187,7 +216,7 @@ end
 -- Also hides blacklisted messages when blacklist.hideFromChat is enabled (independent of hideFromChat mode)
 -- Also hides duplicates when hideFromChat is enabled
 -- IMPORTANT: Never hides system messages (like /who results) even if they match category patterns
--- IMPORTANT: Only filters messages from World, Hardcore, or Trade channels
+-- IMPORTANT: Only filters messages from sources enabled in the Channels tab
 -- IMPORTANT: Never filters the player's own messages
 -- IMPORTANT: Category hiding intentionally ignores optional filter tags so broad
 -- group/profession tags like "dm" or "mc" can still be suppressed from chat.
@@ -207,9 +236,8 @@ function DBB2.api.ShouldHideFromChat(message, sender, matchMessage)
     return false
   end
   
-  -- CRITICAL: Only filter messages from filterable channels (World, Hardcore, Trade)
-  -- Guild chat, party chat, whispers, etc. should never be filtered
-  if not DBB2.api.IsFilterableChannel(message) then
+  -- CRITICAL: Only filter messages from sources enabled in the Channels tab
+  if not IsEnabledChatSource(message) then
     return false
   end
   
