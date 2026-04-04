@@ -189,6 +189,8 @@ end
 -- IMPORTANT: Never hides system messages (like /who results) even if they match category patterns
 -- IMPORTANT: Only filters messages from World, Hardcore, or Trade channels
 -- IMPORTANT: Never filters the player's own messages
+-- IMPORTANT: Category hiding intentionally ignores optional filter tags so broad
+-- group/profession tags like "dm" or "mc" can still be suppressed from chat.
 function DBB2.api.ShouldHideFromChat(message, sender, matchMessage)
   local mode = DBB2_Config.hideFromChat or 0
   local hideBlacklisted = DBB2.api.IsBlacklistHideFromChatEnabled()
@@ -230,22 +232,32 @@ function DBB2.api.ShouldHideFromChat(message, sender, matchMessage)
     return false
   end
   
-  -- Check if message matches categories
-  local categoryTypes = {"groups", "professions", "hardcore"}
   local ignoreSelected = (mode == 2)  -- Mode 2 ignores selected state
   local matchesCategory = false
-  
-  for _, categoryType in ipairs(categoryTypes) do
-    local categories = DBB2.api.GetCategories(categoryType)
-    if categories then
-      for _, cat in ipairs(categories) do
-        if DBB2.api.MatchMessageToCategory(textToMatch, cat, ignoreSelected, categoryType) then
-          matchesCategory = true
-          break
+
+  -- Hide-from-chat should be broader than the optional bulletin board filter tag
+  -- gate. The GUI/storage path can still require LF/LFG/LFM style tags, but chat
+  -- suppression should catch obvious run keywords on their own.
+  if DBB2.api.CategorizeMessage then
+    local categories = DBB2.api.CategorizeMessage(textToMatch, ignoreSelected, true)
+    matchesCategory =
+      (categories.groups and categories.groups[1] ~= nil) or
+      (categories.professions and categories.professions[1] ~= nil) or
+      (categories.hardcore and categories.hardcore[1] ~= nil)
+  else
+    local categoryTypes = {"groups", "professions", "hardcore"}
+    for _, categoryType in ipairs(categoryTypes) do
+      local categories = DBB2.api.GetCategories(categoryType)
+      if categories then
+        for _, cat in ipairs(categories) do
+          if DBB2.api.MatchMessageToCategory(textToMatch, cat, ignoreSelected, categoryType, true) then
+            matchesCategory = true
+            break
+          end
         end
       end
+      if matchesCategory then break end
     end
-    if matchesCategory then break end
   end
   
   -- If message matches a category, also hide duplicates
