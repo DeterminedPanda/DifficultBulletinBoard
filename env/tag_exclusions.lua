@@ -9,6 +9,7 @@ DBB2.env = DBB2.env or {}
 
 -- Localize frequently used globals for performance
 local string_find = string.find
+local string_lower = string.lower
 local string_sub = string.sub
 local string_len = string.len
 local ipairs = ipairs
@@ -20,15 +21,71 @@ local ipairs = ipairs
 -- This table defines exclusion rules to prevent false positives.
 --
 -- Format: tagExclusions[tag] = { check functions that return true if match should be REJECTED }
--- Each function receives: (lowerMsg, foundPos, tagLen)
+-- Each function receives: (lowerMsg, foundPos, tagLen, category)
 --   lowerMsg  = lowercase message string
 --   foundPos  = position where tag was found
 --   tagLen    = length of the tag
+--   category  = category table currently being evaluated
 --
 -- Return true to REJECT the match (false positive), false to allow it.
 -- =====================================================
 
 DBB2.env.tagExclusions = {}
+
+local function HasWholeWordInRange(lowerMsg, word, rangeStart, rangeEnd)
+  local msgLen = string_len(lowerMsg)
+  local wordLen = string_len(word)
+  local searchPos = rangeStart
+
+  if msgLen == 0 then return false end
+  if rangeStart < 1 then rangeStart = 1 end
+  if rangeEnd > msgLen then rangeEnd = msgLen end
+  if rangeStart > rangeEnd then return false end
+
+  searchPos = rangeStart
+
+  while true do
+    local foundWordPos = string_find(lowerMsg, word, searchPos, true)
+    if not foundWordPos or foundWordPos > rangeEnd then
+      return false
+    end
+
+    local wordEndPos = foundWordPos + wordLen - 1
+    if wordEndPos <= rangeEnd then
+      local charBefore = ""
+      local charAfter = ""
+
+      if foundWordPos > 1 then
+        charBefore = string_sub(lowerMsg, foundWordPos - 1, foundWordPos - 1)
+      end
+      if wordEndPos < msgLen then
+        charAfter = string_sub(lowerMsg, wordEndPos + 1, wordEndPos + 1)
+      end
+
+      if ((foundWordPos == 1) or not string_find(charBefore, "[%w]")) and
+         ((wordEndPos == msgLen) or not string_find(charAfter, "[%w]")) then
+        return true
+      end
+    end
+
+    searchPos = foundWordPos + 1
+  end
+end
+
+local dmDirectionalWords = { "east", "west", "north" }
+
+local function HasDireMaulWingContext(lowerMsg, foundPos, tagLen)
+  local rangeStart = foundPos - 6
+  local rangeEnd = foundPos + tagLen + 8
+
+  for _, word in ipairs(dmDirectionalWords) do
+    if HasWholeWordInRange(lowerMsg, word, rangeStart, rangeEnd) then
+      return true
+    end
+  end
+
+  return false
+end
 
 -- [ ST exclusion ]
 -- "ST" is a tag for Sunken Temple, but also commonly used for "Server Time"
@@ -92,7 +149,7 @@ DBB2.env.tagExclusions["st"] = {
 -- Reject matches like "DM me", "DM us" (direct message me/us)
 -- Also reject "DM:" patterns (DM:E, DM:W, DM:N are Dire Maul wings, not generic DM)
 DBB2.env.tagExclusions["dm"] = {
-  function(lowerMsg, foundPos, tagLen)
+  function(lowerMsg, foundPos, tagLen, category)
     local msgLen = string_len(lowerMsg)
     local afterPos = foundPos + tagLen
     
@@ -102,6 +159,16 @@ DBB2.env.tagExclusions["dm"] = {
       local charAfter = string_sub(lowerMsg, afterPos, afterPos)
       if charAfter == ":" then
         return true  -- "DM:" - reject generic dm match, let specific dm:e/dm:w/dm:n tags handle it
+      end
+    end
+
+    -- Reject generic "dm" for The Deadmines when a Dire Maul wing word
+    -- appears nearby, e.g. "dm east", "east dm", "dm north".
+    if category and category.name then
+      local catNameLower = string_lower(category.name)
+      if string_find(catNameLower, "deadmines", 1, true) and
+         HasDireMaulWingContext(lowerMsg, foundPos, tagLen) then
+        return true
       end
     end
     
@@ -149,8 +216,9 @@ DBB2.env.tagExclusions["dm"] = {
 -- @param lowerMsg  [string] The lowercase message string
 -- @param foundPos  [number] Position where tag was found
 -- @param tagLen    [number] Length of the tag
+-- @param category  [table]  Category currently being evaluated (optional)
 -- @return          [boolean] true if match should be rejected, false if valid
-function DBB2.env.IsTagExcluded(tag, lowerMsg, foundPos, tagLen)
+function DBB2.env.IsTagExcluded(tag, lowerMsg, foundPos, tagLen, category)
   -- Global exclusion: reject matches inside hyperlink brackets |h[...]|h
   -- This prevents item/spell/quest links like [Maul] from matching tags
   -- Only excludes REAL hyperlinks (with |h prefix), not manually typed [brackets]
@@ -197,7 +265,7 @@ function DBB2.env.IsTagExcluded(tag, lowerMsg, foundPos, tagLen)
   if not exclusions then return false end
   
   for _, checkFunc in ipairs(exclusions) do
-    if checkFunc(lowerMsg, foundPos, tagLen) then
+    if checkFunc(lowerMsg, foundPos, tagLen, category) then
       return true  -- Match should be rejected
     end
   end

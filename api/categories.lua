@@ -670,7 +670,7 @@ function DBB2.api.MatchMessageToCategory(message, category, ignoreSelected, cate
 
         if validBefore and validAfter then
           -- Check tag exclusions for false positives (uses DBB2.env.IsTagExcluded)
-          if not DBB2.env.IsTagExcluded(lowerTag, lowerMsg, foundPos, tagLen) then
+          if not DBB2.env.IsTagExcluded(lowerTag, lowerMsg, foundPos, tagLen, category) then
             return true
           end
         end
