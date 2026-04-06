@@ -740,6 +740,10 @@ DBB2:RegisterModule("gui", function()
               
               catFrame.bellBtn:SetScript("OnClick", function()
                 local isEnabled = DBB2.api.IsNotificationEnabled(this.categoryType, this.categoryName)
+                if isEnabled and IsShiftKeyDown() then
+                  DBB2.api.DisableAllNotifications()
+                  return
+                end
                 DBB2.api.SetNotificationEnabled(this.categoryType, this.categoryName, not isEnabled)
                 panel.UpdateCategories()
               end)

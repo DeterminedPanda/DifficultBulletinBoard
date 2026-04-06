@@ -221,6 +221,7 @@ DBB2:RegisterModule("config", function()
     
     { type = "section", label = "Notifications" },
     { type = "description", text = "Choose when notifications appear and how they get your attention.", fontSize = 9 },
+    { type = "description", text = "Tip: Shift-click an active bell to turn off all active notifications.", fontSize = 9 },
     { type = "slider", key = "notificationMode", label = "Mode", min = 0, max = 3, step = 1,
       valueLabels = {[0] = "Off", [1] = "Chat", [2] = "Raid Warning", [3] = "Chat & Raid Warning"},
       tooltip = {{"Notification Mode", "highlight"}, "Choose how notifications are shown."},
