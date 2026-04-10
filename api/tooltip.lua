@@ -7,6 +7,7 @@ local ipairs = ipairs
 local type = type
 local math_min = math.min
 local math_max = math.max
+local math_floor = math.floor
 
 -- [ InitTooltip ]
 -- Creates the shared tooltip frame
@@ -61,6 +62,7 @@ function DBB2.api.ShowTooltip(owner, anchor, lines)
   local padding = DBB2:ScaleSize(8)
   local spacing = DBB2:ScaleSize(2)
   local fontSize = DBB2:GetFontSize(10)
+  local maxLineWidth = DBB2:ScaleSize(260)
   local hr, hg, hb = DBB2:GetHighlightColor()
   local lineCount = 0
   
@@ -92,6 +94,7 @@ function DBB2.api.ShowTooltip(owner, anchor, lines)
     
     local line = tooltip.lines[i]
     line:SetFont("Fonts\\FRIZQT__.TTF", fontSize)
+    line:SetWidth(0)
     line:SetText(text or "")
     line:SetTextColor(r, g, b, 1)
     line:ClearAllPoints()
@@ -116,7 +119,33 @@ function DBB2.api.ShowTooltip(owner, anchor, lines)
   
   for i = 1, lineCount do
     local line = tooltip.lines[i]
-    local lineWidth = line:GetStringWidth()
+    local stringWidth = line:GetStringWidth()
+    local lineWidth = stringWidth
+
+    -- Tighten wrapped lines so tooltips don't keep excess empty space on the right.
+    if stringWidth > maxLineWidth then
+      local low = DBB2:ScaleSize(80)
+      local high = maxLineWidth
+      local bestWidth = maxLineWidth
+
+      line:SetWidth(maxLineWidth)
+      local wrappedHeight = line:GetHeight()
+
+      while low <= high do
+        local mid = math_floor((low + high) / 2)
+        line:SetWidth(mid)
+        if line:GetHeight() <= wrappedHeight then
+          bestWidth = mid
+          high = mid - 1
+        else
+          low = mid + 1
+        end
+      end
+
+      line:SetWidth(bestWidth)
+      lineWidth = math_min(bestWidth, stringWidth)
+    end
+
     if lineWidth > maxWidth then
       maxWidth = lineWidth
     end

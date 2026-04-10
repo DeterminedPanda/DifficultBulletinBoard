@@ -717,6 +717,11 @@ DBB2:RegisterModule("gui", function()
               catFrame.header:SetFont("Fonts\\FRIZQT__.TTF", DBB2:GetFontSize(10))
               catFrame.header:SetPoint("LEFT", catFrame.collapseIndicator, "RIGHT", 3, 0)
               catFrame.header:SetTextColor(hr, hg, hb, 1)
+
+              catFrame.levelRange = catFrame.headerBtn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+              catFrame.levelRange:SetFont("Fonts\\FRIZQT__.TTF", DBB2:GetFontSize(9))
+              catFrame.levelRange:SetTextColor(0.48, 0.48, 0.48, 1)
+              catFrame.levelRange:Hide()
               
               -- Bell button for notifications (right after header text)
               local bellSize = DBB2:ScaleSize(14)
@@ -726,6 +731,8 @@ DBB2:RegisterModule("gui", function()
               catFrame.bellBtn:SetHeight(bellSize)
               catFrame.bellBtn:SetFrameLevel(catFrame.headerBtn:GetFrameLevel() + 1)
               catFrame.bellBtn:EnableMouse(true)
+
+              catFrame.levelRange:SetPoint("LEFT", catFrame.bellBtn, "RIGHT", 3, 0)
               
               catFrame.bellIcon = catFrame.bellBtn:CreateTexture(nil, "OVERLAY")
               catFrame.bellIcon:SetTexture("Interface\\AddOns\\DifficultBulletinBoard\\img\\bell")
@@ -755,18 +762,16 @@ DBB2:RegisterModule("gui", function()
               
               catFrame.bellBtn:SetScript("OnLeave", function()
                 -- Restore bell state based on notification status
+                local notifyMode = DBB2.api.GetNotificationMode()
                 local isEnabled = DBB2.api.IsNotificationEnabled(this.categoryType, this.categoryName)
-                if isEnabled then
+                if notifyMode <= 0 then
+                  this:Hide()
+                elseif isEnabled then
                   this.catFrame.bellIcon:SetVertexColor(1, 1, 1, 1)
                   this:Show()
                 else
-                  -- Hide if header is not hovered
-                  if not MouseIsOver(this.catFrame.headerBtn) then
-                    this:Hide()
-                  else
-                    -- Still hovering header, keep dimmed
-                    this.catFrame.bellIcon:SetVertexColor(1, 1, 1, 0.5)
-                  end
+                  this.catFrame.bellIcon:SetVertexColor(1, 1, 1, 0.22)
+                  this:Show()
                 end
               end)
               
@@ -780,18 +785,17 @@ DBB2:RegisterModule("gui", function()
                 panel.UpdateCategories()
               end)
               
-              -- Hover effect - show bell on hover (dimmed) only if notifications mode is not off
+              -- Hover effect - brighten bell while hovering the header
               catFrame.headerBtn:SetScript("OnEnter", function()
                 catFrame.header:SetTextColor(1, 1, 1, 1)
                 catFrame.collapseIndicator:SetTextColor(1, 1, 1, 1)
-                -- Show bell (dimmed) on hover only if notification mode is not off
+                if catFrame.levelRange:IsShown() then
+                  catFrame.levelRange:SetTextColor(0.7, 0.7, 0.7, 1)
+                end
                 local notifyMode = DBB2.api.GetNotificationMode()
                 if notifyMode > 0 then
                   catFrame.bellBtn:Show()
-                  local isEnabled = DBB2.api.IsNotificationEnabled(catFrame.categoryType, catFrame.categoryName)
-                  if not isEnabled then
-                    catFrame.bellIcon:SetVertexColor(1, 1, 1, 0.5)
-                  end
+                  catFrame.bellIcon:SetVertexColor(1, 1, 1, 0.7)
                 end
 
               end)
@@ -821,10 +825,20 @@ DBB2:RegisterModule("gui", function()
                 else
                   catFrame.header:SetTextColor(0.5, 0.5, 0.5, 1)
                 end
-                -- Hide bell if not enabled and not hovering bell itself
+                if catFrame.levelRange:IsShown() then
+                  catFrame.levelRange:SetTextColor(0.48, 0.48, 0.48, 1)
+                end
+                -- Restore the subtle bell unless notifications are globally off
+                local notifyMode = DBB2.api.GetNotificationMode()
                 local isEnabled = DBB2.api.IsNotificationEnabled(catFrame.categoryType, catFrame.categoryName)
-                if not isEnabled and not MouseIsOver(catFrame.bellBtn) then
+                if notifyMode <= 0 then
                   catFrame.bellBtn:Hide()
+                elseif isEnabled then
+                  catFrame.bellBtn:Show()
+                  catFrame.bellIcon:SetVertexColor(1, 1, 1, 1)
+                else
+                  catFrame.bellBtn:Show()
+                  catFrame.bellIcon:SetVertexColor(1, 1, 1, 0.22)
                 end
                 DBB2.api.HideTooltip()
               end)
@@ -849,8 +863,12 @@ DBB2:RegisterModule("gui", function()
             
             -- Determine header text and color based on lockout and message count
             local headerText = cat.name
+            local levelRangeText = nil
             if displayCount > 0 then
               headerText = cat.name .. " (" .. displayCount .. ")"
+            end
+            if categoryType == "groups" and DBB2_Config.showGroupLevelRanges then
+              levelRangeText = DBB2.api.GetCategoryLevelRangeText(cat.name)
             end
             
             -- Add lockout indicator to header with reset time
@@ -876,6 +894,14 @@ DBB2:RegisterModule("gui", function()
                 catFrame.collapseIndicator:SetTextColor(0.5, 0.5, 0.5, 1)
               end
             end
+
+            if levelRangeText then
+              catFrame.levelRange:SetText(levelRangeText)
+              catFrame.levelRange:Show()
+            else
+              catFrame.levelRange:SetText("")
+              catFrame.levelRange:Hide()
+            end
             
             -- Show/hide bell button based on notification state and mode
             local notifyMode = DBB2.api.GetNotificationMode()
@@ -883,9 +909,12 @@ DBB2:RegisterModule("gui", function()
             if notifyMode > 0 and notifyEnabled then
               catFrame.bellBtn:Show()
               catFrame.bellIcon:SetVertexColor(1, 1, 1, 1)
+            elseif notifyMode > 0 then
+              catFrame.bellBtn:Show()
+              catFrame.bellIcon:SetVertexColor(1, 1, 1, 0.22)
             else
               catFrame.bellBtn:Hide()
-              catFrame.bellIcon:SetVertexColor(1, 1, 1, 0.5)
+              catFrame.bellIcon:SetVertexColor(1, 1, 1, 0.22)
             end
             -- Update bell button references (in case category was reused)
             catFrame.bellBtn.categoryName = cat.name

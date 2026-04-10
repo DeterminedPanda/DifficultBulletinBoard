@@ -441,6 +441,29 @@ function DBB2.api.GetCategoryLevelRange(categoryName)
   return nil
 end
 
+-- [ GetCategoryLevelRangeText ]
+-- Returns a compact display string for a category level range.
+-- Used by the Groups tab to show subtle recommended level info.
+--
+-- @param categoryName  [string] The display name of the category
+-- @return              [string] Compact range string (e.g. "[16-24]" or "[60]"), or nil if not found/hidden
+function DBB2.api.GetCategoryLevelRangeText(categoryName)
+  if not categoryName or categoryName == "Custom Category" then
+    return nil
+  end
+
+  local levelRange = DBB2.api.GetCategoryLevelRange(categoryName)
+  if not levelRange then
+    return nil
+  end
+
+  if levelRange.minLevel == levelRange.maxLevel then
+    return "[" .. levelRange.minLevel .. "]"
+  end
+
+  return "[" .. levelRange.minLevel .. "-" .. levelRange.maxLevel .. "]"
+end
+
 -- [ IsLevelAppropriate ]
 -- Checks if a category is appropriate for the given player level.
 -- Used to filter out content that is too high or too low level.

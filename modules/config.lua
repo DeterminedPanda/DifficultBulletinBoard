@@ -94,6 +94,7 @@ DBB2:RegisterModule("config", function()
     DBB2_Config.showCurrentTime = true
     DBB2_Config.timeDisplayMode = 2
     DBB2_Config.showLevelFilteredGroups = false
+    DBB2_Config.showGroupLevelRanges = true
     DBB2_Config.clearNotificationsOnGroupJoin = true
     DBB2_Config.autoJoinChannels = true
     DBB2_Config.clampToScreen = true
@@ -214,6 +215,12 @@ DBB2:RegisterModule("config", function()
           end
         end
       end },
+    { type = "toggle", key = "showGroupLevelRanges", label = "Show Level Ranges", default = true,
+      tooltip = {{"Show Level Ranges", "highlight"}, "Show level ranges in Groups tab next to dungeons."},
+      onChange = function()
+        local gp = DBB2.gui.tabs.panels["Groups"]
+        if gp and gp.UpdateCategories and gp:IsVisible() then gp.UpdateCategories() end
+      end },
     { type = "slider", key = "maxMessagesPerCategory", label = "Messages per Category", min = 0, max = 10, step = 1,
       tooltip = {{"Messages per Category", "highlight"}, "Limit how many messages are shown in each category.", {"0 = unlimited", "gray"}} },
     { type = "slider", key = "scrollSpeed", label = "Scroll Speed", min = 10, max = 100, step = 5,
@@ -225,7 +232,17 @@ DBB2:RegisterModule("config", function()
     { type = "slider", key = "notificationMode", label = "Mode", min = 0, max = 3, step = 1,
       valueLabels = {[0] = "Off", [1] = "Chat", [2] = "Raid Warning", [3] = "Chat & Raid Warning"},
       tooltip = {{"Notification Mode", "highlight"}, "Choose how notifications are shown."},
-      onChange = function(val) DBB2.api.SetNotificationMode(val) end },
+      onChange = function(val)
+        DBB2.api.SetNotificationMode(val)
+        if DBB2.gui and DBB2.gui.tabs and DBB2.gui.tabs.panels then
+          for _, p in ipairs({"Groups", "Professions", "Hardcore"}) do
+            local panel = DBB2.gui.tabs.panels[p]
+            if panel and panel.UpdateCategories and panel:IsVisible() then
+              panel.UpdateCategories()
+            end
+          end
+        end
+      end },
     { type = "slider", key = "notificationSound", label = "Sound", min = 0, max = 1, step = 1,
       valueLabels = {[0] = "Off", [1] = "On"},
       tooltip = {{"Sound", "highlight"}, "Play a sound when a notification appears."} },

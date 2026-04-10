@@ -124,6 +124,7 @@ DBB2:SetScript("OnEvent", function()
       DBB2_Config.showCurrentTime = true  -- Show current time above timestamps
       DBB2_Config.timeDisplayMode = 2  -- Time format (0=timestamp, 1=relative, 2=elapsed)
       DBB2_Config.showLevelFilteredGroups = false  -- Level filter for groups tab
+      DBB2_Config.showGroupLevelRanges = true  -- Show recommended dungeon level ranges in Groups tab
       DBB2_Config.notificationSound = 1  -- Notification sound (0=off, 1=on)
       DBB2_Config.clearNotificationsOnGroupJoin = true  -- Clear notifications when joining group
       DBB2_Config.autoJoinChannels = true  -- Auto-join World and LFG channels
@@ -185,6 +186,11 @@ DBB2:SetScript("OnEvent", function()
     -- Ensure showLevelFilteredGroups exists for existing configs (default off)
     if DBB2_Config.showLevelFilteredGroups == nil then
       DBB2_Config.showLevelFilteredGroups = false
+    end
+
+    -- Ensure showGroupLevelRanges exists for existing configs (default on)
+    if DBB2_Config.showGroupLevelRanges == nil then
+      DBB2_Config.showGroupLevelRanges = true
     end
     
     -- Ensure autoJoinChannels exists for existing configs (default on)
