@@ -1,3 +1,5 @@
+RIP Turtle 2018-2026
+
 # Difficult Bulletin Board - Addon for Turtle WoW
 
 **Difficult Bulletin Board** is a World of Warcraft 1.12 addon inspired by the LFG Group Bulletin Board. It scans world chat and organizes messages into an easy-to-read UI, making it more convenient to find what you need.
