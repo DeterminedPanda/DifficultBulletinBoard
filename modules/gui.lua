@@ -752,8 +752,17 @@ DBB2:RegisterModule("gui", function()
               catFrame.bellBtn:SetHeight(bellSize)
               catFrame.bellBtn:SetFrameLevel(catFrame.headerBtn:GetFrameLevel() + 1)
               catFrame.bellBtn:EnableMouse(true)
-
-              catFrame.levelRange:SetPoint("LEFT", catFrame.bellBtn, "RIGHT", 3, 0)
+              
+              catFrame.UpdateHeaderLayout = function(showBell)
+                catFrame.levelRange:ClearAllPoints()
+                if showBell then
+                  catFrame.levelRange:SetPoint("LEFT", catFrame.bellBtn, "RIGHT", 3, 0)
+                else
+                  catFrame.levelRange:SetPoint("LEFT", catFrame.header, "RIGHT", 3, 0)
+                end
+              end
+              
+              catFrame.UpdateHeaderLayout(false)
               
               catFrame.bellIcon = catFrame.bellBtn:CreateTexture(nil, "OVERLAY")
               catFrame.bellIcon:SetTexture("Interface\\AddOns\\DifficultBulletinBoard\\img\\bell")
@@ -927,6 +936,9 @@ DBB2:RegisterModule("gui", function()
             -- Show/hide bell button based on notification state and mode
             local notifyMode = DBB2.api.GetNotificationMode()
             local notifyEnabled = DBB2.api.IsNotificationEnabled(categoryType, cat.name)
+            local showBell = notifyMode > 0
+            catFrame.UpdateHeaderLayout(showBell)
+            
             if notifyMode > 0 and notifyEnabled then
               catFrame.bellBtn:Show()
               catFrame.bellIcon:SetVertexColor(1, 1, 1, 1)
