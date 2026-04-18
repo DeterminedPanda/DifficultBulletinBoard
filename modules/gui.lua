@@ -6,6 +6,7 @@ local string_gfind = string.gfind
 local string_gsub = string.gsub
 local table_insert = table.insert
 local table_getn = table.getn
+local table_remove = table.remove
 local ipairs = ipairs
 local pairs = pairs
 local date = date
@@ -47,8 +48,28 @@ DBB2:RegisterModule("gui", function()
   -- Create backdrop
   DBB2:CreateBackdrop(DBB2.gui, nil, nil, 0.85)
   
-  -- Make frame closable with ESC
-  table_insert(UISpecialFrames, "DBB2ConfigGUI")
+  local function SetCloseOnEscape(enabled)
+    local frameName = "DBB2ConfigGUI"
+    local found = false
+    local i
+    
+    for i = table_getn(UISpecialFrames), 1, -1 do
+      if UISpecialFrames[i] == frameName then
+        if enabled and not found then
+          found = true
+        else
+          table_remove(UISpecialFrames, i)
+        end
+      end
+    end
+    
+    if enabled and not found then
+      table_insert(UISpecialFrames, frameName)
+    end
+  end
+  
+  DBB2.gui.SetCloseOnEscape = SetCloseOnEscape
+  SetCloseOnEscape(DBB2_Config.closeOnEscape ~= false)
   
   -- Close button - in header area between borders
   local closeSize = DBB2:ScaleSize(14)

@@ -131,6 +131,7 @@ DBB2:SetScript("OnEvent", function()
       DBB2_Config.minimapAngle = 45  -- Minimap button angle
       DBB2_Config.minimapFreeMode = false  -- Minimap button free positioning mode
       DBB2_Config.clampToScreen = true  -- Prevent dragging frames off-screen
+      DBB2_Config.closeOnEscape = true  -- Allow the Escape key to close the main window
     end
     
     -- Ensure fontOffset exists for existing configs and is within safe bounds
@@ -235,6 +236,11 @@ DBB2:SetScript("OnEvent", function()
     -- Ensure clampToScreen exists for existing configs (default on)
     if DBB2_Config.clampToScreen == nil then
       DBB2_Config.clampToScreen = true
+    end
+
+    -- Ensure closeOnEscape exists for existing configs (default on)
+    if DBB2_Config.closeOnEscape == nil then
+      DBB2_Config.closeOnEscape = true
     end
     
     -- Load modules (use ipairs to preserve load order from TOC file)

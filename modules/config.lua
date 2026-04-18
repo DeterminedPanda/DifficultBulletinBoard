@@ -98,6 +98,7 @@ DBB2:RegisterModule("config", function()
     DBB2_Config.clearNotificationsOnGroupJoin = true
     DBB2_Config.autoJoinChannels = true
     DBB2_Config.clampToScreen = true
+    DBB2_Config.closeOnEscape = true
     DBB2_Config.minimapAngle = 45
     DBB2_Config.minimapFreeMode = false
     DBB2_Config.minimapFreePos = nil
@@ -272,6 +273,13 @@ DBB2:RegisterModule("config", function()
       onChange = function(enabled)
         if DBB2.gui then
           DBB2.gui:SetClampedToScreen(enabled)
+        end
+      end },
+    { type = "toggle", key = "closeOnEscape", label = "Close with Escape", default = true,
+      tooltip = {{"Close with Escape", "highlight"}, "Allow the Escape key to close the main window."},
+      onChange = function(enabled)
+        if DBB2.gui and DBB2.gui.SetCloseOnEscape then
+          DBB2.gui.SetCloseOnEscape(enabled)
         end
       end },
   })
