@@ -1,4 +1,4 @@
-RIP Turtle 2018-2026
+RIP Turtle 2018-2026 🐢
 
 # Difficult Bulletin Board - Addon for Turtle WoW
 
