@@ -1,4 +1,4 @@
-RIP Turtle 2018-2026 🐢
+RIP Turtle 2018-2026 🐢  [Ported over to Project Epoch 3.3.5a, enjoy!](https://github.com/akzkak/DifficultBulletinBoard)
 
 # Difficult Bulletin Board - Addon for Turtle WoW
 
