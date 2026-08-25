@@ -74,26 +74,38 @@ DBB2:RegisterModule("gui", function()
   -- Close button - in header area between borders
   local closeSize = DBB2:ScaleSize(14)
   local headerPadding = DBB2:ScaleSize(7)
-  DBB2.gui.close = CreateFrame("Button", "DBB2Close", DBB2.gui)
+  if DBB2:IsClassicTheme() then
+    DBB2.gui.close = CreateFrame("Button", "DBB2Close", DBB2.gui, "UIPanelCloseButton")
+  else
+    DBB2.gui.close = CreateFrame("Button", "DBB2Close", DBB2.gui)
+  end
   DBB2.gui.close:SetPoint("TOPRIGHT", -headerPadding, -headerPadding)
-  DBB2.gui.close:SetHeight(closeSize)
-  DBB2.gui.close:SetWidth(closeSize)
-  DBB2:CreateBackdrop(DBB2.gui.close)
-  
-  DBB2.gui.close.texture = DBB2.gui.close:CreateTexture(nil, "OVERLAY")
-  DBB2.gui.close.texture:SetTexture("Interface\\AddOns\\DifficultBulletinBoard\\img\\close")
-  DBB2.gui.close.texture:SetPoint("CENTER", 0, 0)
-  DBB2.gui.close.texture:SetWidth(DBB2:ScaleSize(16))
-  DBB2.gui.close.texture:SetHeight(DBB2:ScaleSize(16))
-  DBB2.gui.close.texture:SetVertexColor(1, 0.25, 0.25, 1)
-  
-  DBB2.gui.close:SetScript("OnEnter", function()
-    this.backdrop:SetBackdropBorderColor(1, 0.25, 0.25, 1)
-  end)
-  
-  DBB2.gui.close:SetScript("OnLeave", function()
-    this.backdrop:SetBackdropBorderColor(0.2, 0.2, 0.2, 1)
-  end)
+  if DBB2:IsClassicTheme() then
+    DBB2.gui.close:ClearAllPoints()
+    DBB2.gui.close:SetHeight(DBB2:ScaleSize(32))
+    DBB2.gui.close:SetWidth(DBB2:ScaleSize(32))
+    DBB2.gui.close:SetPoint("TOPRIGHT", 1, 1)
+    DBB2:CreateWidgetBackdropProxy(DBB2.gui.close)
+  else
+    DBB2.gui.close:SetHeight(closeSize)
+    DBB2.gui.close:SetWidth(closeSize)
+    DBB2:CreateBackdrop(DBB2.gui.close)
+
+    DBB2.gui.close.texture = DBB2.gui.close:CreateTexture(nil, "OVERLAY")
+    DBB2.gui.close.texture:SetTexture("Interface\\AddOns\\DifficultBulletinBoard\\img\\close")
+    DBB2.gui.close.texture:SetPoint("CENTER", 0, 0)
+    DBB2.gui.close.texture:SetWidth(DBB2:ScaleSize(16))
+    DBB2.gui.close.texture:SetHeight(DBB2:ScaleSize(16))
+    DBB2.gui.close.texture:SetVertexColor(1, 0.25, 0.25, 1)
+
+    DBB2.gui.close:SetScript("OnEnter", function()
+      this.backdrop:SetBackdropBorderColor(1, 0.25, 0.25, 1)
+    end)
+
+    DBB2.gui.close:SetScript("OnLeave", function()
+      this.backdrop:SetBackdropBorderColor(0.2, 0.2, 0.2, 1)
+    end)
+  end
   
   DBB2.gui.close:SetScript("OnClick", function()
     this:GetParent():Hide()
@@ -166,13 +178,18 @@ DBB2:RegisterModule("gui", function()
   
   -- Filter input with placeholder (uses schema constants)
   DBB2.gui.filterInput = S.CreateFilterInput("DBB2FilterInput", logsPanel)
-  DBB2.gui.filterInput:SetPoint("TOPLEFT", logsPanel, "TOPLEFT", 0, 0)
-  DBB2.gui.filterInput:SetPoint("TOPRIGHT", logsPanel, "TOPRIGHT", -S.TIME_COLUMN_WIDTH, 0)
+  DBB2.gui.filterInput:SetPoint("TOPLEFT", logsPanel, "TOPLEFT", S.FILTER_BORDER_GAP + S.FILTER_LEFT_TEXTURE_OVERHANG, -S.FILTER_BORDER_GAP)
+  if DBB2:IsClassicTheme() then
+    DBB2.gui.filterInput:SetPoint("TOPRIGHT", logsPanel, "TOPRIGHT", -S.FILTER_BORDER_GAP, -S.FILTER_BORDER_GAP)
+    DBB2.gui.filterInput:SetTextInsets(DBB2:ScaleSize(5), S.TIME_COLUMN_WIDTH, DBB2:ScaleSize(5), DBB2:ScaleSize(5))
+  else
+    DBB2.gui.filterInput:SetPoint("TOPRIGHT", logsPanel, "TOPRIGHT", -S.TIME_COLUMN_WIDTH, 0)
+  end
   
   -- Current time display - aligned with message timestamps
   DBB2.gui.currentTimeText = S.CreateCurrentTimeDisplay(logsPanel)
   -- Position to align with row timestamps
-  DBB2.gui.currentTimeText:SetPoint("RIGHT", logsPanel, "TOPRIGHT", -S.SCROLLBAR_SPACE + S.TIMESTAMP_RIGHT_OFFSET, -(S.FILTER_HEIGHT / 2))
+  DBB2.gui.currentTimeText:SetPoint("RIGHT", logsPanel, "TOPRIGHT", -S.SCROLLBAR_SPACE + S.TIMESTAMP_RIGHT_OFFSET, -(S.FILTER_HEIGHT / 2) - S.FILTER_BORDER_GAP)
   
   -- Also store reference on logsPanel for config onChange handler compatibility
   logsPanel.currentTimeText = DBB2.gui.currentTimeText
@@ -318,7 +335,7 @@ DBB2:RegisterModule("gui", function()
   
   -- Create scroll frame for messages (using schema)
   DBB2.gui.scroll = S.CreateScrollFrame("DBB2ScrollFrame", logsPanel)
-  DBB2.gui.scroll:SetPoint("TOPLEFT", logsPanel, "TOPLEFT", 0, -(S.FILTER_HEIGHT + S.FILTER_PADDING))
+  DBB2.gui.scroll:SetPoint("TOPLEFT", logsPanel, "TOPLEFT", 0, -(S.FILTER_HEIGHT + S.FILTER_PADDING + S.FILTER_BORDER_GAP))
   DBB2.gui.scroll:SetPoint("BOTTOMRIGHT", logsPanel, "BOTTOMRIGHT", 0, 0)
   logsPanel.scrollFrame = DBB2.gui.scroll  -- Register for OnShow update
   
@@ -509,12 +526,17 @@ DBB2:RegisterModule("gui", function()
     
     -- Filter input with placeholder (using schema)
     panel.filterInput = S.CreateFilterInput("DBB2" .. panelName .. "FilterInput", panel)
-    panel.filterInput:SetPoint("TOPLEFT", panel, "TOPLEFT", 0, 0)
-    panel.filterInput:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -S.TIME_COLUMN_WIDTH, 0)
+    panel.filterInput:SetPoint("TOPLEFT", panel, "TOPLEFT", S.FILTER_BORDER_GAP + S.FILTER_LEFT_TEXTURE_OVERHANG, -S.FILTER_BORDER_GAP)
+    if DBB2:IsClassicTheme() then
+      panel.filterInput:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -S.FILTER_BORDER_GAP, -S.FILTER_BORDER_GAP)
+      panel.filterInput:SetTextInsets(DBB2:ScaleSize(5), S.TIME_COLUMN_WIDTH, DBB2:ScaleSize(5), DBB2:ScaleSize(5))
+    else
+      panel.filterInput:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -S.TIME_COLUMN_WIDTH, 0)
+    end
     
     -- Current time display - aligned with message timestamps (using schema)
     panel.currentTimeText = S.CreateCurrentTimeDisplay(panel)
-    panel.currentTimeText:SetPoint("RIGHT", panel, "TOPRIGHT", -S.SCROLLBAR_SPACE + S.TIMESTAMP_RIGHT_OFFSET, -(S.FILTER_HEIGHT / 2))
+    panel.currentTimeText:SetPoint("RIGHT", panel, "TOPRIGHT", -S.SCROLLBAR_SPACE + S.TIMESTAMP_RIGHT_OFFSET, -(S.FILTER_HEIGHT / 2) - S.FILTER_BORDER_GAP)
     
     -- Hide by default (controlled by config)
     if not DBB2_Config.showCurrentTime then
@@ -581,7 +603,7 @@ DBB2:RegisterModule("gui", function()
     
     -- Create scroll frame for categories (using schema)
     local scroll = S.CreateScrollFrame("DBB2" .. panelName .. "Scroll", panel)
-    scroll:SetPoint("TOPLEFT", panel, "TOPLEFT", 0, -(S.FILTER_HEIGHT + S.FILTER_PADDING))
+    scroll:SetPoint("TOPLEFT", panel, "TOPLEFT", 0, -(S.FILTER_HEIGHT + S.FILTER_PADDING + S.FILTER_BORDER_GAP))
     scroll:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", 0, 0)
     panel.scrollFrame = scroll  -- Register for OnShow update
     

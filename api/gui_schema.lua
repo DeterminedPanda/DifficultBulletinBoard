@@ -33,8 +33,10 @@ function DBB2.schema.InitLayout()
   local S = DBB2.schema
   
   -- Scrollbar and padding
-  S.SCROLLBAR_WIDTH = DBB2:ScaleSize(7)
-  S.SCROLLBAR_PADDING = DBB2:ScaleSize(6)
+  S.SCROLLBAR_WIDTH = DBB2:IsClassicTheme() and DBB2:ScaleSize(16) or DBB2:ScaleSize(7)
+  S.CLASSIC_SCROLLBAR_BORDER_GAP = DBB2:ScaleSize(6)
+  S.CLASSIC_SCROLLBAR_END_INSET = DBB2:ScaleSize(16) + S.CLASSIC_SCROLLBAR_BORDER_GAP
+  S.SCROLLBAR_PADDING = DBB2:IsClassicTheme() and DBB2:ScaleSize(12) or DBB2:ScaleSize(6)
   S.SCROLLBAR_SPACE = S.SCROLLBAR_WIDTH + S.SCROLLBAR_PADDING  -- Total space for scrollbar
   
   -- Row layout
@@ -63,6 +65,8 @@ function DBB2.schema.InitLayout()
   -- Filter bar
   S.FILTER_HEIGHT = DBB2:ScaleSize(22)
   S.FILTER_PADDING = DBB2:ScaleSize(5)
+  S.FILTER_BORDER_GAP = DBB2:IsClassicTheme() and DBB2:ScaleSize(8) or 0
+  S.FILTER_LEFT_TEXTURE_OVERHANG = DBB2:IsClassicTheme() and DBB2:ScaleSize(5) or 0
   
   -- Category header (for categorized panels)
   S.CATEGORY_HEADER_HEIGHT = DBB2:ScaleSize(22)
@@ -170,25 +174,39 @@ function DBB2.schema.CreateScrollFrame(name, parent)
   local f = CreateFrame("ScrollFrame", name, parent)
 
   -- Create slider
-  f.slider = CreateFrame("Slider", nil, f)
-  f.slider:SetOrientation('VERTICAL')
-  f.slider:SetWidth(S.SCROLLBAR_WIDTH)
-  f.slider:SetPoint("TOPRIGHT", f, "TOPRIGHT", 0, -1)
-  f.slider:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", 0, 1)
-  
-  -- Required for draggable slider in WoW 1.12.1
-  f.slider:EnableMouse(1)
-  f.slider:SetValueStep(1)
-  f.slider:SetMinMaxValues(0, 0)
-  f.slider:SetValue(0)
-  
-  -- Thumb texture
-  f.slider:SetThumbTexture("Interface\\BUTTONS\\WHITE8X8")
-  f.slider.thumb = f.slider:GetThumbTexture()
-  f.slider.thumb:SetWidth(S.SCROLLBAR_WIDTH)
-  f.slider.thumb:SetHeight(DBB2:ScaleSize(50))
-  local hr, hg, hb = DBB2:GetHighlightColor()
-  f.slider.thumb:SetTexture(hr, hg, hb, 0.5)
+  if DBB2:IsClassicTheme() then
+    local sliderName = DBB2:GetClassicWidgetName(nil, "ScrollBar")
+    f.slider = CreateFrame("Slider", sliderName, f, "UIPanelScrollBarTemplate")
+    f.slider:SetOrientation("VERTICAL")
+    f.slider:SetWidth(S.SCROLLBAR_WIDTH)
+    f.slider:SetPoint("TOPRIGHT", f, "TOPRIGHT", -S.CLASSIC_SCROLLBAR_BORDER_GAP, -S.CLASSIC_SCROLLBAR_END_INSET)
+    f.slider:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -S.CLASSIC_SCROLLBAR_BORDER_GAP, S.CLASSIC_SCROLLBAR_END_INSET)
+    f.slider:EnableMouse(1)
+    f.slider:SetValueStep(1)
+    f.slider:SetMinMaxValues(0, 0)
+    f.slider:SetValue(0)
+    f.slider.thumb = f.slider:GetThumbTexture()
+  else
+    f.slider = CreateFrame("Slider", nil, f)
+    f.slider:SetOrientation('VERTICAL')
+    f.slider:SetWidth(S.SCROLLBAR_WIDTH)
+    f.slider:SetPoint("TOPRIGHT", f, "TOPRIGHT", 0, -1)
+    f.slider:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", 0, 1)
+
+    -- Required for draggable slider in WoW 1.12.1
+    f.slider:EnableMouse(1)
+    f.slider:SetValueStep(1)
+    f.slider:SetMinMaxValues(0, 0)
+    f.slider:SetValue(0)
+
+    -- Thumb texture
+    f.slider:SetThumbTexture("Interface\\BUTTONS\\WHITE8X8")
+    f.slider.thumb = f.slider:GetThumbTexture()
+    f.slider.thumb:SetWidth(S.SCROLLBAR_WIDTH)
+    f.slider.thumb:SetHeight(DBB2:ScaleSize(50))
+    local hr, hg, hb = DBB2:GetHighlightColor()
+    f.slider.thumb:SetTexture(hr, hg, hb, 0.5)
+  end
 
   f.slider:SetScript("OnValueChanged", function()
     f:SetVerticalScroll(this:GetValue())
@@ -218,7 +236,9 @@ function DBB2.schema.CreateScrollFrame(name, parent)
         local m = frameHeight + scrollRange
         local ratio = frameHeight / m
         local size = math.floor(frameHeight * ratio)
-        f.slider.thumb:SetHeight(math.max(size, DBB2:ScaleSize(20)))
+        if not DBB2:IsClassicTheme() then
+          f.slider.thumb:SetHeight(math.max(size, DBB2:ScaleSize(20)))
+        end
         f.slider:Show()
       end
     end
@@ -566,7 +586,12 @@ end
 function DBB2.schema.CreateFilterInput(name, parent)
   local S = DBB2.schema
   
-  local f = CreateFrame("EditBox", name, parent)
+  local f
+  if DBB2:IsClassicTheme() then
+    f = CreateFrame("EditBox", DBB2:GetClassicWidgetName(name, "FilterInput"), parent, "InputBoxTemplate")
+  else
+    f = CreateFrame("EditBox", name, parent)
+  end
   f:SetHeight(S.FILTER_HEIGHT)
   f:SetAutoFocus(false)
   f:EnableMouse(true)
@@ -574,7 +599,11 @@ function DBB2.schema.CreateFilterInput(name, parent)
   f:SetFont("Fonts\\FRIZQT__.TTF", DBB2:GetFontSize(10))
   f:SetJustifyH("LEFT")
   
-  DBB2:CreateBackdrop(f, nil, nil, nil, true)
+  if DBB2:IsClassicTheme() then
+    DBB2:CreateWidgetBackdropProxy(f)
+  else
+    DBB2:CreateBackdrop(f, nil, nil, nil, true)
+  end
   
   -- Hide full border, we'll add bottom-only
   if f.backdrop then
@@ -584,7 +613,11 @@ function DBB2.schema.CreateFilterInput(name, parent)
   
   -- Bottom border line
   f.bottomBorder = parent:CreateTexture(nil, "BORDER")
-  f.bottomBorder:SetTexture("Interface\\BUTTONS\\WHITE8X8")
+  if DBB2:IsClassicTheme() then
+    f.bottomBorder:SetTexture(nil)
+  else
+    f.bottomBorder:SetTexture("Interface\\BUTTONS\\WHITE8X8")
+  end
   f.bottomBorder:SetHeight(1)
   f.bottomBorder:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 0, 0)
   f.bottomBorder:SetPoint("BOTTOMRIGHT", parent, "TOPRIGHT", 0, -S.FILTER_HEIGHT)
@@ -615,14 +648,16 @@ function DBB2.schema.CreateFilterInput(name, parent)
     end
   end)
   
-  f:SetScript("OnEnter", function()
-    local r, g, b = DBB2:GetHighlightColor()
-    this.bottomBorder:SetVertexColor(r, g, b, 1)
-  end)
-  
-  f:SetScript("OnLeave", function()
-    this.bottomBorder:SetVertexColor(0.25, 0.25, 0.25, 1)
-  end)
+  if not DBB2:IsClassicTheme() then
+    f:SetScript("OnEnter", function()
+      local r, g, b = DBB2:GetHighlightColor()
+      this.bottomBorder:SetVertexColor(r, g, b, 1)
+    end)
+
+    f:SetScript("OnLeave", function()
+      this.bottomBorder:SetVertexColor(0.25, 0.25, 0.25, 1)
+    end)
+  end
   
   return f
 end
@@ -659,6 +694,17 @@ end
 -- @param text (string|nil) Button label text (default: "Button")
 -- @return (Button) The created button with text property
 function DBB2.schema.CreateButton(name, parent, text)
+  if DBB2:IsClassicTheme() then
+    local widgetName = DBB2:GetClassicWidgetName(name, "Button")
+    local f = CreateFrame("Button", widgetName, parent, "UIPanelButtonTemplate")
+    f:SetHeight(DBB2:ScaleSize(20))
+    f:SetWidth(DBB2:ScaleSize(100))
+    f:SetText(text or "Button")
+    f.text = getglobal(widgetName .. "Text")
+    DBB2:CreateWidgetBackdropProxy(f)
+    return f
+  end
+
   local f = CreateFrame("Button", name, parent)
   f:SetHeight(DBB2:ScaleSize(20))
   f:SetWidth(DBB2:ScaleSize(100))
@@ -712,6 +758,47 @@ function DBB2.schema.CreateCheckBox(name, parent, label, fontSize)
   fontSize = fontSize or 10
   local checkSize = DBB2:ScaleSize(16)
   local hr, hg, hb = DBB2:GetHighlightColor()
+
+  if DBB2:IsClassicTheme() then
+    local f = CreateFrame("Frame", name, parent)
+    f:SetWidth(checkSize)
+    f:SetHeight(checkSize)
+
+    local buttonName = DBB2:GetClassicWidgetName(name and (name .. "Btn") or nil, "CheckButton")
+    f.button = CreateFrame("CheckButton", buttonName, f, "OptionsCheckButtonTemplate")
+    f.button:SetAllPoints(f)
+    f.check = f.button:GetCheckedTexture()
+    f.backdrop = DBB2:CreateWidgetBackdropProxy(f)
+
+    f.SetChecked = function(self, checked)
+      self.button:SetChecked(checked and 1 or nil)
+    end
+    f.GetChecked = function(self)
+      return self.button:GetChecked() and true or false
+    end
+    f.button:SetScript("OnClick", function()
+      local container = this:GetParent()
+      if container.OnChecked then container.OnChecked(container:GetChecked()) end
+    end)
+
+    if label then
+      f.label = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+      f.label:SetFont("Fonts\\FRIZQT__.TTF", DBB2:GetFontSize(fontSize))
+      f.label:SetPoint("LEFT", f, "RIGHT", DBB2:ScaleSize(8), 0)
+      f.label:SetText(label)
+      f.label:SetTextColor(1, 0.82, 0, 1)
+    end
+
+    f.Disable = function(self)
+      self.button:Disable()
+      if self.label then self.label:SetTextColor(0.5, 0.5, 0.5, 1) end
+    end
+    f.Enable = function(self)
+      self.button:Enable()
+      if self.label then self.label:SetTextColor(1, 0.82, 0, 1) end
+    end
+    return f
+  end
   
   local f = CreateFrame("Frame", name, parent)
   f:SetWidth(checkSize)
@@ -818,7 +905,12 @@ end
 -- @param parent (Frame) Parent frame to attach the edit box to
 -- @return (EditBox) The created edit box with backdrop
 function DBB2.schema.CreateEditBox(name, parent)
-  local f = CreateFrame("EditBox", name, parent)
+  local f
+  if DBB2:IsClassicTheme() then
+    f = CreateFrame("EditBox", DBB2:GetClassicWidgetName(name, "EditBox"), parent, "InputBoxTemplate")
+  else
+    f = CreateFrame("EditBox", name, parent)
+  end
   f:SetHeight(DBB2:ScaleSize(20))
   f:SetAutoFocus(false)
   f:EnableMouse(true)
@@ -826,7 +918,11 @@ function DBB2.schema.CreateEditBox(name, parent)
   f:SetFont("Fonts\\FRIZQT__.TTF", DBB2:GetFontSize(10))
   f:SetJustifyH("LEFT")
   
-  DBB2:CreateBackdrop(f, nil, nil, nil, true)
+  if DBB2:IsClassicTheme() then
+    DBB2:CreateWidgetBackdropProxy(f)
+  else
+    DBB2:CreateBackdrop(f, nil, nil, nil, true)
+  end
   
   f:SetScript("OnEscapePressed", function()
     this:ClearFocus()
@@ -854,6 +950,20 @@ end
 -- @param parent (Frame) Parent frame to attach the dropdown to
 -- @return (Button) The created dropdown button with text and arrow properties
 function DBB2.schema.CreateDropDown(name, parent)
+  if DBB2:IsClassicTheme() then
+    local widgetName = DBB2:GetClassicWidgetName(name, "DropDown")
+    local f = CreateFrame("Button", widgetName, parent, "UIPanelButtonTemplate")
+    f:SetHeight(DBB2:ScaleSize(20))
+    f:SetWidth(DBB2:ScaleSize(150))
+    f:SetText("Select...")
+    f.text = getglobal(widgetName .. "Text")
+    f.arrow = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    f.arrow:SetPoint("RIGHT", -8, 0)
+    f.arrow:SetText("v")
+    DBB2:CreateWidgetBackdropProxy(f)
+    return f
+  end
+
   local f = CreateFrame("Button", name, parent)
   f:SetHeight(DBB2:ScaleSize(20))
   f:SetWidth(DBB2:ScaleSize(150))
@@ -947,7 +1057,13 @@ function DBB2.schema.CreateSlider(name, parent, label, minVal, maxVal, step, fon
   local sliderOffset = DBB2:ScaleSize(16)
   local sliderHeight = sliderOffset
   
-  container.slider = CreateFrame("Slider", name and (name .. "Slider") or nil, container)
+  local sliderName = name and (name .. "Slider") or nil
+  if DBB2:IsClassicTheme() then
+    sliderName = DBB2:GetClassicWidgetName(sliderName, "Slider")
+    container.slider = CreateFrame("Slider", sliderName, container, "OptionsSliderTemplate")
+  else
+    container.slider = CreateFrame("Slider", sliderName, container)
+  end
   container.slider:SetPoint("TOPLEFT", 0, -sliderOffset)
   container.slider:SetPoint("TOPRIGHT", 0, -sliderOffset)
   container.slider:SetHeight(sliderHeight)
@@ -957,19 +1073,28 @@ function DBB2.schema.CreateSlider(name, parent, label, minVal, maxVal, step, fon
   container.slider:SetValue(minVal)
   container.slider:EnableMouse(true)
   
-  -- Track background
+  -- Retain a track field because tooltip code uses it for hover feedback.
   container.track = container:CreateTexture(nil, "BACKGROUND")
-  container.track:SetTexture("Interface\\BUTTONS\\WHITE8X8")
-  container.track:SetVertexColor(0.2, 0.2, 0.2, 1)
   container.track:SetPoint("TOPLEFT", container.slider, "TOPLEFT", 0, -sliderHeight/2 + 2)
   container.track:SetPoint("BOTTOMRIGHT", container.slider, "BOTTOMRIGHT", 0, sliderHeight/2 - 2)
-  
-  -- Thumb
-  container.slider:SetThumbTexture("Interface\\BUTTONS\\WHITE8X8")
-  local thumb = container.slider:GetThumbTexture()
-  thumb:SetWidth(DBB2:ScaleSize(10))
-  thumb:SetHeight(DBB2:ScaleSize(14))
-  thumb:SetVertexColor(hr, hg, hb, 1)
+
+  if DBB2:IsClassicTheme() then
+    container.track:SetTexture(nil)
+    local low = getglobal(sliderName .. "Low")
+    local high = getglobal(sliderName .. "High")
+    local templateText = getglobal(sliderName .. "Text")
+    if low then low:Hide() end
+    if high then high:Hide() end
+    if templateText then templateText:Hide() end
+  else
+    container.track:SetTexture("Interface\\BUTTONS\\WHITE8X8")
+    container.track:SetVertexColor(0.2, 0.2, 0.2, 1)
+    container.slider:SetThumbTexture("Interface\\BUTTONS\\WHITE8X8")
+    local thumb = container.slider:GetThumbTexture()
+    thumb:SetWidth(DBB2:ScaleSize(10))
+    thumb:SetHeight(DBB2:ScaleSize(14))
+    thumb:SetVertexColor(hr, hg, hb, 1)
+  end
   
   container.slider:SetScript("OnValueChanged", function()
     local val = math.floor(this:GetValue() + 0.5)
@@ -1232,23 +1357,37 @@ function DBB2.schema.CreateStaticScrollFrame(name, parent)
   local f = CreateFrame("ScrollFrame", name, parent)
 
   -- Create slider
-  f.slider = CreateFrame("Slider", nil, f)
-  f.slider:SetOrientation('VERTICAL')
-  f.slider:SetWidth(S.SCROLLBAR_WIDTH or DBB2:ScaleSize(7))
-  f.slider:SetPoint("TOPRIGHT", f, "TOPRIGHT", 0, -1)
-  f.slider:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", 0, 1)
-  
-  f.slider:EnableMouse(1)
-  f.slider:SetValueStep(1)
-  f.slider:SetMinMaxValues(0, 0)
-  f.slider:SetValue(0)
-  
-  f.slider:SetThumbTexture("Interface\\BUTTONS\\WHITE8X8")
-  f.slider.thumb = f.slider:GetThumbTexture()
-  f.slider.thumb:SetWidth(S.SCROLLBAR_WIDTH or DBB2:ScaleSize(7))
-  f.slider.thumb:SetHeight(DBB2:ScaleSize(50))
-  local hr, hg, hb = DBB2:GetHighlightColor()
-  f.slider.thumb:SetTexture(hr, hg, hb, 0.5)
+  if DBB2:IsClassicTheme() then
+    local sliderName = DBB2:GetClassicWidgetName(nil, "ScrollBar")
+    f.slider = CreateFrame("Slider", sliderName, f, "UIPanelScrollBarTemplate")
+    f.slider:SetOrientation("VERTICAL")
+    f.slider:SetWidth(S.SCROLLBAR_WIDTH or DBB2:ScaleSize(7))
+    f.slider:SetPoint("TOPRIGHT", f, "TOPRIGHT", -S.CLASSIC_SCROLLBAR_BORDER_GAP, -S.CLASSIC_SCROLLBAR_END_INSET)
+    f.slider:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -S.CLASSIC_SCROLLBAR_BORDER_GAP, S.CLASSIC_SCROLLBAR_END_INSET)
+    f.slider:EnableMouse(1)
+    f.slider:SetValueStep(1)
+    f.slider:SetMinMaxValues(0, 0)
+    f.slider:SetValue(0)
+    f.slider.thumb = f.slider:GetThumbTexture()
+  else
+    f.slider = CreateFrame("Slider", nil, f)
+    f.slider:SetOrientation('VERTICAL')
+    f.slider:SetWidth(S.SCROLLBAR_WIDTH or DBB2:ScaleSize(7))
+    f.slider:SetPoint("TOPRIGHT", f, "TOPRIGHT", 0, -1)
+    f.slider:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", 0, 1)
+
+    f.slider:EnableMouse(1)
+    f.slider:SetValueStep(1)
+    f.slider:SetMinMaxValues(0, 0)
+    f.slider:SetValue(0)
+
+    f.slider:SetThumbTexture("Interface\\BUTTONS\\WHITE8X8")
+    f.slider.thumb = f.slider:GetThumbTexture()
+    f.slider.thumb:SetWidth(S.SCROLLBAR_WIDTH or DBB2:ScaleSize(7))
+    f.slider.thumb:SetHeight(DBB2:ScaleSize(50))
+    local hr, hg, hb = DBB2:GetHighlightColor()
+    f.slider.thumb:SetTexture(hr, hg, hb, 0.5)
+  end
 
   f.slider:SetScript("OnValueChanged", function()
     f:SetVerticalScroll(this:GetValue())
@@ -1283,7 +1422,9 @@ function DBB2.schema.CreateStaticScrollFrame(name, parent)
         local m = frameHeight + scrollRange
         local ratio = frameHeight / m
         local size = math.floor(frameHeight * ratio)
-        f.slider.thumb:SetHeight(math.max(size, DBB2:ScaleSize(20)))
+        if not DBB2:IsClassicTheme() then
+          f.slider.thumb:SetHeight(math.max(size, DBB2:ScaleSize(20)))
+        end
         f.slider:Show()
       end
     end
@@ -1362,12 +1503,22 @@ function DBB2.schema.CreateColorPicker(name, parent, label, fontSize)
   container.label:SetText(label or "Color")
   container.label:SetTextColor(1, 1, 1, 1)
   
-  container.button = CreateFrame("Button", name and (name .. "Button") or nil, container)
+  local buttonName = name and (name .. "Button") or nil
+  if DBB2:IsClassicTheme() then
+    buttonName = DBB2:GetClassicWidgetName(buttonName, "ColorButton")
+    container.button = CreateFrame("Button", buttonName, container, "UIPanelButtonTemplate")
+  else
+    container.button = CreateFrame("Button", buttonName, container)
+  end
   container.button:SetWidth(DBB2:ScaleSize(50))
   container.button:SetHeight(DBB2:ScaleSize(16))
   container.button:SetPoint("RIGHT", 0, 0)
   
-  DBB2:CreateBackdrop(container.button)
+  if DBB2:IsClassicTheme() then
+    DBB2:CreateWidgetBackdropProxy(container.button)
+  else
+    DBB2:CreateBackdrop(container.button)
+  end
   
   -- Create preview frame at higher level to ensure visibility above backdrop
   container.button.previewFrame = CreateFrame("Frame", nil, container.button)

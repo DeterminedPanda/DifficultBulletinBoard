@@ -42,6 +42,20 @@ local SECTION_FONT_SIZE = DBB2.env.SECTION_FONT_SIZE
 --     - Height set to SPACING.inputHeight
 -- ============================================================================
 function CreateConfigInput(name, parent)
+  if DBB2:IsClassicTheme() then
+    local widgetName = DBB2:GetClassicWidgetName(name, "ConfigInput")
+    local f = CreateFrame("EditBox", widgetName, parent, "InputBoxTemplate")
+    f:SetHeight(DBB2:ScaleSize(SPACING.inputHeight))
+    f:SetAutoFocus(false)
+    f:EnableMouse(true)
+    f:SetTextInsets(DBB2:ScaleSize(5), DBB2:ScaleSize(5), DBB2:ScaleSize(3), DBB2:ScaleSize(3))
+    f:SetJustifyH("LEFT")
+    f:SetFont("Fonts\\FRIZQT__.TTF", DBB2:GetFontSize(FONT_SIZE_INPUT))
+    f:SetTextColor(1, 1, 1, 1)
+    f:SetScript("OnEscapePressed", function() this:ClearFocus() end)
+    return f
+  end
+
   local f = CreateFrame("EditBox", name, parent)
   f:SetHeight(DBB2:ScaleSize(SPACING.inputHeight))
   f:SetAutoFocus(false)
@@ -168,8 +182,14 @@ function DBB2.api.RenderConfigSchema(panel, schema, options)
   
   -- Scrollbar padding
   scrollFrame.slider:ClearAllPoints()
-  scrollFrame.slider:SetPoint("TOPRIGHT", scrollFrame, "TOPRIGHT", 0, -scrollPadding)
-  scrollFrame.slider:SetPoint("BOTTOMRIGHT", scrollFrame, "BOTTOMRIGHT", 0, scrollPadding)
+  if DBB2:IsClassicTheme() then
+    local topInset = DBB2.schema.CLASSIC_SCROLLBAR_END_INSET + DBB2:ScaleSize(2)
+    scrollFrame.slider:SetPoint("TOPRIGHT", scrollFrame, "TOPRIGHT", -DBB2.schema.CLASSIC_SCROLLBAR_BORDER_GAP, -topInset)
+    scrollFrame.slider:SetPoint("BOTTOMRIGHT", scrollFrame, "BOTTOMRIGHT", -DBB2.schema.CLASSIC_SCROLLBAR_BORDER_GAP, DBB2.schema.CLASSIC_SCROLLBAR_END_INSET)
+  else
+    scrollFrame.slider:SetPoint("TOPRIGHT", scrollFrame, "TOPRIGHT", 0, -scrollPadding)
+    scrollFrame.slider:SetPoint("BOTTOMRIGHT", scrollFrame, "BOTTOMRIGHT", 0, scrollPadding)
+  end
   
   -- Create scroll child
   local scrollChild = CreateFrame("Frame", nil, scrollFrame)
@@ -490,8 +510,14 @@ function RenderColorPicker(parent, item, x, y)
   local colorPicker = DBB2.schema.CreateColorPicker(nil, parent, item.label, FONT_SIZE)
   colorPicker:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y)
   colorPicker:SetWidth(DBB2:ScaleSize(item.width or DEFAULT_WIDTH))
-  
-  local color = DBB2_Config[item.key] or item.default or {r = 1, g = 1, b = 1, a = 1}
+
+  local isClassicHighlight = DBB2:IsClassicTheme() and item.key == "highlightColor"
+  local color
+  if isClassicHighlight then
+    color = DBB2.classicHighlightColor
+  else
+    color = DBB2_Config[item.key] or item.default or {r = 1, g = 1, b = 1, a = 1}
+  end
   colorPicker:SetColor(color.r, color.g, color.b, color.a)
   
   if item.tooltip then
@@ -507,8 +533,15 @@ function RenderColorPicker(parent, item, x, y)
   end
   
   colorPicker.OnColorChanged = function(r, g, b, a)
+    if isClassicHighlight then return end
     DBB2_Config[item.key] = {r = r, g = g, b = b, a = a}
     if item.onChange then item.onChange(r, g, b, a) end
+  end
+
+  -- Classic mode has a fixed Blizzard-gold highlight. Keep the tooltip active,
+  -- but do not open an editor for a color that is not used by this theme.
+  if isClassicHighlight then
+    colorPicker.button:SetScript("OnClick", function() end)
   end
   
   return colorPicker

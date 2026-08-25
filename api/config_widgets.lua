@@ -743,21 +743,27 @@ function RenderKeywordList(parent, panel, item, x, y)
     row.desc:SetJustifyH("RIGHT")
     row.desc:SetTextColor(0.5, 0.5, 0.5, 1)
     
-    row.removeBtn = CreateFrame("Button", nil, row)
+    if DBB2:IsClassicTheme() then
+      row.removeBtn = CreateFrame("Button", DBB2:GetClassicWidgetName(nil, "RemoveButton"), row, "UIPanelCloseButton")
+    else
+      row.removeBtn = CreateFrame("Button", nil, row)
+    end
     row.removeBtn:SetWidth(DBB2:ScaleSize(16))
     row.removeBtn:SetHeight(DBB2:ScaleSize(16))
     row.removeBtn:SetPoint("RIGHT", -DBB2:ScaleSize(5), 0)
     
     row.desc:SetPoint("RIGHT", row.removeBtn, "LEFT", -DBB2:ScaleSize(8), 0)
     
-    row.removeBtn.text = row.removeBtn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    row.removeBtn.text:SetFont("Fonts\\FRIZQT__.TTF", DBB2:GetFontSize(FONT_SIZE_LARGE))
-    row.removeBtn.text:SetPoint("CENTER", 0, 0)
-    row.removeBtn.text:SetText("x")
-    row.removeBtn.text:SetTextColor(1, 0.3, 0.3, 1)
-    
-    row.removeBtn:SetScript("OnEnter", function() this.text:SetTextColor(1, 0.5, 0.5, 1) end)
-    row.removeBtn:SetScript("OnLeave", function() this.text:SetTextColor(1, 0.3, 0.3, 1) end)
+    if not DBB2:IsClassicTheme() then
+      row.removeBtn.text = row.removeBtn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+      row.removeBtn.text:SetFont("Fonts\\FRIZQT__.TTF", DBB2:GetFontSize(FONT_SIZE_LARGE))
+      row.removeBtn.text:SetPoint("CENTER", 0, 0)
+      row.removeBtn.text:SetText("x")
+      row.removeBtn.text:SetTextColor(1, 0.3, 0.3, 1)
+
+      row.removeBtn:SetScript("OnEnter", function() this.text:SetTextColor(1, 0.5, 0.5, 1) end)
+      row.removeBtn:SetScript("OnLeave", function() this.text:SetTextColor(1, 0.3, 0.3, 1) end)
+    end
     
     return row
   end

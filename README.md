@@ -16,6 +16,7 @@ RIP Turtle 2018-2026 🐢 2026 - 🐙
 - **Collapsible Topics**: Collapse topics to hide unwanted messages and keep your feed tidy.
 - **Notification System**: Be notified if an entry gets added to a specific topic.
 - **Lockouts Track**: Keep track of raids your are saved to.
+- **Optional Classic Theme**: Use the original Blizzard window artwork and controls instead of the default modern theme.
 
 
 
@@ -50,6 +51,8 @@ The interface will show an ordered list of messages from the world chat.
 ### Editing and Managing Entries
 
 To manage topics, left-click on the config button to open the options window and select which topics to follow by selecting or unselecting the corresponding checkbox.
+
+To use the original game-style interface, open **Config → General**, enable **Classic Blizzard Theme**, then click **Save & Reload**. The modern theme remains the default.
 
 ## Troubleshooting
 

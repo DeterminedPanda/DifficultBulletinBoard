@@ -45,10 +45,76 @@ DBB2.backdrop_shadow = {
   insets = {left = 0, right = 0, top = 0, bottom = 0},
 }
 
+-- Blizzard's original dialog artwork, used only by the opt-in Classic theme.
+DBB2.classicBackdrop = {
+  bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
+  edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
+  tile = true,
+  tileSize = 32,
+  edgeSize = 32,
+  insets = {left = 11, right = 12, top = 12, bottom = 11},
+}
+
+DBB2.classicTooltipBackdrop = {
+  bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
+  edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+  tile = true,
+  tileSize = 16,
+  edgeSize = 16,
+  insets = {left = 4, right = 4, top = 4, bottom = 4},
+}
+
+DBB2.classicHighlightColor = {r = 1, g = 0.82, b = 0, a = 1}
+
+function DBB2:IsClassicTheme()
+  if self.activeClassicTheme ~= nil then return self.activeClassicTheme end
+  return DBB2_Config and DBB2_Config.classicTheme == true
+end
+
+-- Some existing callers tint a widget's modern backdrop directly. Native
+-- Blizzard templates do not expose that field, so give them a harmless proxy
+-- and keep the schema's public widget contract unchanged.
+function DBB2:CreateWidgetBackdropProxy(frame)
+  if frame.backdrop then return frame.backdrop end
+  local proxy = CreateFrame("Frame", nil, frame)
+  proxy:SetAllPoints(frame)
+  proxy:Hide()
+  frame.backdrop = proxy
+  return proxy
+end
+
+function DBB2:GetClassicWidgetName(name, prefix)
+  if name then return name end
+  self.classicWidgetId = (self.classicWidgetId or 0) + 1
+  return "DBB2Classic" .. (prefix or "Widget") .. self.classicWidgetId
+end
+
 -- Helper function to create backdrop
 -- useFixedBg: if true, uses the default dark charcoal instead of configurable color
 function DBB2:CreateBackdrop(frame, inset, legacy, transp, useFixedBg)
   local border = 1
+
+  if self:IsClassicTheme() then
+    if not frame.backdrop then
+      local b = CreateFrame("Frame", nil, frame)
+      local level = frame:GetFrameLevel()
+      b:SetFrameLevel(math.max(0, level - 1))
+      frame.backdrop = b
+    end
+    frame.backdrop:SetPoint("TOPLEFT", frame, "TOPLEFT", -5, 5)
+    frame.backdrop:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 5, -5)
+    frame.backdrop:SetBackdrop(useFixedBg and self.classicTooltipBackdrop or self.classicBackdrop)
+    if useFixedBg then
+      frame.backdrop:SetBackdropColor(0.09, 0.09, 0.09, transp or 1)
+    else
+      -- Blizzard's dialog background has only one visible layer in parts of
+      -- the config UI, so applying the modern 0.85 alpha makes it look notably
+      -- translucent. Keep classic windows opaque; tooltips remain independent.
+      frame.backdrop:SetBackdropColor(1, 1, 1, 1)
+    end
+    frame.backdrop:SetBackdropBorderColor(1, 1, 1, 1)
+    return
+  end
   
   -- Use configurable background color (with fallback to default dark charcoal)
   -- Unless useFixedBg is true, then always use the default
@@ -113,6 +179,7 @@ DBB2:SetScript("OnEvent", function()
       DBB2_Config.version = "1.0.0"
       DBB2_Config.position = {}
       DBB2_Config.fontOffset = 0  -- Font size offset (-6 to +6)
+      DBB2_Config.classicTheme = false  -- Opt-in original Blizzard widget theme
       DBB2_Config.highlightColor = {r = 0.667, g = 0.655, b = 0.8, a = 1}  -- Default highlight color (#aaa7cc)
       DBB2_Config.backgroundColor = {r = 0.08, g = 0.08, b = 0.10, a = 0.85}  -- Default background color (dark charcoal)
       DBB2_Config.spamFilterSeconds = 150  -- Duplicate message filter time
@@ -144,6 +211,14 @@ DBB2:SetScript("OnEvent", function()
     elseif DBB2_Config.fontOffset > 6 then
       DBB2_Config.fontOffset = 6
     end
+
+    -- Existing characters stay on the current modern theme unless they opt in.
+    if DBB2_Config.classicTheme == nil then
+      DBB2_Config.classicTheme = false
+    end
+    -- Theme changes are intentionally applied only on reload, preventing a
+    -- mixture of modern and native widgets during the current session.
+    DBB2.activeClassicTheme = DBB2_Config.classicTheme == true
     
     -- Ensure highlightColor exists for existing configs
     if DBB2_Config.highlightColor == nil then
@@ -498,6 +573,10 @@ end
 -- Get highlight color
 -- return:      [r, g, b, a]    highlight color components
 function DBB2:GetHighlightColor()
+  if self:IsClassicTheme() then
+    local classic = self.classicHighlightColor
+    return classic.r, classic.g, classic.b, classic.a
+  end
   local c = DBB2_Config.highlightColor or {r = 0.2, g = 1, b = 0.8, a = 1}
   return c.r, c.g, c.b, c.a
 end

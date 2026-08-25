@@ -82,6 +82,7 @@ DBB2:RegisterModule("config", function()
   resetBtn:SetScript("OnLeave", function() this.backdrop:SetBackdropBorderColor(0.3, 0.3, 0.3, 1) end)
   resetBtn:SetScript("OnClick", function()
     DBB2_Config.fontOffset = 0
+    DBB2_Config.classicTheme = false
     DBB2_Config.backgroundColor = {r = 0.08, g = 0.08, b = 0.10, a = 0.85}
     DBB2_Config.highlightColor = {r = 0.667, g = 0.655, b = 0.8, a = 1}
     DBB2_Config.spamFilterSeconds = 150
@@ -172,6 +173,8 @@ DBB2:RegisterModule("config", function()
   DBB2.api.RenderConfigSchema(DBB2.gui.configTabs.panels["General"], {
     { type = "section", label = "Appearance" },
     { type = "description", text = "Customize how the window and text look.", fontSize = 9 },
+    { type = "toggle", key = "classicTheme", label = "Classic Blizzard Theme", default = false,
+      tooltip = {{"Classic Blizzard Theme", "highlight"}, "Use original Blizzard-style windows and controls.", {"Requires Save & Reload", "gray"}} },
     { type = "slider", key = "defaultTab", label = "Default Tab", min = 0, max = 3, step = 1,
       valueLabels = {[0] = "Logs", [1] = "Groups", [2] = "Professions", [3] = "Hardcore"},
       tooltip = {{"Default Tab", "highlight"}, "Choose which tab opens by default."} },
@@ -189,7 +192,7 @@ DBB2:RegisterModule("config", function()
       tooltip = {{"Background Color", "highlight"}, "Set the background color.", {"Requires /reload", "gray"}} },
     { type = "colorpicker", key = "highlightColor", label = "Highlight Color",
       default = {r = 0.2, g = 1, b = 0.8, a = 1},
-      tooltip = {{"Highlight Color", "highlight"}, "Set the color used for highlights.", {"Requires /reload", "gray"}} },
+      tooltip = {{"Highlight Color", "highlight"}, "Set the color used for highlights in the Modern theme.", "The Classic theme uses Blizzard gold.", {"Requires /reload", "gray"}} },
 
     { type = "section", label = "Time & Display" },
     { type = "description", text = "Control how messages are shown and how much information is visible.", fontSize = 9 },
