@@ -19,9 +19,9 @@ RIP Turtle 2018-2026 🐢 2026 - 🐙
 - **Optional Classic Theme**: Use the original Blizzard window artwork and controls instead of the default modern theme.
 
 
-
-![85ad664551023708](https://github.com/user-attachments/assets/b474d2c6-60a6-4116-b5c7-8e3df43d0f58)
-
+<img width="690" height="425" alt="WoW_25-08-26" src="https://github.com/user-attachments/assets/2ad07572-4363-4211-acb3-545ab3e0f5c0" />
+<img width="690" height="425" alt="WoW_25-08-26 (2)" src="https://github.com/user-attachments/assets/6dca3199-5029-4b4b-a18c-888e9e384f41" />
+<img width="690" height="425" alt="WoW_25-08-26 (3)" src="https://github.com/user-attachments/assets/4854a5c2-c1f1-424c-b84b-d977ef75eb7a" />
 
 
 ## Installation
