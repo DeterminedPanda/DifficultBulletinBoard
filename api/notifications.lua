@@ -16,17 +16,54 @@ local GetTime = GetTime
 -- NOTIFICATION STATE
 -- =====================
 
--- Session-only notification state (not saved to config)
+-- Notification state for all categories
+-- Session-only by default; with the persistNotifications option enabled this is
+-- the same table as DBB2_Config.notificationState, so writes are saved per character
 DBB2.notificationState = {}
 
--- [ InitNotificationState ]
--- Initializes notification state for all categories (session-only, all off by default)
-function DBB2.api.InitNotificationState()
-  DBB2.notificationState = {
+-- [ NewNotificationState ]
+-- Returns an empty notification state table (local helper)
+-- return:          [table]         fresh state with one sub-table per category type
+local function NewNotificationState()
+  return {
     groups = {},
     professions = {},
     hardcore = {}
   }
+end
+
+-- [ InitNotificationState ]
+-- Initializes notification state for all categories (all off by default)
+-- With persistNotifications enabled, reuses the saved state so enabled bells
+-- survive a logout; otherwise starts empty and keeps nothing in the config
+function DBB2.api.InitNotificationState()
+  if not DBB2_Config.persistNotifications then
+    DBB2_Config.notificationState = nil
+    DBB2.notificationState = NewNotificationState()
+    return
+  end
+
+  local state = DBB2_Config.notificationState or NewNotificationState()
+  if not state.groups then state.groups = {} end
+  if not state.professions then state.professions = {} end
+  if not state.hardcore then state.hardcore = {} end
+  -- same table reference, so every write lands in the saved variables
+  DBB2_Config.notificationState = state
+  DBB2.notificationState = state
+end
+
+-- [ SetNotificationPersistence ]
+-- Starts or stops saving the current notification state between sessions
+-- Called when the persistNotifications option is toggled
+-- 'enabled'        [boolean]       whether enabled bells should be remembered
+function DBB2.api.SetNotificationPersistence(enabled)
+  if enabled then
+    -- adopt the current session state so bells enabled before the toggle are kept
+    DBB2_Config.notificationState = DBB2.notificationState
+  else
+    -- drop the saved copy; the live table stays untouched for this session
+    DBB2_Config.notificationState = nil
+  end
 end
 
 -- [ IsNotificationEnabled ]
@@ -52,7 +89,8 @@ function DBB2.api.SetNotificationEnabled(categoryType, categoryName, enabled)
   if not DBB2.notificationState[categoryType] then
     DBB2.notificationState[categoryType] = {}
   end
-  DBB2.notificationState[categoryType][categoryName] = enabled
+  -- store nil instead of false so disabled categories are not saved
+  DBB2.notificationState[categoryType][categoryName] = enabled and true or nil
   return true
 end
 
@@ -250,11 +288,12 @@ end
 -- Called when joining a group (if clearNotificationsOnGroupJoin is enabled)
 function DBB2.api.DisableAllNotifications()
   -- Clear the notification state for all category types
-  DBB2.notificationState = {
-    groups = {},
-    professions = {},
-    hardcore = {}
-  }
+  DBB2.notificationState = NewNotificationState()
+  if DBB2_Config.persistNotifications then
+    -- keep the saved copy pointed at the live table, otherwise it would detach
+    -- from DBB2.notificationState and stop recording later toggles
+    DBB2_Config.notificationState = DBB2.notificationState
+  end
   
   -- Also clear any pending notifications in the queue
   DBB2.api.ClearNotificationQueue()
