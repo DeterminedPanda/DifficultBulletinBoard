@@ -291,7 +291,14 @@ function DBB2.api.SendNotification(categoryName, sender, message)
   -- Get highlight color for notification text
   local hr, hg, hb = DBB2:GetHighlightColor()
   local hexColor = string_format("%02x%02x%02x", hr * 255, hg * 255, hb * 255)
-  local notifyText = "|cff" .. hexColor .. "[DBB]|r " .. categoryName .. " - " .. sender .. ": " .. message
+  -- Wrap the sender in a player hyperlink so the chat line can be left-clicked to
+  -- open a whisper. Hardcore/system alerts have no real sender, so only link a
+  -- name we actually have -- a link around "Unknown" would just be a dead click.
+  local senderText = sender
+  if sender ~= "Unknown" and sender ~= "" then
+    senderText = "|Hplayer:" .. sender .. "|h[" .. sender .. "]|h"
+  end
+  local notifyText = "|cff" .. hexColor .. "[DBB]|r " .. categoryName .. " - " .. senderText .. ": " .. message
   
   if settings.chat then
     -- Use the original AddMessage function to bypass our chat filter hook
