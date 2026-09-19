@@ -97,6 +97,8 @@ DBB2:RegisterModule("config", function()
     DBB2_Config.showLevelFilteredGroups = false
     DBB2_Config.showGroupLevelRanges = true
     DBB2_Config.clearNotificationsOnGroupJoin = true
+    DBB2_Config.persistNotifications = false
+    DBB2_Config.notificationState = nil
     DBB2_Config.autoJoinChannels = true
     DBB2_Config.clampToScreen = true
     DBB2_Config.closeOnEscape = true
@@ -252,6 +254,11 @@ DBB2:RegisterModule("config", function()
       tooltip = {{"Sound", "highlight"}, "Play a sound when a notification appears."} },
     { type = "toggle", key = "clearNotificationsOnGroupJoin", label = "Auto-Clear", default = true,
       tooltip = {{"Auto-Clear", "highlight"}, "Clear active notifications when you join a group."} },
+    { type = "toggle", key = "persistNotifications", label = "Remember Bells", default = false,
+      tooltip = {{"Remember Bells", "highlight"}, "Keep active notification bells after you log out.", {"Off = bells reset every session", "gray"}},
+      onChange = function(enabled)
+        DBB2.api.SetNotificationPersistence(enabled)
+      end },
     
     { type = "section", label = "Filtering & Cleanup" },
     { type = "description", text = "Reduce spam, control repeats, and manage how messages are handled.", fontSize = 9 },

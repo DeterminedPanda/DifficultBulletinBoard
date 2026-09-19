@@ -194,6 +194,7 @@ DBB2:SetScript("OnEvent", function()
       DBB2_Config.showGroupLevelRanges = true  -- Show recommended dungeon level ranges in Groups tab
       DBB2_Config.notificationSound = 1  -- Notification sound (0=off, 1=on)
       DBB2_Config.clearNotificationsOnGroupJoin = true  -- Clear notifications when joining group
+      DBB2_Config.persistNotifications = false  -- Remember active notification bells between sessions
       DBB2_Config.autoJoinChannels = true  -- Auto-join World and LFG channels
       DBB2_Config.minimapAngle = 45  -- Minimap button angle
       DBB2_Config.minimapFreeMode = false  -- Minimap button free positioning mode
@@ -297,6 +298,11 @@ DBB2:SetScript("OnEvent", function()
     -- Ensure clearNotificationsOnGroupJoin exists for existing configs (default on)
     if DBB2_Config.clearNotificationsOnGroupJoin == nil then
       DBB2_Config.clearNotificationsOnGroupJoin = true
+    end
+
+    -- Ensure persistNotifications exists for existing configs (default off)
+    if DBB2_Config.persistNotifications == nil then
+      DBB2_Config.persistNotifications = false
     end
     
     -- Ensure minimap button position fields exist for existing configs
