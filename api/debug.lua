@@ -135,13 +135,25 @@ local function NormalizeDiagnosticText(value)
   return string_lower(text)
 end
 
+-- Chat-frame rendering can decorate an otherwise ordinary player name, e.g.
+-- "<DND>[Joyful]", while CHAT_MSG_* supplies just "Joyful". Normalize only
+-- these presentation wrappers for lifecycle correlation; raw values remain on
+-- the record and in traces for troubleshooting.
+local function NormalizeDiagnosticSender(value)
+  local sender = NormalizeDiagnosticText(value)
+  sender = string_gsub(sender, "^<[^>]+>%s*", "")
+  local _, _, bracketedName = string_find(sender, "^%[([^%]]+)%]$")
+  if bracketedName and bracketedName ~= "" then sender = bracketedName end
+  return sender
+end
+
 local function LifecyclePrefix(id)
   return "mid=" .. tostring(id) .. " "
 end
 
 local function FindLifecycle(message, sender)
   local text = NormalizeDiagnosticText(message)
-  local normalizedSender = NormalizeDiagnosticText(sender)
+  local normalizedSender = NormalizeDiagnosticSender(sender)
   local records = debugState.messageLifecycles
   local order = debugState.messageLifecycleOrder
   local now = GetTime()
@@ -176,7 +188,7 @@ local function NewLifecycle(message, sender)
   local record = {
     id = "M" .. tostring(debugState.messageSequence),
     text = NormalizeDiagnosticText(message),
-    sender = NormalizeDiagnosticText(sender),
+    sender = NormalizeDiagnosticSender(sender),
     rawText = tostring(message or ""),
     rawSender = tostring(sender or ""),
     created = GetTime()
@@ -202,8 +214,12 @@ end
 local function CheckLifecycle(record)
   if not record then return end
   -- Blacklisted messages are deliberately both hidden from chat and rejected
-  -- from storage. Only category-based hiding expects a stored DBB entry.
-  if record.expectHidden and record.terminal and string_find(record.terminal, "^stored") == nil then
+  -- from storage. A category-hidden duplicate is also intentional: the prior
+  -- DBB entry remains the retained representation during the spam window.
+  -- Only other category-based hiding paths expect a newly stored DBB entry.
+  if record.expectHidden and record.terminal and
+     string_find(record.terminal, "^stored") == nil and
+     record.terminal ~= "rejected-duplicate" then
     ConsistencyWarning(record, "consistency.hidden-not-stored", "hidden-not-stored",
       "chatRule=" .. tostring(record.chatRule or "unknown") .. " storageRule=" .. tostring(record.storageRule or record.terminal))
   end
@@ -602,8 +618,9 @@ function DBB2.api.DebugReportAmbiguousCategories(message, sender, channel, categ
   return true
 end
 
--- Static, diagnostic-only category audit. It deliberately reports risks rather
--- than changing data: shared or short tags can be intentional conventions.
+-- Static, diagnostic-only category audit. It inventories configuration
+-- relationships; it does not prove that a live message was misclassified.
+-- Live ambiguity is reported separately by DebugReportAmbiguousCategories.
 function DBB2.api.DebugAuditCategoryData()
   if not debugState.enabled or debugState.paused or not DBB2_Config.categories then return end
 
@@ -611,21 +628,28 @@ function DBB2.api.DebugAuditCategoryData()
   local categories = {}
   local emitted = 0
   local totalIssues = 0
+  local potentialIssues = 0
+  local contextItems = 0
   -- Counters and the summary retain every issue. Only keep a small, balanced
   -- sample in the bounded trace so this one-time audit cannot evict live data.
   local maxIssues = 24
   local maxIssuesPerKind = 5
   local issueCounts = {}
   local emittedByKind = {}
-  local function Emit(kind, details)
+  local function Emit(kind, details, level, bucket)
     issueCounts[kind] = (issueCounts[kind] or 0) + 1
     totalIssues = totalIssues + 1
+    if bucket == "potential" then
+      potentialIssues = potentialIssues + 1
+    else
+      contextItems = contextItems + 1
+    end
     DBB2.api.DebugCount("audit." .. kind, 1)
     local kindEmitted = emittedByKind[kind] or 0
     if emitted < maxIssues and kindEmitted < maxIssuesPerKind then
       emitted = emitted + 1
       emittedByKind[kind] = kindEmitted + 1
-      DBB2.api.DebugTrace(3, "audit", kind, details)
+      DBB2.api.DebugTrace(level or 2, "audit", kind, details)
     end
   end
 
@@ -648,15 +672,15 @@ function DBB2.api.DebugAuditCategoryData()
     if table_getn(owners) > 1 then
       local names = {}
       for _, owner in ipairs(owners) do table_insert(names, owner.type .. ":" .. owner.name) end
-      Emit("shared-tag", "tag=\"" .. tag .. "\" categories=[" .. table.concat(names, ";") .. "]")
+      Emit("potential-shared-tag", "tag=\"" .. tag .. "\" categories=[" .. table.concat(names, ";") .. "]", 2, "potential")
     end
     if string_len(tag) <= 2 then
-      Emit("high-risk-short-tag", "tag=\"" .. tag .. "\" length=" .. string_len(tag) .. " categories=" .. table_getn(owners))
+      Emit("potential-short-tag", "tag=\"" .. tag .. "\" length=" .. string_len(tag) .. " categories=" .. table_getn(owners), 2, "potential")
     end
     if string_find(tag, "[%*%?%[%]%{%}\\]") then
       local literal = string_gsub(tag, "[%*%?%[%]%{%}\\,]", "")
       if string_len(literal) < 4 or string_sub(tag, 1, 1) == "*" or string_sub(tag, -1) == "*" then
-        Emit("broad-wildcard", "tag=\"" .. tag .. "\" literalLength=" .. string_len(literal))
+        Emit("potential-broad-wildcard", "tag=\"" .. tag .. "\" literalLength=" .. string_len(literal), 2, "potential")
       end
     end
   end
@@ -669,9 +693,9 @@ function DBB2.api.DebugAuditCategoryData()
     for j = i + 1, table_getn(tagNames) do
       local longTag = tagNames[j]
       if string_len(shortTag) < string_len(longTag) and string_find(longTag, shortTag, 1, true) then
-        Emit("substring-tag", "short=\"" .. shortTag .. "\" longer=\"" .. longTag .. "\"")
+        Emit("static-substring-overlap", "short=\"" .. shortTag .. "\" longer=\"" .. longTag .. "\"", 1, "context")
       elseif string_len(longTag) < string_len(shortTag) and string_find(shortTag, longTag, 1, true) then
-        Emit("substring-tag", "short=\"" .. longTag .. "\" longer=\"" .. shortTag .. "\"")
+        Emit("static-substring-overlap", "short=\"" .. longTag .. "\" longer=\"" .. shortTag .. "\"", 1, "context")
       end
     end
   end
@@ -684,7 +708,7 @@ function DBB2.api.DebugAuditCategoryData()
       if tags[tag] and table_getn(tags[tag]) == 1 then hasUniqueTag = true break end
     end
     if hasTag and not hasUniqueTag then
-      Emit("no-unique-tags", "category=" .. category.type .. ":" .. category.name)
+      Emit("potential-no-unique-tags", "category=" .. category.type .. ":" .. category.name, 2, "potential")
     end
   end
 
@@ -698,7 +722,7 @@ function DBB2.api.DebugAuditCategoryData()
           if owner.type == categoryType then table_insert(names, owner.name) end
         end
         if names[1] then
-          Emit("filter-category-overlap", "type=" .. categoryType .. " filterTag=\"" .. lowerFilterTag .. "\" categories=[" .. table.concat(names, ",") .. "]")
+          Emit("static-filter-category-overlap", "type=" .. categoryType .. " filterTag=\"" .. lowerFilterTag .. "\" categories=[" .. table.concat(names, ",") .. "]", 1, "context")
         end
       end
     end
@@ -707,7 +731,15 @@ function DBB2.api.DebugAuditCategoryData()
   local summary = {}
   for kind, count in pairs(issueCounts) do table_insert(summary, kind .. "=" .. count) end
   table.sort(summary)
-  DBB2.api.DebugTrace(2, "audit", "category-data-summary", "issues=" .. table.concat(summary, " ") .. " emitted=" .. emitted .. " total=" .. totalIssues .. " truncated=" .. tostring(totalIssues > emitted))
+  local liveAmbiguities = debugState.counters["classification.ambiguous"] or 0
+  DBB2.api.DebugTrace(2, "audit", "category-data-summary",
+    "liveAmbiguities=" .. liveAmbiguities ..
+    " potential=" .. potentialIssues ..
+    " staticContext=" .. contextItems ..
+    " inventory=" .. table.concat(summary, " ") ..
+    " emitted=" .. emitted ..
+    " total=" .. totalIssues ..
+    " truncated=" .. tostring(totalIssues > emitted))
 end
 
 function DBB2.api.DebugFormatEntry(entry)
@@ -1158,7 +1190,7 @@ function DBB2.api.DebugAnalyzeMessage(message, sender, channel, msgType)
   local baseEvidence = DBB2.api.GetMessageCategoryEvidence(message, true, true)
   local ambiguous = DBB2.api.DebugReportAmbiguousCategories(message, sender, channel, base, baseEvidence, true)
   local unsorted = DBB2.api.MatchUnsortedFilterTags(message)
-  local duplicate = DBB2.api.IsDuplicateMessage(message, sender)
+  local duplicate, duplicateAge = DBB2.api.IsDuplicateMessage(message, sender)
   local hasFull = full.groups[1] or full.professions[1] or full.hardcore[1]
   local hasBase = base.groups[1] or base.professions[1] or base.hardcore[1]
 
@@ -1228,6 +1260,7 @@ function DBB2.api.DebugAnalyzeMessage(message, sender, channel, msgType)
     " text=\"" .. SafeText(message, 240) .. "\"" ..
     " blacklist=" .. blacklistDetail ..
     " duplicate=" .. tostring(duplicate) ..
+    " duplicateExistingEntryAge=" .. tostring(duplicateAge or "no") ..
     " groups=[" .. Join(full.groups) .. "]" ..
     " professions=[" .. Join(full.professions) .. "]" ..
     " hardcore=[" .. Join(full.hardcore) .. "]" ..

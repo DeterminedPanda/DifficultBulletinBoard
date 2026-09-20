@@ -93,7 +93,8 @@ end
 -- Checks if a message is a duplicate within the spam filter time window
 -- 'message'    [string]        the message text
 -- 'sender'     [string]        the sender name
--- return:      [boolean]       true if duplicate, false otherwise
+-- return:      [boolean, number, number]
+--              duplicate state, matched entry age in seconds, matched entry time
 function DBB2.api.IsDuplicateMessage(message, sender)
   if not message then return false end
   
@@ -123,7 +124,7 @@ function DBB2.api.IsDuplicateMessage(message, sender)
     local storedSender = string_lower(msg.sender or "")
     
     if storedSender == lowerSender and storedMsg == lowerMsg then
-      return true
+      return true, timeDiff, msg.time
     end
   end
   
@@ -362,10 +363,12 @@ function DBB2.api.AddMessage(message, sender, channel, msgType, diagnosticID)
   end
   
   stageStart = debugging and DBB2.api.DebugClock() or nil
-  local isDuplicate = DBB2.api.IsDuplicateMessage(message, sender)
+  local isDuplicate, duplicateAge = DBB2.api.IsDuplicateMessage(message, sender)
   if debugging then DBB2.api.DebugPipelineStage(diagnosticID, "duplicate-search", DBB2.api.DebugClock() - stageStart, "", table_getn(DBB2.messages)) end
   if isDuplicate then
-    Finish("rejected-duplicate", context .. " spamWindow=" .. (DBB2_Config.spamFilterSeconds or 150) .. "s" .. categoryDetail)
+    Finish("rejected-duplicate", context .. " spamWindow=" .. (DBB2_Config.spamFilterSeconds or 150) .. "s" ..
+      " existingEntryAge=" .. tostring(duplicateAge or "unknown") .. "s" ..
+      " policy=hidden-chat-retains-existing-entry" .. categoryDetail)
     return
   end
   
