@@ -242,7 +242,7 @@ end
 -- 'channel'    [string]        the channel name
 -- 'type'       [string]        the message type (CHAT_MSG_GUILD, CHAT_MSG_CHANNEL, etc)
 function DBB2.api.AddMessage(message, sender, channel, msgType, diagnosticID)
-  local debugging = DBB2.debug.enabled
+  local debugging = DBB2.debug.enabled and not DBB2.debug.paused
   local debugStart = nil
   local debugStartingMessageCount = nil
   local diagnosticOverhead = 0

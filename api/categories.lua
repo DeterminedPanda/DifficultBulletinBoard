@@ -420,17 +420,24 @@ function DBB2.api.MatchFilterTags(message, categoryType, evidence)
   return MatchFilterTagList(message, filter.tags, evidence)
 end
 
+-- Strictly matches the configured list regardless of its enabled state. This
+-- lets features such as Filtered chat hiding use the user's tag vocabulary
+-- without changing whether normal bulletin-board categorization is filtered.
+function DBB2.api.MatchConfiguredFilterTags(message, categoryType, evidence)
+  local filter = DBB2.api.GetFilterTags(categoryType)
+  if not filter then return false end
+  return MatchFilterTagList(message, filter.tags, evidence)
+end
+
 -- [ MatchUnsortedFilterTags ]
 -- Matches the configured Group and Profession Filter Tag lists regardless of
 -- their enabled state. Returns a marker suitable for Logs-only entries.
 function DBB2.api.MatchUnsortedFilterTags(message)
-  local groupFilter = DBB2.api.GetFilterTags("groups")
-  if groupFilter and MatchFilterTagList(message, groupFilter.tags) then
+  if DBB2.api.MatchConfiguredFilterTags(message, "groups") then
     return "group"
   end
 
-  local professionFilter = DBB2.api.GetFilterTags("professions")
-  if professionFilter and MatchFilterTagList(message, professionFilter.tags) then
+  if DBB2.api.MatchConfiguredFilterTags(message, "professions") then
     return "trade"
   end
 

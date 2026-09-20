@@ -53,6 +53,7 @@ debugState.freezeOnError = true
 debugState.currentEvent = debugState.currentEvent or "none"
 debugState.currentDiagnosticID = debugState.currentDiagnosticID or nil
 debugState.categoryCollisions = debugState.categoryCollisions or {}
+debugState.simulationConfigurationRows = debugState.simulationConfigurationRows or {}
 
 local LEVEL_NAMES = { "TRACE", "INFO", "WARN", "ERROR" }
 
@@ -113,7 +114,7 @@ function DBB2.api.DebugFormatCategoryEvidence(evidenceByType)
 end
 
 function DBB2.api.DebugReportCategoryEvidence(diagnosticID, evidenceByType, phase)
-  if not debugState.enabled or not evidenceByType then return end
+  if not debugState.enabled or debugState.paused or not evidenceByType then return end
   for _, categoryType in ipairs({ "groups", "professions", "hardcore" }) do
     for _, categoryResult in ipairs(evidenceByType[categoryType] or {}) do
       local oneCategory = { [categoryType] = { categoryResult } }
@@ -206,7 +207,8 @@ local function CheckLifecycle(record)
     ConsistencyWarning(record, "consistency.hidden-not-stored", "hidden-not-stored",
       "chatRule=" .. tostring(record.chatRule or "unknown") .. " storageRule=" .. tostring(record.storageRule or record.terminal))
   end
-  if record.visible and record.terminal and string_find(record.terminal, "^stored") then
+  local expectedFilteredVisible = record.chatRule and string_find(record.chatRule, "mode=filtered", 1, true)
+  if record.visible and record.terminal and string_find(record.terminal, "^stored") and not expectedFilteredVisible then
     ConsistencyWarning(record, "consistency.stored-not-hidden", "stored-not-hidden",
       "chatRule=" .. tostring(record.chatRule or "unknown") .. " storageRule=" .. tostring(record.storageRule or record.terminal))
   end
@@ -221,7 +223,7 @@ local function CheckLifecycle(record)
 end
 
 function DBB2.api.DebugBeginMessage(message, sender, channel, msgType)
-  if not debugState.enabled then return nil end
+  if not debugState.enabled or debugState.paused then return nil end
   local record, senderMismatch, textMismatch = FindLifecycle(message, sender)
   -- A prior event with identical text is a separate delivery (often a real
   -- duplicate message), not another stage of the old lifecycle. Chat rendering
@@ -250,7 +252,7 @@ function DBB2.api.DebugBeginMessage(message, sender, channel, msgType)
 end
 
 function DBB2.api.DebugChatLifecycle(message, sender, hidden, reason, frameIndex)
-  if not debugState.enabled then return nil end
+  if not debugState.enabled or debugState.paused then return nil end
   local record, senderMismatch, textMismatch = FindLifecycle(message, sender)
   if not record then record = NewLifecycle(message, sender) end
   if senderMismatch then
@@ -273,14 +275,14 @@ function DBB2.api.DebugChatLifecycle(message, sender, hidden, reason, frameIndex
 end
 
 function DBB2.api.DebugLifecycleStage(id, stage, details)
-  if not debugState.enabled or not id then return end
+  if not debugState.enabled or debugState.paused or not id then return end
   local record = debugState.messageLifecycles[id]
   if record and stage == "category-matching" then record.categorySummary = SafeText(details, 400) end
   DBB2.api.DebugTrace(2, "message", stage, LifecyclePrefix(id) .. (details or ""))
 end
 
 function DBB2.api.DebugPipelineStage(id, stage, elapsedMS, details, storedMessages, renderedRows)
-  if not debugState.enabled then return end
+  if not debugState.enabled or debugState.paused then return end
   -- Per-call stage timings overwhelmed the bounded trace while duplicating the
   -- aggregate performance report. Keep samples and slow-call warnings; the
   -- terminal entry retains each message's total elapsed time and outcome.
@@ -288,7 +290,7 @@ function DBB2.api.DebugPipelineStage(id, stage, elapsedMS, details, storedMessag
 end
 
 function DBB2.api.DebugUITransition(action, details)
-  if not debugState.enabled then return end
+  if not debugState.enabled or debugState.paused then return end
   if action == "level-filter-changed" or action == "category-tags-changed" or
      action == "category-selection-changed" or action == "filter-tags-changed" or
      action == "filter-tags-enabled-changed" then
@@ -299,7 +301,7 @@ function DBB2.api.DebugUITransition(action, details)
 end
 
 function DBB2.api.DebugLifecycleTerminal(id, outcome, details, suppressTrace)
-  if not debugState.enabled or not id then return end
+  if not debugState.enabled or debugState.paused or not id then return end
   local record = debugState.messageLifecycles[id]
   if record and record.terminal then
     DBB2.api.DebugCount("lifecycle.multipleTerminal", 1)
@@ -337,27 +339,30 @@ function DBB2.api.DebugClock()
   return ClockMS()
 end
 
-function DBB2.api.DebugCount(name, amount)
-  if not debugState.enabled then return end
+function DBB2.api.DebugCount(name, amount, allowWhilePaused)
+  if not debugState.enabled or (debugState.paused and not allowWhilePaused) then return end
   debugState.counters[name] = (debugState.counters[name] or 0) + (amount or 1)
   debugState.dirty = true
 end
 
 -- Aggregate noisy background activity without forcing the visible report to
 -- rebuild. The count appears on the next meaningful refresh.
-function DBB2.api.DebugCountSilent(name, amount)
-  if not debugState.enabled then return end
+function DBB2.api.DebugCountSilent(name, amount, allowWhilePaused)
+  if not debugState.enabled or (debugState.paused and not allowWhilePaused) then return end
   debugState.counters[name] = (debugState.counters[name] or 0) + (amount or 1)
 end
 
-function DBB2.api.DebugTrace(level, category, action, details, elapsedMS)
-  if not debugState.enabled or debugState.paused then return end
+function DBB2.api.DebugTrace(level, category, action, details, elapsedMS, allowWhilePaused)
+  if not debugState.enabled or (debugState.paused and not allowWhilePaused) then return end
   local traceStarted = ClockMS()
 
   level = level or 2
   category = category or "system"
   action = action or "event"
   debugState.sequence = debugState.sequence + 1
+  local detailLimit = 700
+  if category == "test" then detailLimit = 1800 end
+  if category == "lua-error" then detailLimit = 2600 end
 
   local entry = {
     sequence = debugState.sequence,
@@ -366,7 +371,7 @@ function DBB2.api.DebugTrace(level, category, action, details, elapsedMS)
     levelName = LEVEL_NAMES[level] or "INFO",
     category = SafeText(category, 18),
     action = SafeText(action, 28),
-    details = SafeText(details, category == "lua-error" and 2600 or 700),
+    details = SafeText(details, detailLimit),
     elapsedMS = elapsedMS
   }
 
@@ -380,7 +385,7 @@ function DBB2.api.DebugTrace(level, category, action, details, elapsedMS)
     debugState.dropped = (debugState.dropped or 0) + 1
   end
   debugState.dirty = true
-  DBB2.api.DebugPerf("diagnostic.trace-creation", ClockMS() - traceStarted, nil, true)
+  DBB2.api.DebugPerf("diagnostic.trace-creation", ClockMS() - traceStarted, nil, true, allowWhilePaused)
   return entry
 end
 
@@ -438,7 +443,7 @@ function DBB2.api.DebugDecision(outcome, details, elapsedMS)
 end
 
 function DBB2.api.DebugFinishDecision(startedMS, outcome, details, startingMessageCount)
-  if not debugState.enabled then return end
+  if not debugState.enabled or debugState.paused then return end
   local elapsed = ClockMS() - startedMS
   local retainedMessages = DBB2.messages and table_getn(DBB2.messages) or 0
   local messageContext = " retainedMessages=" .. retainedMessages
@@ -450,8 +455,8 @@ function DBB2.api.DebugFinishDecision(startedMS, outcome, details, startingMessa
   DBB2.api.DebugPerf("AddMessage." .. (outcome or "unknown"), elapsed, retainedMessages)
 end
 
-function DBB2.api.DebugPerf(name, elapsedMS, retainedMessages, suppressSlowWarning)
-  if not debugState.enabled or not elapsedMS then return end
+function DBB2.api.DebugPerf(name, elapsedMS, retainedMessages, suppressSlowWarning, allowWhilePaused)
+  if not debugState.enabled or (debugState.paused and not allowWhilePaused) or not elapsedMS then return end
   local item = debugState.perf[name]
   if not item then
     item = { count = 0, total = 0, max = 0, samples = {}, sampleStart = 1, sampleCount = 0 }
@@ -476,8 +481,8 @@ function DBB2.api.DebugPerf(name, elapsedMS, retainedMessages, suppressSlowWarni
   local threshold = debugState.slowThresholds[name]
   if threshold == nil then threshold = debugState.slowThresholds.default end
   if not suppressSlowWarning and threshold and threshold > 0 and elapsedMS >= threshold then
-    DBB2.api.DebugCount("performance.slowCalls", 1)
-    DBB2.api.DebugTrace(3, "performance", "slow-call", "metric=" .. name .. " elapsedMS=" .. string_format("%.3f", elapsedMS) .. " thresholdMS=" .. tostring(threshold) .. " retainedMessages=" .. tostring(retainedMessages or ""))
+    DBB2.api.DebugCount("performance.slowCalls", 1, allowWhilePaused)
+    DBB2.api.DebugTrace(3, "performance", "slow-call", "metric=" .. name .. " elapsedMS=" .. string_format("%.3f", elapsedMS) .. " thresholdMS=" .. tostring(threshold) .. " retainedMessages=" .. tostring(retainedMessages or ""), nil, allowWhilePaused)
   end
 end
 
@@ -494,8 +499,8 @@ function DBB2.api.DebugGetSlowThreshold(name)
   return debugState.slowThresholds.default
 end
 
-function DBB2.api.DebugReportAmbiguousCategories(message, sender, channel, categories, evidenceByType)
-  if not debugState.enabled or not categories then return false end
+function DBB2.api.DebugReportAmbiguousCategories(message, sender, channel, categories, evidenceByType, allowWhilePaused)
+  if not debugState.enabled or (debugState.paused and not allowWhilePaused) or not categories then return false end
 
   local ambiguousTypes = {}
   local allMatches = {}
@@ -584,8 +589,8 @@ function DBB2.api.DebugReportAmbiguousCategories(message, sender, channel, categ
     reason = "related category name token=\"" .. commonNameWord .. "\""
   end
 
-  DBB2.api.DebugCount("classification.ambiguous", 1)
-  DBB2.api.DebugCount("classification." .. classification, 1)
+  DBB2.api.DebugCount("classification.ambiguous", 1, allowWhilePaused)
+  DBB2.api.DebugCount("classification." .. classification, 1, allowWhilePaused)
   local collisionKey = table.concat(ambiguousTypes, ";")
   debugState.categoryCollisions[collisionKey] = (debugState.categoryCollisions[collisionKey] or 0) + 1
   DBB2.api.DebugTrace(3, "message", classification,
@@ -593,14 +598,14 @@ function DBB2.api.DebugReportAmbiguousCategories(message, sender, channel, categ
     " channel=" .. tostring(channel or "") ..
     " matches=" .. table.concat(ambiguousTypes, ";") ..
     " reason=" .. reason ..
-    " text=\"" .. SafeText(message, 300) .. "\"")
+    " text=\"" .. SafeText(message, 300) .. "\"", nil, allowWhilePaused)
   return true
 end
 
 -- Static, diagnostic-only category audit. It deliberately reports risks rather
 -- than changing data: shared or short tags can be intentional conventions.
 function DBB2.api.DebugAuditCategoryData()
-  if not debugState.enabled or not DBB2_Config.categories then return end
+  if not debugState.enabled or debugState.paused or not DBB2_Config.categories then return end
 
   local tags = {}
   local categories = {}
@@ -736,6 +741,7 @@ function DBB2.api.DebugClear()
   debugState.categoryCollisions = {}
   debugState.currentEvent = "none"
   debugState.currentDiagnosticID = nil
+  debugState.simulationConfigurationRows = {}
   debugState.luaMemoryStartKB = collectgarbage and (collectgarbage("count") or 0) or 0
   debugState.lastMemoryUpdate = 0
   debugState.dirty = true
@@ -755,7 +761,7 @@ function DBB2.api.DebugGetRuntimeSummary()
   end
 
   local now = GetTime()
-  if now - (debugState.lastMemoryUpdate or 0) >= 5 then
+  if not debugState.paused and now - (debugState.lastMemoryUpdate or 0) >= 5 then
     local memorySampleStarted = ClockMS()
     debugState.lastMemoryUpdate = now
     DBB2.api.DebugPerf("diagnostic.memory-sampling", ClockMS() - memorySampleStarted, nil, true)
@@ -955,6 +961,8 @@ function DBB2.api.DebugGetConfigurationSummary(reason)
     ",hardcore:" .. tostring(DBB2_Config.hardcoreVersion or versions.HARDCORE or 0) ..
     ",blacklist:" .. tostring(DBB2_Config.blacklistVersion or versions.BLACKLIST or 0)
   local categoryCounts = {}
+  local hideFromChat = DBB2_Config.hideFromChat or 0
+  local hideFromChatNames = { [0] = "Disabled", [1] = "Filtered", [2] = "All" }
   for _, categoryType in ipairs({ "groups", "professions", "hardcore" }) do
     local categories = DBB2_Config.categories and DBB2_Config.categories[categoryType] or {}
     local selected = 0
@@ -966,13 +974,16 @@ function DBB2.api.DebugGetConfigurationSummary(reason)
   local detail = "reason=" .. (reason or "manual") ..
     " version=" .. (GetAddOnMetadata("DifficultBulletinBoard", "Version") or "?") ..
     " monitored=[" .. table.concat(monitored, ",") .. "]" ..
-    " hideFromChat=" .. tostring(DBB2_Config.hideFromChat or 0) ..
+    " hideFromChat=" .. tostring(hideFromChat) .. "(" .. tostring(hideFromChatNames[hideFromChat] or "Unknown") .. ")" ..
     " blacklist=" .. tostring(DBB2_Config.blacklist and DBB2_Config.blacklist.enabled or false) ..
+    " blacklistHideFromChat=" .. tostring(DBB2_Config.blacklist and DBB2_Config.blacklist.hideFromChat or false) ..
     " spamWindow=" .. tostring(DBB2_Config.spamFilterSeconds or 0) ..
     " expiryMinutes=" .. tostring(DBB2_Config.messageExpireMinutes or 0) ..
     " unsortedLogs=" .. tostring(DBB2_Config.showUnsortedMessagesInLogs or false) ..
     " groupFilter=" .. tostring(groupFilter and groupFilter.enabled or false) ..
+    " groupFilterTags=[" .. Join(groupFilter and groupFilter.tags) .. "]" ..
     " professionFilter=" .. tostring(professionFilter and professionFilter.enabled or false) ..
+    " professionFilterTags=[" .. Join(professionFilter and professionFilter.tags) .. "]" ..
     " notificationMode=" .. tostring(notificationMode) ..
     " hardcore=" .. tostring(DBB2.api.IsHardcoreCharacter and DBB2.api.IsHardcoreCharacter() or false) ..
     " playerLevel=" .. tostring(playerLevel) ..
@@ -1108,9 +1119,34 @@ function DBB2.api.DebugGetConfigurationExportRows()
   return rows
 end
 
+-- Preserve the complete configuration that produced the latest simulation.
+-- The console uses a compact context trace; exports include these detailed rows
+-- separately from the fresh configuration captured when Export is clicked.
+function DBB2.api.DebugCaptureSimulationConfiguration()
+  local captured = {}
+  for _, row in ipairs(DBB2.api.DebugGetConfigurationExportRows()) do
+    table_insert(captured, {
+      key = "simulation." .. tostring(row.key or "configuration"),
+      value = row.value
+    })
+  end
+  debugState.simulationConfigurationRows = captured
+end
+
+function DBB2.api.DebugGetSimulationConfigurationExportRows()
+  return debugState.simulationConfigurationRows or {}
+end
+
+-- Simulates one incoming message without storing it, hiding real chat, firing
+-- notifications, or changing duplicate history. Decisions use the same public
+-- matchers and current configuration as the live chat and storage paths.
 function DBB2.api.DebugAnalyzeMessage(message, sender, channel, msgType)
   message = message or ""
-  sender = sender or UnitName("player") or "DebugUser"
+  sender = sender or "DBBTestPlayer"
+  local playerName = UnitName and UnitName("player") or nil
+  if playerName and string_lower(sender) == string_lower(playerName) then
+    sender = "DBBTestPlayer"
+  end
   channel = channel or "World"
   msgType = msgType or "CHAT_MSG_CHANNEL"
 
@@ -1120,14 +1156,37 @@ function DBB2.api.DebugAnalyzeMessage(message, sender, channel, msgType)
   local base = DBB2.api.CategorizeMessage(message, true, true)
   local fullEvidence = DBB2.api.GetMessageCategoryEvidence(message, true, false)
   local baseEvidence = DBB2.api.GetMessageCategoryEvidence(message, true, true)
+  local ambiguous = DBB2.api.DebugReportAmbiguousCategories(message, sender, channel, base, baseEvidence, true)
   local unsorted = DBB2.api.MatchUnsortedFilterTags(message)
   local duplicate = DBB2.api.IsDuplicateMessage(message, sender)
-  local elapsed = ClockMS() - started
-
   local hasFull = full.groups[1] or full.professions[1] or full.hardcore[1]
   local hasBase = base.groups[1] or base.professions[1] or base.hardcore[1]
+
+  -- Mirror the event source gate before predicting AddMessage's decision.
+  local sourceAccepted = true
+  local sourceReason = "accepted"
+  if msgType == "CHAT_MSG_CHANNEL" then
+    if not DBB2.api.IsChannelWhitelisted or not DBB2.api.IsChannelWhitelisted(channel) then
+      sourceAccepted = false
+      sourceReason = "unwhitelisted channel"
+    elseif DBB2.api.IsChannelJoined and not DBB2.api.IsChannelJoined(channel) then
+      sourceAccepted = false
+      sourceReason = "channel not joined"
+    elseif DBB2.api.IsHardcoreChatActive and DBB2.api.IsHardcoreChatActive() and string_lower(channel) == "world" then
+      sourceAccepted = false
+      sourceReason = "World ignored while Hardcore chat is active"
+    end
+  elseif msgType == "CHAT_MSG_SYSTEM" then
+    sourceAccepted = true
+  elseif DBB2.api.IsChannelMonitored and not DBB2.api.IsChannelMonitored(channel) then
+    sourceAccepted = false
+    sourceReason = "source not monitored"
+  end
+
   local outcome = "stored-categorized"
-  if blocked then
+  if not sourceAccepted then
+    outcome = "rejected-source"
+  elseif blocked then
     outcome = "rejected-blacklist"
   elseif msgType == "CHAT_MSG_SYSTEM" and not base.hardcore[1] then
     outcome = "rejected-system"
@@ -1141,13 +1200,16 @@ function DBB2.api.DebugAnalyzeMessage(message, sender, channel, msgType)
     outcome = "stored-unsorted"
   end
 
-  local sourceAccepted = true
-  if msgType == "CHAT_MSG_CHANNEL" and DBB2.api.IsChannelWhitelisted then
-    sourceAccepted = DBB2.api.IsChannelWhitelisted(channel) and
-                     (not DBB2.api.IsChannelJoined or DBB2.api.IsChannelJoined(channel))
-  elseif DBB2.api.IsChannelMonitored then
-    sourceAccepted = DBB2.api.IsChannelMonitored(channel)
+  -- Pass explicit source context so the simulation does not depend on whichever
+  -- UI event happened to open or click the diagnostic console.
+  local hidden = false
+  local chatReason = "chat filter unavailable"
+  if not sourceAccepted then
+    chatReason = "source rejected: " .. sourceReason
+  elseif DBB2.api.ShouldHideFromChat then
+    hidden, chatReason = DBB2.api.ShouldHideFromChat(message, sender, message, msgType, channel)
   end
+  local elapsed = ClockMS() - started
 
   local blacklistDetail = "no"
   if blocked then
@@ -1155,11 +1217,15 @@ function DBB2.api.DebugAnalyzeMessage(message, sender, channel, msgType)
     blacklistDetail = (reason or "yes") .. ":" .. tostring(details or "")
   end
 
-  local detail = "predictedOutcome=" .. outcome ..
+  local detail = "chat=" .. (hidden and "hidden" or "visible") ..
+    " chatReason=\"" .. tostring(chatReason or "unknown") .. "\"" ..
+    " storage=" .. outcome ..
     " sourceAccepted=" .. tostring(sourceAccepted) ..
+    " sourceReason=\"" .. sourceReason .. "\"" ..
     " sender=" .. sender ..
     " channel=" .. channel ..
     " type=" .. msgType ..
+    " text=\"" .. SafeText(message, 240) .. "\"" ..
     " blacklist=" .. blacklistDetail ..
     " duplicate=" .. tostring(duplicate) ..
     " groups=[" .. Join(full.groups) .. "]" ..
@@ -1169,14 +1235,14 @@ function DBB2.api.DebugAnalyzeMessage(message, sender, channel, msgType)
     " baseProfessions=[" .. Join(base.professions) .. "]" ..
     " fullEvidence=" .. DBB2.api.DebugFormatCategoryEvidence(fullEvidence) ..
     " baseEvidence=" .. DBB2.api.DebugFormatCategoryEvidence(baseEvidence) ..
-    " ambiguous=" .. tostring((table_getn(base.groups) > 1) or (table_getn(base.professions) > 1) or (table_getn(base.hardcore) > 1)) ..
-    " unsorted=" .. tostring(unsorted or "no") ..
-    " text=\"" .. SafeText(message, 240) .. "\""
+    " ambiguous=" .. tostring(ambiguous) ..
+    " unsortedFilterTagMatch=" .. tostring(unsorted or "no")
 
-  DBB2.api.DebugTrace(2, "test", "message-analysis", detail, elapsed)
-  DBB2.api.DebugPerf("test-analysis", elapsed)
-  DBB2.api.DebugPerf("diagnostic.message-analyzer", elapsed, nil, true)
-  return detail, outcome
+  -- Manual simulations remain available while live capture is paused.
+  DBB2.api.DebugTrace(2, "test", "message-analysis", detail, elapsed, true)
+  DBB2.api.DebugPerf("test-analysis", elapsed, nil, nil, true)
+  DBB2.api.DebugPerf("diagnostic.message-analyzer", elapsed, nil, true, true)
+  return detail, outcome, hidden, chatReason
 end
 
 -- Analyze a pasted corpus one line at a time. Blank lines and # comments are
@@ -1186,16 +1252,27 @@ function DBB2.api.DebugAnalyzeBatch(text, sender, channel, msgType)
   local processed = 0
   local skipped = 0
   local outcomes = {}
+  local chatResults = { hidden = 0, visible = 0 }
   local maxLines = 60
   text = string_gsub(text or "", "\r", "")
+
+  -- Keep every result set tied to the exact settings that produced it. Full
+  -- saved/runtime configuration rows are also included by Diagnostic Export.
+  DBB2.api.DebugCaptureSimulationConfiguration()
+  DBB2.api.DebugTrace(2, "test", "simulation-context", DBB2.api.DebugGetConfigurationSummary("simulation"), nil, true)
 
   for line in string_gfind(text, "[^\n]+") do
     line = string_gsub(line, "^%s*(.-)%s*$", "%1")
     if line == "" or string_sub(line, 1, 1) == "#" then
       skipped = skipped + 1
     elseif processed < maxLines then
-      local _, outcome = DBB2.api.DebugAnalyzeMessage(line, sender, channel, msgType)
+      local _, outcome, hidden = DBB2.api.DebugAnalyzeMessage(line, sender, channel, msgType)
       outcomes[outcome or "unknown"] = (outcomes[outcome or "unknown"] or 0) + 1
+      if hidden then
+        chatResults.hidden = chatResults.hidden + 1
+      else
+        chatResults.visible = chatResults.visible + 1
+      end
       processed = processed + 1
     else
       skipped = skipped + 1
@@ -1206,16 +1283,18 @@ function DBB2.api.DebugAnalyzeBatch(text, sender, channel, msgType)
   for outcome, count in pairs(outcomes) do table_insert(outcomeParts, outcome .. "=" .. count) end
   table.sort(outcomeParts)
   local elapsed = ClockMS() - started
-  DBB2.api.DebugCount("test.batchMessages", processed)
-  DBB2.api.DebugTrace(2, "test", "batch-analysis", "processed=" .. processed .. " skipped=" .. skipped .. " capped=" .. tostring(processed >= maxLines) .. " outcomes=[" .. table.concat(outcomeParts, ",") .. "]", elapsed)
-  DBB2.api.DebugPerf("test-batch-analysis", elapsed)
-  DBB2.api.DebugPerf("diagnostic.batch-message-analyzer", elapsed, nil, true)
+  DBB2.api.DebugCount("test.batchMessages", processed, true)
+  DBB2.api.DebugTrace(2, "test", "batch-analysis", "processed=" .. processed .. " skipped=" .. skipped .. " capped=" .. tostring(processed >= maxLines) .. " chat=[hidden=" .. chatResults.hidden .. ",visible=" .. chatResults.visible .. "] storage=[" .. table.concat(outcomeParts, ",") .. "]", elapsed, true)
+  -- The batch metric is an aggregate of every simulated line and should not be
+  -- compared with the ordinary per-operation slow-call threshold.
+  DBB2.api.DebugPerf("test-batch-analysis", elapsed, nil, true, true)
+  DBB2.api.DebugPerf("diagnostic.batch-message-analyzer", elapsed, nil, true, true)
   return processed, skipped
 end
 
 -- Preserve the normal error dialog while retaining errors in the diagnostic log.
 function DBB2.api.DebugSetCurrentEvent(eventName)
-  if not debugState.enabled then return end
+  if not debugState.enabled or debugState.paused then return end
   debugState.currentEvent = eventName or "unknown"
   debugState.currentDiagnosticID = nil
 end
@@ -1291,6 +1370,7 @@ function DBB2.api.DebugStart()
   debugState.categoryCollisions = {}
   debugState.currentEvent = "none"
   debugState.currentDiagnosticID = nil
+  debugState.simulationConfigurationRows = {}
   debugState.luaMemoryStartKB = collectgarbage and (collectgarbage("count") or 0) or 0
   debugState.lastMemoryUpdate = 0
   debugState.paused = false
@@ -1319,6 +1399,7 @@ function DBB2.api.DebugStop()
   debugState.categoryCollisions = {}
   debugState.currentEvent = "none"
   debugState.currentDiagnosticID = nil
+  debugState.simulationConfigurationRows = {}
   debugState.luaMemoryStartKB = 0
   debugState.lastMemoryUpdate = 0
   debugState.dirty = false

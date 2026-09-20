@@ -364,7 +364,7 @@ function DBB2.api.SendNotification(categoryName, sender, message, diagnosticID)
     PlaySoundFile("Interface\\AddOns\\DifficultBulletinBoard\\sound\\duck.wav")
   end
 
-  if DBB2.debug.enabled then
+  if DBB2.debug.enabled and not DBB2.debug.paused then
     DBB2.api.DebugCount("notifications.sent", 1)
     DBB2.api.DebugTrace(2, "notify", "sent", "category=" .. categoryName .. " sender=" .. sender .. " chat=" .. tostring(settings.chat) .. " screen=" .. tostring(settings.raidWarn) .. " sound=" .. tostring(playSound))
   end
@@ -378,7 +378,7 @@ end
 -- 'sender'     [string]        the message sender
 -- 'msgType'    [string]        optional message type (CHAT_MSG_SYSTEM, CHAT_MSG_CHANNEL, etc)
 function DBB2.api.CheckAndNotify(message, sender, msgType, diagnosticID)
-  local debugging = DBB2.debug.enabled
+  local debugging = DBB2.debug.enabled and not DBB2.debug.paused
   local debugStart = nil
   if debugging then debugStart = DBB2.api.DebugClock() end
   if not DBB2.notificationState then

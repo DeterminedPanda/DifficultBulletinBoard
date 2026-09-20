@@ -4,6 +4,7 @@ local table_getn = table.getn
 local table_insert = table.insert
 local string_find = string.find
 local string_gsub = string.gsub
+local string_gfind = string.gfind
 local string_lower = string.lower
 local string_len = string.len
 local math_max = math.max
@@ -58,8 +59,8 @@ local function ApproximateVisualLines(lines)
   return visualLines
 end
 
-local function ScrollToNewest(viewer)
-  if not viewer.followTail or DBB2.debug.paused then return end
+local function ScrollToNewest(viewer, force)
+  if (viewer.pageOffset ~= 0 or DBB2.debug.paused) and not force then return end
 
   -- Vanilla recalculates a ScrollFrame's range after its child changes size.
   -- Update both the frame and template scrollbar so the scrollbar cannot
@@ -85,6 +86,9 @@ end
 
 local function RefreshViewer(viewer, force)
   if not force and not DBB2.debug.dirty then return end
+  -- With no Tail toggle, fresh diagnostic activity always returns to the newest
+  -- page. Manual Older/Newer clicks can still inspect history between updates.
+  if not force and viewer.pageOffset > 0 then viewer.pageOffset = 0 end
   local refreshStarted = DBB2.api.DebugClock()
 
   local lines = {}
@@ -104,7 +108,6 @@ local function RefreshViewer(viewer, force)
 
   local visibleCount = table_getn(matchingEntries)
   local totalPages = math_max(1, math_ceil(visibleCount / PAGE_SIZE))
-  if viewer.followTail then viewer.pageOffset = 0 end
   if viewer.pageOffset >= totalPages then viewer.pageOffset = totalPages - 1 end
 
   local pageEnd = visibleCount - (viewer.pageOffset * PAGE_SIZE)
@@ -120,7 +123,7 @@ local function RefreshViewer(viewer, force)
 
   local text = table.concat(lines, "\n")
   viewer.log:SetText(text)
-  viewer.log:SetHeight(math_max(390, ApproximateVisualLines(lines) * 12 + 18))
+  viewer.log:SetHeight(math_max(324, ApproximateVisualLines(lines) * 12 + 18))
   viewer.totalPages = totalPages
   viewer.result:SetText(visibleCount .. " matches  ||  showing " .. pageStart .. "-" .. pageEnd .. "  ||  page " .. (totalPages - viewer.pageOffset) .. "/" .. totalPages)
   if viewer.olderButton then
@@ -131,11 +134,12 @@ local function RefreshViewer(viewer, force)
   viewer.pauseButton:SetText(DBB2.debug.paused and "Resume" or "Pause")
   DBB2.debug.dirty = false
 
-  if viewer.followTail and not DBB2.debug.paused then
+  if viewer.pageOffset == 0 and not DBB2.debug.paused then
     ScrollToNewest(viewer)
     -- Repeat after Vanilla's deferred scroll-range/layout update. Two frames
     -- covers both the child rect and UIPanelScrollFrameTemplate scrollbar.
     viewer.pendingTailFrames = 2
+    viewer.forcePendingTail = false
   end
   DBB2.api.DebugPerf("diagnostic.console-refresh", DBB2.api.DebugClock() - refreshStarted, nil, true)
   -- Recording this self-measurement must not trigger an idle refresh loop.
@@ -214,6 +218,21 @@ local function BuildDiagnosticExportChunks()
       configRow.value,
       ""
     }))
+  end
+
+  -- Keep the exact settings that produced the latest simulation even if the
+  -- user changes options before exporting the diagnostic log.
+  if DBB2.api.DebugGetSimulationConfigurationExportRows then
+    for _, configRow in ipairs(DBB2.api.DebugGetSimulationConfigurationExportRows()) do
+      table_insert(exportLines, TSVRow({
+        DIAGNOSTIC_TSV_SCHEMA_VERSION,
+        "metadata",
+        "", "", "", "", "", "", "",
+        configRow.key,
+        configRow.value,
+        ""
+      }))
+    end
   end
 
   for _, entry in ipairs(entries) do
@@ -355,9 +374,9 @@ end
 
 local function CreateViewer()
   local viewer = CreateFrame("Frame", "DBB2DebugViewer", UIParent)
-  -- 880px closely fits the 824px log plus scrollbar and margins while still
+  -- 805px fits the streamlined controls, log, simulator, and scrollbars while
   -- leaving room for both control rows.
-  viewer:SetWidth(880)
+  viewer:SetWidth(805)
   viewer:SetHeight(540)
   viewer:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
   viewer:SetFrameStrata("DIALOG")
@@ -380,8 +399,8 @@ local function CreateViewer()
   viewer.levelFilterIndex = 1
   viewer.categoryFilterIndex = 1
   viewer.searchText = ""
-  viewer.followTail = true
   viewer.pendingTailFrames = 0
+  viewer.forcePendingTail = false
   viewer.pageOffset = 0
   viewer.totalPages = 1
   viewer.elapsed = 0
@@ -423,20 +442,12 @@ local function CreateViewer()
   end)
   viewer.pauseButton:SetPoint("LEFT", viewer.categoryButton, "RIGHT", 5, 0)
 
-  viewer.followButton = CreateButton(viewer, "Tail: on", 70, function()
-    viewer.followTail = not viewer.followTail
-    if viewer.followTail then viewer.pageOffset = 0 end
-    this:SetText(viewer.followTail and "Tail: on" or "Tail: off")
-    RefreshViewer(viewer, true)
-  end)
-  viewer.followButton:SetPoint("LEFT", viewer.pauseButton, "RIGHT", 5, 0)
-
   viewer.clearButton = CreateButton(viewer, "Clear", 58, function()
     DBB2.api.DebugClear()
     viewer.pageOffset = 0
     RefreshViewer(viewer, true)
   end)
-  viewer.clearButton:SetPoint("LEFT", viewer.followButton, "RIGHT", 5, 0)
+  viewer.clearButton:SetPoint("LEFT", viewer.pauseButton, "RIGHT", 5, 0)
 
   viewer.exportButton = CreateButton(viewer, "Export Diagnostics", 118, OpenDiagnosticsExport)
   viewer.exportButton:SetPoint("LEFT", viewer.clearButton, "RIGHT", 5, 0)
@@ -458,16 +469,66 @@ local function CreateViewer()
   viewer.search:SetScript("OnEscapePressed", function() this:ClearFocus() end)
 
   viewer.testLabel = viewer:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-  viewer.testLabel:SetPoint("TOPLEFT", viewer, "TOPLEFT", 14, -91)
-  viewer.testLabel:SetText("Analyze message(s)")
+  viewer.testLabel:SetPoint("TOPLEFT", viewer, "TOPLEFT", 14, -88)
+  viewer.testLabel:SetText("Simulate messages (one per line)")
 
-  viewer.testInput = CreateFrame("EditBox", "DBB2DebugTestInput", viewer, "InputBoxTemplate")
-  viewer.testInput:SetWidth(635)
-  viewer.testInput:SetHeight(48)
-  viewer.testInput:SetPoint("LEFT", viewer.testLabel, "RIGHT", 9, 0)
+  -- A real scroll frame keeps large pasted corpora usable while reserving at
+  -- least three visible text lines in the console layout.
+  viewer.testInputScroll = CreateFrame("ScrollFrame", "DBB2DebugTestInputScroll", viewer, "UIPanelScrollFrameTemplate")
+  viewer.testInputScroll:SetWidth(645)
+  viewer.testInputScroll:SetHeight(58)
+  viewer.testInputScroll:SetPoint("TOPLEFT", viewer, "TOPLEFT", 14, -106)
+  viewer.testInputScroll:SetBackdrop({
+    bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
+    edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+    tile = true,
+    tileSize = 16,
+    edgeSize = 12,
+    insets = { left = 3, right = 3, top = 3, bottom = 3 }
+  })
+  viewer.testInputScroll:SetBackdropColor(0.02, 0.02, 0.025, 0.95)
+  viewer.testInputScroll:SetBackdropBorderColor(0.45, 0.43, 0.58, 1)
+
+  viewer.testInput = CreateFrame("EditBox", "DBB2DebugTestInput", viewer.testInputScroll)
+  viewer.testInput:SetWidth(615)
+  viewer.testInput:SetHeight(54)
   viewer.testInput:SetAutoFocus(false)
   viewer.testInput:SetMultiLine(true)
+  local testInputFont = getglobal("ChatFontNormal")
+  if testInputFont then
+    viewer.testInput:SetFontObject(testInputFont)
+  else
+    viewer.testInput:SetFont("Fonts\\FRIZQT__.TTF", 12)
+  end
+  viewer.testInput:SetTextColor(0.95, 0.95, 0.95, 1)
+  viewer.testInput:SetTextInsets(6, 4, 4, 4)
   viewer.testInput:SetScript("OnEscapePressed", function() this:ClearFocus() end)
+  viewer.testInputScroll:SetScrollChild(viewer.testInput)
+
+  local function UpdateTestInputHeight()
+    local text = viewer.testInput:GetText() or ""
+    local visualLines = 0
+    -- Count explicit lines and long lines that wrap inside the fixed-width field.
+    for line in string_gfind(text .. "\n", "(.-)\n") do
+      visualLines = visualLines + math_max(1, math_ceil(string_len(line) / 72))
+    end
+    visualLines = math_max(3, visualLines)
+    viewer.testInput:SetHeight(visualLines * 14 + 12)
+    viewer.testInputScroll:UpdateScrollChildRect()
+  end
+  viewer.testInput:SetScript("OnTextChanged", UpdateTestInputHeight)
+  UpdateTestInputHeight()
+
+  viewer.testInputScroll:EnableMouseWheel(true)
+  viewer.testInputScroll:SetScript("OnMouseWheel", function()
+    local scrollRange = math_max(0, viewer.testInput:GetHeight() - this:GetHeight())
+    local nextOffset = this:GetVerticalScroll() - (arg1 * 28)
+    if nextOffset < 0 then nextOffset = 0 end
+    if nextOffset > scrollRange then nextOffset = scrollRange end
+    this:SetVerticalScroll(nextOffset)
+    local scrollBar = getglobal(this:GetName() .. "ScrollBar")
+    if scrollBar then scrollBar:SetValue(nextOffset) end
+  end)
 
   local function AnalyzeTestMessages()
     local messages = viewer.testInput:GetText() or ""
@@ -479,24 +540,26 @@ local function CreateViewer()
       viewer.searchText = ""
       viewer.search:SetText("")
       RefreshViewer(viewer, true)
+      -- Pause stops live capture, not deliberate simulations. Reveal the fresh
+      -- results without changing the user's paused or follow-tail settings.
+      ScrollToNewest(viewer, true)
+      viewer.pendingTailFrames = 2
+      viewer.forcePendingTail = true
     end
   end
 
-  viewer.testButton = CreateButton(viewer, "Analyze batch", 90, AnalyzeTestMessages)
-  viewer.testButton:SetPoint("LEFT", viewer.testInput, "RIGHT", 7, 0)
-
-  viewer.testInput:SetScript("OnEnterPressed", function()
-    AnalyzeTestMessages()
-    this:ClearFocus()
-  end)
+  viewer.testButton = CreateButton(viewer, "Simulate batch", 90, AnalyzeTestMessages)
+  -- UIPanelScrollFrameTemplate places its scrollbar along the right edge, so
+  -- leave a dedicated gutter before the action button.
+  viewer.testButton:SetPoint("LEFT", viewer.testInputScroll, "RIGHT", 24, 0)
 
   viewer.scroll = CreateFrame("ScrollFrame", "DBB2DebugScroll", viewer, "UIPanelScrollFrameTemplate")
-  viewer.scroll:SetPoint("TOPLEFT", viewer, "TOPLEFT", 14, -144)
+  viewer.scroll:SetPoint("TOPLEFT", viewer, "TOPLEFT", 14, -178)
   viewer.scroll:SetPoint("BOTTOMRIGHT", viewer, "BOTTOMRIGHT", -31, 34)
 
   viewer.log = CreateFrame("EditBox", "DBB2DebugLog", viewer.scroll)
-  viewer.log:SetWidth(824)
-  viewer.log:SetHeight(390)
+  viewer.log:SetWidth(749)
+  viewer.log:SetHeight(324)
   viewer.log:SetMultiLine(true)
   viewer.log:SetAutoFocus(false)
   viewer.log:EnableMouse(true)
@@ -513,8 +576,6 @@ local function CreateViewer()
   viewer.olderButton = CreateButton(viewer, "Older", 62, function()
     if viewer.pageOffset < viewer.totalPages - 1 then
       viewer.pageOffset = viewer.pageOffset + 1
-      viewer.followTail = false
-      viewer.followButton:SetText("Tail: off")
       RefreshViewer(viewer, true)
       viewer.pendingTailFrames = 0
       viewer.scroll:SetVerticalScroll(0)
@@ -542,8 +603,9 @@ local function CreateViewer()
 
   viewer:SetScript("OnUpdate", function()
     if this.pendingTailFrames and this.pendingTailFrames > 0 then
-      ScrollToNewest(this)
+      ScrollToNewest(this, this.forcePendingTail)
       this.pendingTailFrames = this.pendingTailFrames - 1
+      if this.pendingTailFrames == 0 then this.forcePendingTail = false end
     end
 
     this.elapsed = this.elapsed + arg1

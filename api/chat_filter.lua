@@ -49,35 +49,39 @@ end
 -- Checks whether the current chat event source is one DBB2 is actively watching.
 -- This keeps hide-from-chat aligned with the Channels config tab for all enabled
 -- source types, not just numbered chat channels.
--- 'message'    [string]        formatted chat line (used for fallback parsing)
+-- 'message'       [string]        formatted chat line (used for fallback parsing)
+-- 'sourceEvent'   [string|nil]    explicit event for read-only simulation
+-- 'sourceChannel' [string|nil]    explicit channel for read-only simulation
 -- return:      [boolean]       true if this line comes from an enabled source
-local function IsEnabledChatSource(message)
-  if event == "CHAT_MSG_CHANNEL" then
-    local channelName = arg9
+local function IsEnabledChatSource(message, sourceEvent, sourceChannel)
+  local eventName = sourceEvent or event
+
+  if eventName == "CHAT_MSG_CHANNEL" then
+    local channelName = sourceChannel or arg9
     return channelName and DBB2.api.IsChannelWhitelisted and DBB2.api.IsChannelWhitelisted(channelName) or false
   end
   
-  if event == "CHAT_MSG_GUILD" then
+  if eventName == "CHAT_MSG_GUILD" then
     return DBB2.api.IsChannelMonitored and DBB2.api.IsChannelMonitored("Guild") or false
   end
   
-  if event == "CHAT_MSG_SAY" then
+  if eventName == "CHAT_MSG_SAY" then
     return DBB2.api.IsChannelMonitored and DBB2.api.IsChannelMonitored("Say") or false
   end
   
-  if event == "CHAT_MSG_YELL" then
+  if eventName == "CHAT_MSG_YELL" then
     return DBB2.api.IsChannelMonitored and DBB2.api.IsChannelMonitored("Yell") or false
   end
   
-  if event == "CHAT_MSG_PARTY" then
+  if eventName == "CHAT_MSG_PARTY" then
     return DBB2.api.IsChannelMonitored and DBB2.api.IsChannelMonitored("Party") or false
   end
   
-  if event == "CHAT_MSG_WHISPER" then
+  if eventName == "CHAT_MSG_WHISPER" then
     return DBB2.api.IsChannelMonitored and DBB2.api.IsChannelMonitored("Whisper") or false
   end
   
-  if event == "CHAT_MSG_HARDCORE" then
+  if eventName == "CHAT_MSG_HARDCORE" then
     return DBB2.api.IsChannelMonitored and DBB2.api.IsChannelMonitored("Hardcore") or false
   end
   
@@ -218,9 +222,9 @@ end
 -- IMPORTANT: Never hides system messages (like /who results) even if they match category patterns
 -- IMPORTANT: Only filters messages from sources enabled in the Channels tab
 -- IMPORTANT: Never filters the player's own messages
--- IMPORTANT: Category hiding intentionally ignores optional filter tags so broad
--- group/profession tags like "dm" or "mc" can still be suppressed from chat.
-function DBB2.api.ShouldHideFromChat(message, sender, matchMessage)
+-- IMPORTANT: Filtered follows selected categories and Filter Tags; All ignores
+-- both restrictions so broad tags like "dm" or "mc" can still be suppressed.
+function DBB2.api.ShouldHideFromChat(message, sender, matchMessage, sourceEvent, sourceChannel)
   local mode = DBB2_Config.hideFromChat or 0
   local hideBlacklisted = DBB2.api.IsBlacklistHideFromChatEnabled()
   local textToMatch = matchMessage or message or ""
@@ -237,13 +241,13 @@ function DBB2.api.ShouldHideFromChat(message, sender, matchMessage)
   end
   
   -- CRITICAL: Only filter messages from sources enabled in the Channels tab
-  if not IsEnabledChatSource(message) then
+  if not IsEnabledChatSource(message, sourceEvent, sourceChannel) then
     return false, "source not monitored"
   end
   
   -- CRITICAL: Never filter system messages, even if they match category patterns
   -- This protects /who results, loot messages, skill ups, etc.
-  if DBB2.api.IsSystemMessage(message) then
+  if sourceEvent == "CHAT_MSG_SYSTEM" or DBB2.api.IsSystemMessage(message) then
     return false, "protected system message"
   end
   
@@ -264,7 +268,7 @@ function DBB2.api.ShouldHideFromChat(message, sender, matchMessage)
   -- chat while All hides them like any other message captured by the addon.
   -- Depending on frame/event ordering, the message may already be stored.
   if DBB2.api.IsStoredUnsortedMessage and DBB2.api.IsStoredUnsortedMessage(textToMatch, sender) then
-    return mode == 2, mode == 2 and "stored unsorted; mode=all" or "stored unsorted; mode=selected"
+    return mode == 2, mode == 2 and "stored unsorted; mode=all" or "stored unsorted; mode=filtered"
   end
 
   -- Also recognize a first-time unsorted candidate directly. This covers both
@@ -278,31 +282,46 @@ function DBB2.api.ShouldHideFromChat(message, sender, matchMessage)
       (baseCategories.hardcore and baseCategories.hardcore[1] ~= nil)
 
     if not matchesKnownCategory and DBB2.api.MatchUnsortedFilterTags(textToMatch) then
-      return mode == 2, mode == 2 and "unsorted candidate; mode=all" or "unsorted candidate; mode=selected"
+      return mode == 2, mode == 2 and "unsorted candidate; mode=all" or "unsorted candidate; mode=filtered"
     end
   end
   
   local ignoreSelected = (mode == 2)  -- All ignores selected state
-  local ignoreFilterTags = (mode == 2)  -- All favors maximum chat cleanup
   local matchesCategory = false
+  local categoryMatchMissingFilter = false
 
-  -- Filtered follows category selections and the optional Filter Tags. All is
-  -- deliberately broader and catches category keywords on their own.
+  -- Start from category matches without the storage filter gate. Filtered then
+  -- requires the configured tag list even when that list is disabled for normal
+  -- bulletin-board storage. All deliberately catches category words alone.
   if DBB2.api.CategorizeMessage then
-    local categories = DBB2.api.CategorizeMessage(textToMatch, ignoreSelected, ignoreFilterTags)
-    matchesCategory =
-      (categories.groups and categories.groups[1] ~= nil) or
-      (categories.professions and categories.professions[1] ~= nil) or
-      (categories.hardcore and categories.hardcore[1] ~= nil)
+    local categories = DBB2.api.CategorizeMessage(textToMatch, ignoreSelected, true)
+    local matchesGroup = categories.groups and categories.groups[1] ~= nil
+    local matchesProfession = categories.professions and categories.professions[1] ~= nil
+    local matchesHardcore = categories.hardcore and categories.hardcore[1] ~= nil
+
+    if mode == 2 then
+      matchesCategory = matchesGroup or matchesProfession or matchesHardcore
+    else
+      local groupQualified = matchesGroup and DBB2.api.MatchConfiguredFilterTags and DBB2.api.MatchConfiguredFilterTags(textToMatch, "groups")
+      local professionQualified = matchesProfession and DBB2.api.MatchConfiguredFilterTags and DBB2.api.MatchConfiguredFilterTags(textToMatch, "professions")
+      matchesCategory = groupQualified or professionQualified or matchesHardcore
+      categoryMatchMissingFilter = (matchesGroup or matchesProfession) and not matchesCategory
+    end
   else
     local categoryTypes = {"groups", "professions", "hardcore"}
     for _, categoryType in ipairs(categoryTypes) do
       local categories = DBB2.api.GetCategories(categoryType)
       if categories then
         for _, cat in ipairs(categories) do
-          if DBB2.api.MatchMessageToCategory(textToMatch, cat, ignoreSelected, categoryType, ignoreFilterTags) then
-            matchesCategory = true
-            break
+          if DBB2.api.MatchMessageToCategory(textToMatch, cat, ignoreSelected, categoryType, true) then
+            if mode == 2 or categoryType == "hardcore" then
+              matchesCategory = true
+            elseif DBB2.api.MatchConfiguredFilterTags and DBB2.api.MatchConfiguredFilterTags(textToMatch, categoryType) then
+              matchesCategory = true
+            else
+              categoryMatchMissingFilter = true
+            end
+            if matchesCategory then break end
           end
         end
       end
@@ -316,8 +335,18 @@ function DBB2.api.ShouldHideFromChat(message, sender, matchMessage)
     return true, "category match"
   end
 
-  -- Also check for duplicates of messages that would match categories
-  -- This catches the case where a duplicate comes in after the original was already stored
+  -- A selected category word alone is intentionally insufficient in Filtered.
+  -- Return before the broad duplicate fallback so a stored conversational false
+  -- positive cannot become hidden merely because it was seen before.
+  if mode == 1 and categoryMatchMissingFilter then
+    return false, "category match missing configured Filter Tag; mode=filtered"
+  end
+
+  if mode == 1 then
+    return false, "no selected category with configured Filter Tag; mode=filtered"
+  end
+
+  -- All also suppresses a stored duplicate when no current category remains.
   -- Extract just the message content (after sender) for duplicate comparison
   if DBB2.api.IsDuplicateMessage then
     if DBB2.api.IsDuplicateMessage(textToMatch, sender) then
@@ -395,7 +424,7 @@ function DBB2.api.SetupChatFilter()
             sender = extractedSender
             
             -- Wrap in pcall to prevent errors from breaking chat
-            local debugging = DBB2.debug.enabled
+            local debugging = DBB2.debug.enabled and not DBB2.debug.paused
             local started = nil
             if debugging then started = DBB2.api.DebugClock() end
             local success, shouldHide, hideReason = pcall(DBB2.api.ShouldHideFromChat, cleanMsg, sender, msgContent)
@@ -431,7 +460,7 @@ function DBB2.api.SetupChatFilter()
               DBB2.api.DebugCount("chat.filterErrors", 1)
               DBB2.api.DebugTrace(4, "chat", "filter-error", "frame=ChatFrame" .. frameIndex .. " error=" .. tostring(shouldHide or "unknown error"), elapsed)
             end
-          elseif msg and DBB2.debug.enabled then
+          elseif msg and DBB2.debug.enabled and not DBB2.debug.paused then
             -- Keep lifecycle correlation complete even when filtering is off.
             -- This is diagnostic-only and does not alter the chat line.
             local cleanMsg = string_gsub(msg, "|c%x%x%x%x%x%x%x%x", "")
