@@ -597,10 +597,6 @@ local function CreateViewer()
   end)
   viewer.newerButton:SetPoint("LEFT", viewer.olderButton, "RIGHT", 8, 0)
 
-  viewer.footer = viewer:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-  viewer.footer:SetPoint("BOTTOMRIGHT", viewer, "BOTTOMRIGHT", -14, 13)
-  viewer.footer:SetText("Export includes current settings + all 500 retained entries")
-
   viewer:SetScript("OnUpdate", function()
     if this.pendingTailFrames and this.pendingTailFrames > 0 then
       ScrollToNewest(this, this.forcePendingTail)
