@@ -25,7 +25,7 @@ local levelFilters = {
   { label = "Errors", value = 4 }
 }
 
-local categoryFilters = { "all", "message", "event", "chat", "notify", "performance", "ui", "audit", "lua-error", "test", "system" }
+local categoryFilters = { "all", "message", "event", "chat", "notify", "performance", "ui", "lua-error", "test", "system" }
 
 local function CreateButton(parent, text, width, clickHandler)
   local button = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
@@ -635,7 +635,6 @@ function DBB2:ToggleDebugViewer(showOnly)
   local viewer = self.debug.viewer
   if showOnly or not viewer:IsShown() then
     DBB2.api.DebugStart()
-    DBB2.api.DebugAuditCategoryData()
     DBB2.api.DebugCaptureSnapshot("viewer-opened")
     viewer:Show()
   else
