@@ -95,6 +95,27 @@ function DBB2.api.GetJoinedChannels()
   return channels
 end
 
+-- Returns whether the player is currently joined to a numbered chat channel.
+-- Some private-server channels can still emit CHAT_MSG_CHANNEL traffic without
+-- appearing in the player's channel list; those channels should not be treated
+-- as user-selected bulletin-board sources.
+function DBB2.api.IsChannelJoined(channelName)
+  if not channelName or channelName == "" then return false end
+
+  local channelID = GetChannelName(channelName)
+  if channelID and channelID > 0 then return true end
+
+  -- Fall back to the complete list for clients/servers whose GetChannelName
+  -- lookup only accepts a numeric channel ID.
+  local lowerName = string_lower(channelName)
+  for _, channel in ipairs(DBB2.api.GetJoinedChannels()) do
+    if channel.name and string_lower(channel.name) == lowerName then
+      return true
+    end
+  end
+  return false
+end
+
 -- =====================
 -- CHANNEL MONITORING CONFIG API
 -- =====================

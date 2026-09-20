@@ -162,7 +162,7 @@ end
 -- 'newCategories'  [table]         categories the new message matches (from CategorizeMessage)
 -- 'ignoreFilterTags' [boolean]     if true, compare categories without the extra filter tag gate
 -- return:          [boolean]       true if a message was removed
-function DBB2.api.RemovePreviousMessageFromSameSender(sender, newCategories, ignoreFilterTags)
+function DBB2.api.RemovePreviousMessageFromSameSender(sender, newCategories, ignoreFilterTags, diagnosticID)
   if not sender or not newCategories then return false end
   
   -- Skip deduplication for hardcore messages
@@ -220,6 +220,7 @@ function DBB2.api.RemovePreviousMessageFromSameSender(sender, newCategories, ign
           if DBB2.debug.enabled then
             DBB2.api.DebugCount("messages.replaced", 1)
             DBB2.api.DebugTrace(2, "message", "replaced-previous", "sender=" .. sender .. " oldText=\"" .. (msg.message or "") .. "\"")
+            DBB2.api.DebugLifecycleStage(diagnosticID, "replacement", "replacedMessage=true oldText=\"" .. (msg.message or "") .. "\"")
           end
           return true
         end
@@ -240,33 +241,52 @@ end
 -- 'sender'     [string]        the sender name
 -- 'channel'    [string]        the channel name
 -- 'type'       [string]        the message type (CHAT_MSG_GUILD, CHAT_MSG_CHANNEL, etc)
-function DBB2.api.AddMessage(message, sender, channel, msgType)
+function DBB2.api.AddMessage(message, sender, channel, msgType, diagnosticID)
   local debugging = DBB2.debug.enabled
   local debugStart = nil
+  local debugStartingMessageCount = nil
+  local diagnosticOverhead = 0
   if debugging then debugStart = DBB2.api.DebugClock() end
+  if debugging then debugStartingMessageCount = DBB2.messages and table_getn(DBB2.messages) or 0 end
+  if debugging and not diagnosticID then diagnosticID = DBB2.api.DebugBeginMessage(message, sender, channel, msgType) end
+  local function Finish(outcome, details)
+    if debugging then
+      DBB2.api.DebugPipelineStage(diagnosticID, "total", DBB2.api.DebugClock() - debugStart, "outcome=" .. outcome, table_getn(DBB2.messages))
+      DBB2.api.DebugPipelineStage(diagnosticID, "diagnostic-overhead", diagnosticOverhead, "", table_getn(DBB2.messages))
+      -- DebugFinishDecision emits the single, timed terminal trace below.
+      DBB2.api.DebugLifecycleTerminal(diagnosticID, outcome, details, true)
+      DBB2.api.DebugFinishDecision(debugStart, outcome, details, debugStartingMessageCount)
+    end
+  end
 
   -- Guard against nil message
   if not message then
-    if debugging then DBB2.api.DebugFinishDecision(debugStart, "rejected-invalid", "reason=nil message") end
+    Finish("rejected-invalid", "reason=nil message")
     return
   end
 
-  local context = nil
+  -- Keep debug-only detail fragments safe to concatenate when debugging is off.
+  -- Finish() is a no-op in that case, but Lua still evaluates its arguments.
+  local context = ""
   if debugging then
     context = "sender=" .. (sender or "Unknown") .. " channel=" .. (channel or "") .. " type=" .. (msgType or "") .. " text=\"" .. message .. "\""
   end
   
   -- Clean up expired messages first
+  local stageStart = debugging and DBB2.api.DebugClock() or nil
   DBB2.api.RemoveExpiredMessages()
+  if debugging then DBB2.api.DebugPipelineStage(diagnosticID, "expired-cleanup", DBB2.api.DebugClock() - stageStart, "", table_getn(DBB2.messages)) end
 
   -- Blacklist handling is the first matching decision for every message from
   -- an enabled source, including candidates for unsorted capture.
+  stageStart = debugging and DBB2.api.DebugClock() or nil
   local isBlacklisted, blacklistReason, blacklistDetails = DBB2.api.IsMessageBlacklisted(message, sender)
+  if debugging then DBB2.api.DebugPipelineStage(diagnosticID, "blacklist", DBB2.api.DebugClock() - stageStart, "", table_getn(DBB2.messages)) end
   if isBlacklisted then
     if debugging then
       local detailText = blacklistDetails
       if type(detailText) == "table" then detailText = table.concat(detailText, ",") end
-      DBB2.api.DebugFinishDecision(debugStart, "rejected-blacklist", context .. " reason=" .. (blacklistReason or "unknown") .. " match=" .. tostring(detailText or ""))
+      Finish("rejected-blacklist", context .. " reason=" .. (blacklistReason or "unknown") .. " match=" .. tostring(detailText or ""))
     end
     return
   end
@@ -275,8 +295,21 @@ function DBB2.api.AddMessage(message, sender, channel, msgType)
   -- 1) fullCategories respects filter tags and controls what is actually stored/shown
   -- 2) baseCategories ignores filter tags so a newer reworded message can still clear
   --    an older same-sender entry for the same run instead of leaving stale GUI data behind
+  stageStart = debugging and DBB2.api.DebugClock() or nil
   local fullCategories = DBB2.api.CategorizeMessage(message, true)
+  if debugging then DBB2.api.DebugPipelineStage(diagnosticID, "full-categorization", DBB2.api.DebugClock() - stageStart, "", table_getn(DBB2.messages)) end
+  stageStart = debugging and DBB2.api.DebugClock() or nil
   local baseCategories = DBB2.api.CategorizeMessage(message, true, true)
+  if debugging then DBB2.api.DebugPipelineStage(diagnosticID, "base-categorization", DBB2.api.DebugClock() - stageStart, "", table_getn(DBB2.messages)) end
+  local fullEvidence = nil
+  local baseEvidence = nil
+  if debugging then
+    stageStart = DBB2.api.DebugClock()
+    fullEvidence = DBB2.api.GetMessageCategoryEvidence(message, true, false)
+    baseEvidence = DBB2.api.GetMessageCategoryEvidence(message, true, true)
+    DBB2.api.DebugReportAmbiguousCategories(message, sender, channel, baseCategories, baseEvidence)
+    diagnosticOverhead = diagnosticOverhead + (DBB2.api.DebugClock() - stageStart)
+  end
   
   -- Check if message matches any category (ignoring enabled state)
   -- This ensures duplicate filter works for all category patterns
@@ -288,14 +321,17 @@ function DBB2.api.AddMessage(message, sender, channel, msgType)
                               (table_getn(baseCategories.professions) > 0) or
                               (table_getn(baseCategories.hardcore) > 0)
 
-  local categoryDetail = nil
+  local categoryDetail = ""
   if debugging then
     categoryDetail = " full(groups=" .. table.concat(fullCategories.groups, ",") ..
                      ";professions=" .. table.concat(fullCategories.professions, ",") ..
                      ";hardcore=" .. table.concat(fullCategories.hardcore, ",") .. ")" ..
                      " base(groups=" .. table.concat(baseCategories.groups, ",") ..
                      ";professions=" .. table.concat(baseCategories.professions, ",") ..
-                     ";hardcore=" .. table.concat(baseCategories.hardcore, ",") .. ")"
+                     ";hardcore=" .. table.concat(baseCategories.hardcore, ",") .. ")" ..
+                     " fullEvidence=" .. DBB2.api.DebugFormatCategoryEvidence(fullEvidence) ..
+                     " baseEvidence=" .. DBB2.api.DebugFormatCategoryEvidence(baseEvidence)
+    DBB2.api.DebugLifecycleStage(diagnosticID, "category-matching", categoryDetail)
   end
   
   -- CRITICAL: System messages (like /who results) should ONLY be stored if they match
@@ -304,7 +340,7 @@ function DBB2.api.AddMessage(message, sender, channel, msgType)
   if msgType == "CHAT_MSG_SYSTEM" then
     local matchesHardcore = table_getn(baseCategories.hardcore) > 0
     if not matchesHardcore then
-      if debugging then DBB2.api.DebugFinishDecision(debugStart, "rejected-system", context .. " reason=system messages require a Hardcore category" .. categoryDetail) end
+      Finish("rejected-system", context .. " reason=system messages require a Hardcore category" .. categoryDetail)
       return  -- System message doesn't match hardcore, ignore it
     end
   end
@@ -314,19 +350,22 @@ function DBB2.api.AddMessage(message, sender, channel, msgType)
   local unsortedType = nil
   if not matchesBaseCategory then
     if not DBB2_Config.showUnsortedMessagesInLogs then
-      if debugging then DBB2.api.DebugFinishDecision(debugStart, "rejected-no-category", context .. " reason=no known category and unsorted logging disabled" .. categoryDetail) end
+      Finish("rejected-no-category", context .. " reason=no known category and unsorted logging disabled" .. categoryDetail)
       return
     end
 
     unsortedType = DBB2.api.MatchUnsortedFilterTags(message)
     if not unsortedType then
-      if debugging then DBB2.api.DebugFinishDecision(debugStart, "rejected-no-category", context .. " reason=no known category or unsorted filter-tag match" .. categoryDetail) end
+      Finish("rejected-no-category", context .. " reason=no known category or unsorted filter-tag match" .. categoryDetail)
       return
     end
   end
   
-  if DBB2.api.IsDuplicateMessage(message, sender) then
-    if debugging then DBB2.api.DebugFinishDecision(debugStart, "rejected-duplicate", context .. " spamWindow=" .. (DBB2_Config.spamFilterSeconds or 150) .. "s" .. categoryDetail) end
+  stageStart = debugging and DBB2.api.DebugClock() or nil
+  local isDuplicate = DBB2.api.IsDuplicateMessage(message, sender)
+  if debugging then DBB2.api.DebugPipelineStage(diagnosticID, "duplicate-search", DBB2.api.DebugClock() - stageStart, "", table_getn(DBB2.messages)) end
+  if isDuplicate then
+    Finish("rejected-duplicate", context .. " spamWindow=" .. (DBB2_Config.spamFilterSeconds or 150) .. "s" .. categoryDetail)
     return
   end
   
@@ -334,18 +373,22 @@ function DBB2.api.AddMessage(message, sender, channel, msgType)
     -- Clear stale messages from the same sender using base category overlap so an
     -- updated line can replace an older GUI entry even if it no longer passes the
     -- optional filter tag requirement.
-    DBB2.api.RemovePreviousMessageFromSameSender(sender, baseCategories, true)
+    stageStart = debugging and DBB2.api.DebugClock() or nil
+    local replaced = DBB2.api.RemovePreviousMessageFromSameSender(sender, baseCategories, true, diagnosticID)
+    if debugging then DBB2.api.DebugPipelineStage(diagnosticID, "previous-message-replacement", DBB2.api.DebugClock() - stageStart, "replaced=" .. tostring(replaced), table_getn(DBB2.messages)) end
 
     -- If the message no longer passes the active filter tag gate, stop after clearing
     -- any stale older entry. We do not store/show the new line in the GUI.
     if not matchesAnyCategory then
-      if debugging then DBB2.api.DebugFinishDecision(debugStart, "rejected-filter-tags", context .. " reason=base category matched but active filter tags did not; stale entry cleared if present" .. categoryDetail) end
+      Finish("rejected-filter-tags", context .. " reason=base category matched but active filter tags did not; stale entry cleared if present" .. categoryDetail)
       return
     end
 
     -- Unsorted messages intentionally skip notifications. Categorized messages
     -- retain the existing notification behavior.
-    DBB2.api.CheckAndNotify(message, sender, msgType)
+    stageStart = debugging and DBB2.api.DebugClock() or nil
+    DBB2.api.CheckAndNotify(message, sender, msgType, diagnosticID)
+    if debugging then DBB2.api.DebugPipelineStage(diagnosticID, "notifications", DBB2.api.DebugClock() - stageStart, "", table_getn(DBB2.messages)) end
   end
   
   -- Store message
@@ -365,11 +408,16 @@ function DBB2.api.AddMessage(message, sender, channel, msgType)
     if debugging then DBB2.api.DebugCount("messages.capacityEvicted", 1) end
   end
   
+  local logsRenderedRows = 0
+  local categorizedRenderedRows = 0
   -- Update GUI if visible
   if DBB2.gui and DBB2.gui:IsShown() then
     -- Update logs tab
     if DBB2.gui.UpdateMessages then
-      DBB2.gui:UpdateMessages()
+      stageStart = debugging and DBB2.api.DebugClock() or nil
+      local renderedRows = DBB2.gui:UpdateMessages()
+      logsRenderedRows = renderedRows or 0
+      if debugging then DBB2.api.DebugPipelineStage(diagnosticID, "logs-tab-redraw", DBB2.api.DebugClock() - stageStart, "", table_getn(DBB2.messages), renderedRows or 0) end
     end
     
     -- Update active categorized tab if showing
@@ -378,18 +426,19 @@ function DBB2.api.AddMessage(message, sender, channel, msgType)
       if activeTab == "Groups" or activeTab == "Professions" or activeTab == "Hardcore" then
         local panel = DBB2.gui.tabs.panels[activeTab]
         if panel and panel.UpdateCategories then
-          panel.UpdateCategories()
+          stageStart = debugging and DBB2.api.DebugClock() or nil
+          local renderedRows = panel.UpdateCategories()
+          categorizedRenderedRows = renderedRows or 0
+          if debugging then DBB2.api.DebugPipelineStage(diagnosticID, "categorized-tab-redraw", DBB2.api.DebugClock() - stageStart, "tab=" .. activeTab, table_getn(DBB2.messages), renderedRows or 0) end
         end
       end
     end
   end
-
-
   if debugging then
     if unsortedType then
-      DBB2.api.DebugFinishDecision(debugStart, "stored-unsorted", context .. " unsortedType=" .. unsortedType .. categoryDetail)
+      Finish("stored-unsorted", context .. " unsortedType=" .. unsortedType .. categoryDetail)
     else
-      DBB2.api.DebugFinishDecision(debugStart, "stored-categorized", context .. categoryDetail)
+      Finish("stored-categorized", context .. categoryDetail)
     end
   end
 end

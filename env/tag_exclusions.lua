@@ -250,7 +250,7 @@ function DBB2.env.IsTagExcluded(tag, lowerMsg, foundPos, tagLen, category)
         if i + 2 <= msgLen then
           local suffix = string_sub(lowerMsg, i + 1, i + 2)
           if suffix == "|h" then
-            return true  -- Match is inside |h[...]|h hyperlink - reject it
+            return true, "hyperlink"  -- Match is inside |h[...]|h hyperlink - reject it
           end
         end
         break
@@ -266,7 +266,7 @@ function DBB2.env.IsTagExcluded(tag, lowerMsg, foundPos, tagLen, category)
   
   for _, checkFunc in ipairs(exclusions) do
     if checkFunc(lowerMsg, foundPos, tagLen, category) then
-      return true  -- Match should be rejected
+      return true, "rule"  -- Match should be rejected
     end
   end
   return false  -- Match is valid

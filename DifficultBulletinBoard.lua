@@ -171,6 +171,7 @@ end
 -- Event handler
 DBB2:SetScript("OnEvent", function()
   if DBB2.debug and DBB2.debug.enabled then
+    DBB2.api.DebugSetCurrentEvent(event)
     DBB2.api.DebugCountSilent("event." .. (event or "unknown"), 1)
   end
   if event == "ADDON_LOADED" and arg1 == "DifficultBulletinBoard" then
@@ -416,6 +417,7 @@ DBB2:SetScript("OnEvent", function()
     local message = arg1
     local sender = arg2
     local channel = arg9 or "Guild"
+    local diagnosticID = nil
     
     -- For Guild messages, check if Guild channel is monitored
     if event == "CHAT_MSG_GUILD" then
@@ -434,6 +436,13 @@ DBB2:SetScript("OnEvent", function()
         if DBB2.debug.enabled then DBB2.api.DebugCountSilent("source.ignoredUnwhitelisted", 1) end
         return  -- Not an LFG channel, ignore
       end
+
+      -- A stale/custom whitelist entry must not opt the addon into hidden
+      -- server or addon-transport channels the player has not joined.
+      if not DBB2.api.IsChannelJoined(channel) then
+        if DBB2.debug.enabled then DBB2.api.DebugCountSilent("source.ignoredUnjoined", 1) end
+        return
+      end
       
       -- Ignore World channel when hardcore is active
       local lowerChannel = string.lower(channel or "")
@@ -442,8 +451,12 @@ DBB2:SetScript("OnEvent", function()
         return
       end
     end
+
+    -- Begin diagnostics only after the source gate. High-volume ignored
+    -- channels are counted above without filling the diagnostic trace.
+    diagnosticID = DBB2.debug.enabled and DBB2.api.DebugBeginMessage(message, sender, channel, event) or nil
     
-    DBB2.api.AddMessage(message, sender, channel, event)
+    DBB2.api.AddMessage(message, sender, channel, event, diagnosticID)
   end
   
   if event == "CHAT_MSG_SAY" or event == "CHAT_MSG_YELL" or event == "CHAT_MSG_PARTY" or event == "CHAT_MSG_WHISPER" then
@@ -461,24 +474,28 @@ DBB2:SetScript("OnEvent", function()
     else
       channel = "Party"
     end
+    local diagnosticID = DBB2.debug.enabled and DBB2.api.DebugBeginMessage(message, sender, channel, event) or nil
     
     -- Check if this channel is monitored
     if not DBB2.api.IsChannelMonitored(channel) then
       if DBB2.debug.enabled then DBB2.api.DebugCountSilent("source.ignoredUnmonitored", 1) end
+      if diagnosticID then DBB2.api.DebugLifecycleTerminal(diagnosticID, "rejected-source", "reason=source-not-monitored") end
       return
     end
     
-    DBB2.api.AddMessage(message, sender, channel, event)
+    DBB2.api.AddMessage(message, sender, channel, event, diagnosticID)
   end
   
   if event == "CHAT_MSG_HARDCORE" then
     -- Turtle WoW hardcore chat messages
     local message = arg1
     local sender = arg2
+    local diagnosticID = DBB2.debug.enabled and DBB2.api.DebugBeginMessage(message, sender, "Hardcore", event) or nil
     
     -- Check if Hardcore channel is monitored
     if not DBB2.api.IsChannelMonitored("Hardcore") then
       if DBB2.debug.enabled then DBB2.api.DebugCountSilent("source.ignoredUnmonitored", 1) end
+      if diagnosticID then DBB2.api.DebugLifecycleTerminal(diagnosticID, "rejected-source", "reason=hardcore-not-monitored") end
       return  -- Hardcore channel not monitored, ignore
     end
     
@@ -487,7 +504,7 @@ DBB2:SetScript("OnEvent", function()
       DBB2.api.SetHardcoreChatActive()
     end
     
-    DBB2.api.AddMessage(message, sender, "Hardcore", event)
+    DBB2.api.AddMessage(message, sender, "Hardcore", event, diagnosticID)
   end
   
   if event == "CHAT_MSG_SYSTEM" then
@@ -496,8 +513,9 @@ DBB2:SetScript("OnEvent", function()
     -- System messages don't have a sender, use "System" as placeholder
     local sender = "System"
     local channel = "System"
+    local diagnosticID = DBB2.debug.enabled and DBB2.api.DebugBeginMessage(message, sender, channel, event) or nil
     
-    DBB2.api.AddMessage(message, sender, channel, event)
+    DBB2.api.AddMessage(message, sender, channel, event, diagnosticID)
   end
   
   if event == "UPDATE_INSTANCE_INFO" then

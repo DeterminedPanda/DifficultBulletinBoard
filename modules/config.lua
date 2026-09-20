@@ -276,7 +276,8 @@ DBB2:RegisterModule("config", function()
       tooltip = {{"Hide from Chat", "highlight"}, "Hide captured messages from your chat window."} },
     { type = "toggle", key = "showLevelFilteredGroups", label = "Level Filter (Groups)",
       tooltip = {{"Level Filter", "highlight"}, "Only show categories within your level range."},
-      onChange = function()
+      onChange = function(enabled)
+        DBB2.api.DebugUITransition("level-filter-changed", "enabled=" .. tostring(enabled and true or false))
         local gp = DBB2.gui.tabs.panels["Groups"]
         if gp and gp.UpdateCategories and gp:IsVisible() then gp.UpdateCategories() end
       end },

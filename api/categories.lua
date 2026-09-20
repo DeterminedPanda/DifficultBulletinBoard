@@ -26,6 +26,7 @@ local table_insert = table.insert
 local table_concat = table.concat
 local table_getn = table.getn
 local ipairs = ipairs
+local pairs = pairs
 local math_abs = math.abs
 
 -- =====================================================
@@ -139,6 +140,7 @@ function DBB2.api.UpdateCategoryTags(categoryType, categoryName, newTags)
       cat._tagsLower[i] = lower
       cat._tagsLen[i] = string_len(lower)
     end
+    DBB2.api.DebugUITransition("category-tags-changed", "type=" .. categoryType .. " category=" .. categoryName .. " tags=" .. table_concat(cat.tags, ","))
     return true
   end
   return false
@@ -196,6 +198,7 @@ function DBB2.api.SetCategorySelected(categoryType, categoryName, selected)
   local cat = DBB2.api.GetCategoryByName(categoryType, categoryName)
   if cat then
     cat.selected = selected and true or false
+    DBB2.api.DebugUITransition("category-selection-changed", "type=" .. categoryType .. " category=" .. categoryName .. " selected=" .. tostring(cat.selected))
     return true
   end
   return false
@@ -294,6 +297,7 @@ function DBB2.api.SetFilterTagsEnabled(categoryType, enabled)
     DBB2_Config.filterTags[categoryType] = { enabled = false, tags = {} }
   end
   DBB2_Config.filterTags[categoryType].enabled = enabled and true or false
+  DBB2.api.DebugUITransition("filter-tags-enabled-changed", "type=" .. categoryType .. " enabled=" .. tostring(enabled and true or false))
   return true
 end
 
@@ -313,13 +317,14 @@ function DBB2.api.UpdateFilterTags(categoryType, newTags)
     DBB2_Config.filterTags[categoryType] = { enabled = false, tags = {} }
   end
   DBB2_Config.filterTags[categoryType].tags = newTags or {}
+  DBB2.api.DebugUITransition("filter-tags-changed", "type=" .. categoryType .. " tags=" .. table_concat(DBB2_Config.filterTags[categoryType].tags, ","))
   return true
 end
 
 -- Strictly checks a message against a filter tag list. Unlike MatchFilterTags,
 -- an absent or empty list is not a pass-through match. This is shared by the
 -- normal optional category gate and Logs-only unsorted message detection.
-local function MatchFilterTagList(message, tags)
+local function MatchFilterTagList(message, tags, evidence)
   if not tags or not tags[1] then
     return false
   end
@@ -337,6 +342,7 @@ local function MatchFilterTagList(message, tags)
 
     if isWildcard then
       if DBB2.api.MatchWildcard(lowerMsg, lowerTag) then
+        if evidence then table_insert(evidence, { tag = tag, kind = "filter-tag wildcard" }) end
         return true
       end
     else
@@ -377,6 +383,7 @@ local function MatchFilterTagList(message, tags)
         end
 
         if validBefore and validAfter then
+          if evidence then table_insert(evidence, { tag = tag, kind = "filter-tag" }) end
           return true
         end
 
@@ -399,7 +406,7 @@ end
 -- @param message       [string]  The message text to check
 -- @param categoryType  [string]  Category type: "groups" or "professions"
 -- @return              [boolean] true if matches any filter tag, or if filter is disabled
-function DBB2.api.MatchFilterTags(message, categoryType)
+function DBB2.api.MatchFilterTags(message, categoryType, evidence)
   -- If filter is disabled, always return true (no filtering)
   if not DBB2.api.IsFilterTagsEnabled(categoryType) then
     return true
@@ -410,7 +417,7 @@ function DBB2.api.MatchFilterTags(message, categoryType)
     return true  -- No tags, pass through
   end
 
-  return MatchFilterTagList(message, filter.tags)
+  return MatchFilterTagList(message, filter.tags, evidence)
 end
 
 -- [ MatchUnsortedFilterTags ]
@@ -515,7 +522,7 @@ end
 -- @param categoryType   [string]  Optional: "groups", "professions", or "hardcore" for filter tag checking
 -- @param ignoreFilterTags [boolean] Optional: if true, skip the extra filter tag gate
 -- @return               [boolean] true if message matches the category
-function DBB2.api.MatchMessageToCategory(message, category, ignoreSelected, categoryType, ignoreFilterTags)
+function DBB2.api.MatchMessageToCategory(message, category, ignoreSelected, categoryType, ignoreFilterTags, evidence)
   if not category then
     return false
   end
@@ -542,9 +549,12 @@ function DBB2.api.MatchMessageToCategory(message, category, ignoreSelected, cate
   -- Check filter tags first (if enabled for this category type)
   -- This is an AND condition - message must match BOTH filter tags AND category tags
   if not ignoreFilterTags and categoryType and (categoryType == "groups" or categoryType == "professions") then
-    if not DBB2.api.MatchFilterTags(message, categoryType) then
+    local filterEvidence = evidence and {} or nil
+    if not DBB2.api.MatchFilterTags(message, categoryType, filterEvidence) then
+      if evidence then evidence.filterRejected = true end
       return false
     end
+    if evidence then evidence.filterTags = filterEvidence end
   end
   
   -- Ensure pre-computed lowercase tags exist
@@ -553,6 +563,7 @@ function DBB2.api.MatchMessageToCategory(message, category, ignoreSelected, cate
   local msgLen = string_len(lowerMsg)
   local tagsLower = category._tagsLower
   local tagsLen = category._tagsLen
+  local matched = false
   
   -- Use ipairs instead of table.getn for Lua 5.0 compatibility
   for i, lowerTag in ipairs(tagsLower) do
@@ -564,7 +575,9 @@ function DBB2.api.MatchMessageToCategory(message, category, ignoreSelected, cate
     if isWildcard then
       -- Use wildcard matching for patterns
       if DBB2.api.MatchWildcard(lowerMsg, lowerTag) then
-        return true
+        if evidence then table_insert(evidence.tags, { tag = category.tags[i], kind = "wildcard" }) end
+        if not evidence then return true end
+        matched = true
       end
     else
       -- Plain text matching with word boundaries
@@ -597,6 +610,7 @@ function DBB2.api.MatchMessageToCategory(message, category, ignoreSelected, cate
         -- Special case: "aq" tag should only use direct numeric suffixes to
         -- distinguish Temple (40) from Ruins (20).
         local validAfter = false
+        local matchKind = "plain tag"
         if afterPos > msgLen then
           -- End of message - valid
           validAfter = true
@@ -604,6 +618,7 @@ function DBB2.api.MatchMessageToCategory(message, category, ignoreSelected, cate
           -- Non-alphanumeric after - valid word boundary
           validAfter = true
         elseif string_find(charAfter, "%d") then
+          matchKind = "numeric suffix"
           -- Digit after tag - check for raid group size pattern (1-2 digits)
           local digit1 = charAfter
           local digit2 = ""
@@ -669,6 +684,7 @@ function DBB2.api.MatchMessageToCategory(message, category, ignoreSelected, cate
             end
           end
         elseif charAfter == "x" then
+          matchKind = "numeric suffix"
           -- Support shorthand like "bmx2" or "mcx3" where the tag is followed by
           -- a run-count marker instead of a direct size suffix.
           local digitPos = afterPos + 1
@@ -703,8 +719,13 @@ function DBB2.api.MatchMessageToCategory(message, category, ignoreSelected, cate
 
         if validBefore and validAfter then
           -- Check tag exclusions for false positives (uses DBB2.env.IsTagExcluded)
-          if not DBB2.env.IsTagExcluded(lowerTag, lowerMsg, foundPos, tagLen, category) then
-            return true
+          local excluded, exclusionReason = DBB2.env.IsTagExcluded(lowerTag, lowerMsg, foundPos, tagLen, category)
+          if not excluded then
+            if evidence then table_insert(evidence.tags, { tag = category.tags[i], kind = matchKind }) end
+            if not evidence then return true end
+            matched = true
+          elseif evidence then
+            table_insert(evidence.rejected, { tag = category.tags[i], kind = exclusionReason == "hyperlink" and "excluded hyperlink match" or "rejected by tag-exclusion rule" })
           end
         end
 
@@ -713,7 +734,85 @@ function DBB2.api.MatchMessageToCategory(message, category, ignoreSelected, cate
       end
     end  -- end else (plain text matching)
   end
-  return false
+  return matched
+end
+
+-- Returns all match evidence for one category without changing normal matching.
+-- This is intentionally used only by diagnostics: regular category scans still
+-- stop at the first valid tag for performance.
+function DBB2.api.GetCategoryMatchEvidence(message, category, ignoreSelected, categoryType, ignoreFilterTags)
+  local evidence = { tags = {}, rejected = {}, filterTags = {} }
+  local matched = DBB2.api.MatchMessageToCategory(message, category, ignoreSelected, categoryType, ignoreFilterTags, evidence)
+  evidence.matched = matched
+  return evidence
+end
+
+-- Diagnostic-only complete scan. Unlike CategorizeMessage, this retains a
+-- category that did not match when one of its tags was explicitly rejected.
+function DBB2.api.GetMessageCategoryEvidence(message, ignoreSelected, ignoreFilterTags)
+  local result = { groups = {}, professions = {}, hardcore = {} }
+  if not DBB2_Config.categories then return result end
+
+  local function Scan(categoryType)
+    for _, category in ipairs(DBB2_Config.categories[categoryType] or {}) do
+      local evidence = DBB2.api.GetCategoryMatchEvidence(message, category, ignoreSelected, categoryType, ignoreFilterTags)
+      if evidence.matched or evidence.filterRejected or evidence.rejected[1] then
+        table_insert(result[categoryType], { name = category.name, evidence = evidence })
+      end
+    end
+  end
+
+  Scan("groups")
+  Scan("professions")
+  Scan("hardcore")
+  return result
+end
+
+-- Resolves a shared abbreviation when another matched category has all of the
+-- same evidence plus a more specific tag. Example: "DM ... Deadmines" matches
+-- the shared "dm" tag for both Dire Maul and The Deadmines, but the explicit
+-- "deadmines" tag makes The Deadmines the unambiguous result. Distinct evidence
+-- on both sides is preserved for genuine multi-category messages.
+local function ResolveCategoryOverlaps(message, categoryType, matchedNames, ignoreSelected, ignoreFilterTags)
+  if not matchedNames or not matchedNames[2] then return matchedNames end
+
+  local matchedLookup = {}
+  for _, name in ipairs(matchedNames) do matchedLookup[name] = true end
+
+  local evidenceByName = {}
+  for _, category in ipairs(DBB2_Config.categories[categoryType] or {}) do
+    if matchedLookup[category.name] then
+      local evidence = DBB2.api.GetCategoryMatchEvidence(message, category, ignoreSelected, categoryType, ignoreFilterTags)
+      local tagSet = {}
+      local longestTag = 0
+      for _, item in ipairs(evidence.tags or {}) do
+        local tag = string_lower(item.tag or "")
+        tagSet[tag] = true
+        if string_len(tag) > longestTag then longestTag = string_len(tag) end
+      end
+      evidenceByName[category.name] = { tags = tagSet, longestTag = longestTag }
+    end
+  end
+
+  local resolved = {}
+  for _, name in ipairs(matchedNames) do
+    local current = evidenceByName[name]
+    local overshadowed = false
+    if current and current.longestTag > 0 then
+      for _, otherName in ipairs(matchedNames) do
+        local other = evidenceByName[otherName]
+        if otherName ~= name and other and other.longestTag > current.longestTag then
+          local allEvidenceShared = true
+          for tag, _ in pairs(current.tags) do
+            if not other.tags[tag] then allEvidenceShared = false break end
+          end
+          if allEvidenceShared then overshadowed = true break end
+        end
+      end
+    end
+    if not overshadowed then table_insert(resolved, name) end
+  end
+  return resolved
 end
 
 
@@ -731,7 +830,7 @@ end
 --                                   hardcore = {string...},    -- Array of matched hardcore category names
 --                                   isHardcore = boolean       -- true if any hardcore category matched
 --                                 }
-function DBB2.api.CategorizeMessage(message, ignoreSelected, ignoreFilterTags)
+function DBB2.api.CategorizeMessage(message, ignoreSelected, ignoreFilterTags, matchEvidence)
   -- Create fresh result table each call (safer than pooling)
   local result = {
     groups = {},
@@ -747,6 +846,7 @@ function DBB2.api.CategorizeMessage(message, ignoreSelected, ignoreFilterTags)
   for _, cat in ipairs(DBB2_Config.categories.groups or {}) do
     if DBB2.api.MatchMessageToCategory(message, cat, ignoreSelected, "groups", ignoreFilterTags) then
       table_insert(result.groups, cat.name)
+      if matchEvidence then matchEvidence.groups = matchEvidence.groups or {}; matchEvidence.groups[cat.name] = DBB2.api.GetCategoryMatchEvidence(message, cat, ignoreSelected, "groups", ignoreFilterTags) end
     end
   end
   
@@ -754,6 +854,7 @@ function DBB2.api.CategorizeMessage(message, ignoreSelected, ignoreFilterTags)
   for _, cat in ipairs(DBB2_Config.categories.professions or {}) do
     if DBB2.api.MatchMessageToCategory(message, cat, ignoreSelected, "professions", ignoreFilterTags) then
       table_insert(result.professions, cat.name)
+      if matchEvidence then matchEvidence.professions = matchEvidence.professions or {}; matchEvidence.professions[cat.name] = DBB2.api.GetCategoryMatchEvidence(message, cat, ignoreSelected, "professions", ignoreFilterTags) end
     end
   end
   
@@ -761,9 +862,15 @@ function DBB2.api.CategorizeMessage(message, ignoreSelected, ignoreFilterTags)
   for _, cat in ipairs(DBB2_Config.categories.hardcore or {}) do
     if DBB2.api.MatchMessageToCategory(message, cat, ignoreSelected, "hardcore", ignoreFilterTags) then
       table_insert(result.hardcore, cat.name)
+      if matchEvidence then matchEvidence.hardcore = matchEvidence.hardcore or {}; matchEvidence.hardcore[cat.name] = DBB2.api.GetCategoryMatchEvidence(message, cat, ignoreSelected, "hardcore", ignoreFilterTags) end
       result.isHardcore = true
     end
   end
+
+  result.groups = ResolveCategoryOverlaps(message, "groups", result.groups, ignoreSelected, ignoreFilterTags)
+  result.professions = ResolveCategoryOverlaps(message, "professions", result.professions, ignoreSelected, ignoreFilterTags)
+  result.hardcore = ResolveCategoryOverlaps(message, "hardcore", result.hardcore, ignoreSelected, ignoreFilterTags)
+  result.isHardcore = table_getn(result.hardcore) > 0
   
   return result
 end

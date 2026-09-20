@@ -32,6 +32,12 @@ DBB2:RegisterModule("gui", function()
   DBB2.gui:SetClampedToScreen(DBB2_Config.clampToScreen ~= false)
   DBB2.gui:SetPoint("CENTER", 0, 0)
   DBB2.gui:Hide()
+  DBB2.gui:SetScript("OnShow", function()
+    DBB2.api.DebugUITransition("main-window-shown", "")
+  end)
+  DBB2.gui:SetScript("OnHide", function()
+    DBB2.api.DebugUITransition("main-window-hidden", "")
+  end)
   
   -- Load saved position and size
   DBB2.api.LoadPosition(DBB2.gui)
@@ -146,8 +152,12 @@ DBB2:RegisterModule("gui", function()
   
   -- Override SwitchTab to also handle Config button styling
   DBB2.gui.tabs.SwitchTab = function(tabName)
+    local previousTab = DBB2.gui.tabs.activeTab
     -- Call original function
     originalSwitchTab(tabName)
+    if previousTab ~= tabName then
+      DBB2.api.DebugUITransition("active-tab-changed", "from=" .. tostring(previousTab or "none") .. " to=" .. tostring(tabName))
+    end
     
     -- Update Config button styling
     local hr, hg, hb = DBB2:GetHighlightColor()
@@ -316,6 +326,7 @@ DBB2:RegisterModule("gui", function()
     if currentText ~= DBB2.gui.filterLastText then
       DBB2.gui.filterLastText = currentText
       DBB2.gui.filterTerms = ParseFilterTerms(currentText)
+      DBB2.api.DebugUITransition("search-filter-changed", "tab=Logs terms=" .. table.concat(DBB2.gui.filterTerms, ","))
       -- Reset scroll to top when filter changes
       if DBB2.gui.scroll then
         DBB2.gui.scroll:SetVerticalScroll(0)
@@ -412,6 +423,7 @@ DBB2:RegisterModule("gui", function()
     local count = table_getn(DBB2.messages)
     local filterTerms = DBB2.gui.filterTerms or {}
     local hasFilter = table_getn(filterTerms) > 0
+    local renderedRows = 0
     
     -- Hide all rows first
     for i = 1, MAX_ROWS do
@@ -497,11 +509,13 @@ DBB2:RegisterModule("gui", function()
               
               row:Show()
               rowIndex = rowIndex + 1
+              renderedRows = renderedRows + 1
             end
           end
         end
       end
     end
+    return renderedRows
   end
   
   -- Lightweight function to update only timestamps (no row rebuilding)
@@ -590,6 +604,7 @@ DBB2:RegisterModule("gui", function()
       if currentText ~= panel.filterLastText then
         panel.filterLastText = currentText
         panel.filterTerms = ParseFilterTerms(currentText)
+        DBB2.api.DebugUITransition("search-filter-changed", "tab=" .. panelName .. " terms=" .. table.concat(panel.filterTerms, ","))
         -- Reset scroll to top when filter changes
         if panel.scroll then
           panel.scroll:SetVerticalScroll(0)
@@ -683,6 +698,7 @@ DBB2:RegisterModule("gui", function()
       local hr, hg, hb = DBB2:GetHighlightColor()
       local filterTerms = panel.filterTerms or {}
       local hasFilter = table_getn(filterTerms) > 0
+      local renderedRows = 0
       
       for _, cat in ipairs(categories) do
         if cat.selected then
@@ -1041,6 +1057,7 @@ DBB2:RegisterModule("gui", function()
                   end
                   row:Show()
                   visibleMessages = visibleMessages + 1
+                  renderedRows = renderedRows + 1
                 end
               end
             end
@@ -1069,6 +1086,7 @@ DBB2:RegisterModule("gui", function()
       scrollchild:SetWidth(scroll:GetWidth() or 1)
       -- Defer UpdateScrollState to next frame so WoW can recalculate scroll range
       scroll._needsScrollUpdate = true
+      return renderedRows
     end
     
     -- Lightweight function to update only timestamps (no row rebuilding)

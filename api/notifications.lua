@@ -319,7 +319,7 @@ end
 -- 'categoryName'   [string]        the category name that matched
 -- 'sender'         [string]        the message sender
 -- 'message'        [string]        the message text
-function DBB2.api.SendNotification(categoryName, sender, message)
+function DBB2.api.SendNotification(categoryName, sender, message, diagnosticID)
   local settings = DBB2.api.GetNotificationSettings()
   
   -- Guard against nil values
@@ -377,12 +377,14 @@ end
 -- 'message'    [string]        the message text
 -- 'sender'     [string]        the message sender
 -- 'msgType'    [string]        optional message type (CHAT_MSG_SYSTEM, CHAT_MSG_CHANNEL, etc)
-function DBB2.api.CheckAndNotify(message, sender, msgType)
+function DBB2.api.CheckAndNotify(message, sender, msgType, diagnosticID)
   local debugging = DBB2.debug.enabled
   local debugStart = nil
   if debugging then debugStart = DBB2.api.DebugClock() end
   if not DBB2.notificationState then
-    if debugging then DBB2.api.DebugTrace(3, "notify", "skipped", "reason=notification state unavailable") end
+    if debugging then
+      DBB2.api.DebugTrace(3, "notify", "skipped", "reason=notification state unavailable")
+    end
     return
   end
   
@@ -403,7 +405,7 @@ function DBB2.api.CheckAndNotify(message, sender, msgType)
         for _, cat in ipairs(categories) do
           if cat.selected and DBB2.api.IsNotificationEnabled(categoryType, cat.name) then
             if DBB2.api.MatchMessageToCategory(message, cat, nil, categoryType) then
-              DBB2.api.SendNotification(cat.name, sender, message)
+              DBB2.api.SendNotification(cat.name, sender, message, diagnosticID)
               if debugging then DBB2.api.DebugPerf("CheckAndNotify", DBB2.api.DebugClock() - debugStart) end
               return  -- Only notify once per message
             end
@@ -414,7 +416,6 @@ function DBB2.api.CheckAndNotify(message, sender, msgType)
   end
   if debugging then
     local elapsed = DBB2.api.DebugClock() - debugStart
-    DBB2.api.DebugTrace(2, "notify", "not-sent", "reason=no matched category with notification enabled sender=" .. (sender or "Unknown"), elapsed)
     DBB2.api.DebugPerf("CheckAndNotify", elapsed)
   end
 end

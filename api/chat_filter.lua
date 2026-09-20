@@ -406,16 +406,29 @@ function DBB2.api.SetupChatFilter()
             end
             if success and shouldHide then
               if debugging then
+                DBB2.api.DebugCount("chat.hiddenRenders", 1)
+                DBB2.api.DebugChatLifecycle(msgContent, sender, true, hideReason, frameIndex)
                 DBB2.api.DebugCount("chat.hidden", 1)
-                DBB2.api.DebugTrace(2, "chat", "hidden", "reason=" .. (hideReason or "unknown") .. " sender=" .. (sender or "Unknown") .. " text=\"" .. (msgContent or "") .. "\"", elapsed)
               end
               return  -- Don't show this message
             elseif success and debugging then
-              DBB2.api.DebugTrace(1, "chat", "visible", "reason=" .. (hideReason or "unknown") .. " sender=" .. (sender or "Unknown") .. " text=\"" .. (msgContent or "") .. "\"", elapsed)
+              DBB2.api.DebugCount("chat.visibleRenders", 1)
+              DBB2.api.DebugChatLifecycle(msgContent, sender, false, hideReason, frameIndex)
+              DBB2.api.DebugCount("chat.visible", 1)
             elseif not success and debugging then
               DBB2.api.DebugCount("chat.filterErrors", 1)
-              DBB2.api.DebugTrace(4, "chat", "filter-error", tostring(shouldHide or "unknown error"), elapsed)
+              DBB2.api.DebugTrace(4, "chat", "filter-error", "frame=ChatFrame" .. frameIndex .. " error=" .. tostring(shouldHide or "unknown error"), elapsed)
             end
+          elseif msg and DBB2.debug.enabled then
+            -- Keep lifecycle correlation complete even when filtering is off.
+            -- This is diagnostic-only and does not alter the chat line.
+            local cleanMsg = string_gsub(msg, "|c%x%x%x%x%x%x%x%x", "")
+            cleanMsg = string_gsub(cleanMsg, "|r", "")
+            cleanMsg = string_gsub(cleanMsg, "|H[^|]*|h([^|]*)|h", "%1")
+            local msgContent, sender = ExtractFormattedMessageContent(cleanMsg)
+            DBB2.api.DebugCount("chat.visibleRenders", 1)
+            DBB2.api.DebugChatLifecycle(msgContent, sender, false, "filter-disabled", frameIndex)
+            DBB2.api.DebugCount("chat.visible", 1)
           end
           
           -- Call original function

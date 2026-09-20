@@ -3,6 +3,7 @@
 local table_getn = table.getn
 local table_insert = table.insert
 local string_find = string.find
+local string_gsub = string.gsub
 local string_lower = string.lower
 local string_len = string.len
 local math_max = math.max
@@ -13,6 +14,8 @@ local math_ceil = math.ceil
 local PAGE_SIZE = 30
 local APPROX_CHARS_PER_LINE = 100
 local MAX_EXPORT_CHARS = 24000
+-- Increment this only when the TSV columns or their meaning changes.
+local DIAGNOSTIC_TSV_SCHEMA_VERSION = "1"
 
 local levelFilters = {
   { label = "All levels", value = 1 },
@@ -21,7 +24,7 @@ local levelFilters = {
   { label = "Errors", value = 4 }
 }
 
-local categoryFilters = { "all", "message", "event", "chat", "notify", "performance", "lua-error", "test", "system" }
+local categoryFilters = { "all", "message", "event", "chat", "notify", "performance", "ui", "audit", "lua-error", "test", "system" }
 
 local function CreateButton(parent, text, width, clickHandler)
   local button = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
@@ -82,10 +85,12 @@ end
 
 local function RefreshViewer(viewer, force)
   if not force and not DBB2.debug.dirty then return end
+  local refreshStarted = DBB2.api.DebugClock()
 
   local lines = {}
   table_insert(lines, "DifficultBulletinBoard diagnostic session")
   table_insert(lines, DBB2.api.DebugGetRuntimeSummary())
+  table_insert(lines, "UI: " .. DBB2.api.DebugGetUIStateSummary())
   table_insert(lines, "Counters: " .. DBB2.api.DebugGetCounterSummary())
   table_insert(lines, "Performance: " .. DBB2.api.DebugGetPerfSummary())
   table_insert(lines, "--------------------------------------------------------------------------------")
@@ -122,7 +127,7 @@ local function RefreshViewer(viewer, force)
     if viewer.pageOffset < totalPages - 1 then viewer.olderButton:Enable() else viewer.olderButton:Disable() end
     if viewer.pageOffset > 0 then viewer.newerButton:Enable() else viewer.newerButton:Disable() end
   end
-  viewer.status:SetText((DBB2.debug.paused and "CAPTURE PAUSED  ||  " or "CAPTURING  ||  ") .. DBB2.api.DebugGetRuntimeSummary())
+  viewer.status:SetText((DBB2.debug.paused and "PAUSED  ||  " or "CAPTURING  ||  ") .. DBB2.api.DebugGetLiveSummary())
   viewer.pauseButton:SetText(DBB2.debug.paused and "Resume" or "Pause")
   DBB2.debug.dirty = false
 
@@ -132,21 +137,12 @@ local function RefreshViewer(viewer, force)
     -- covers both the child rect and UIPanelScrollFrameTemplate scrollbar.
     viewer.pendingTailFrames = 2
   end
+  DBB2.api.DebugPerf("diagnostic.console-refresh", DBB2.api.DebugClock() - refreshStarted, nil, true)
+  -- Recording this self-measurement must not trigger an idle refresh loop.
+  DBB2.debug.dirty = false
 end
 
-local function BuildExportChunks()
-  local exportLines = {
-    "DifficultBulletinBoard full diagnostic export",
-    DBB2.api.DebugGetRuntimeSummary(),
-    "Counters: " .. DBB2.api.DebugGetCounterSummary(),
-    "Performance: " .. DBB2.api.DebugGetPerfSummary(),
-    "--------------------------------------------------------------------------------"
-  }
-
-  for _, entry in ipairs(DBB2.api.DebugGetEntries()) do
-    table_insert(exportLines, DBB2.api.DebugFormatEntry(entry))
-  end
-
+local function ChunkExportLines(exportLines)
   local chunks = {}
   local parts = {}
   local partLength = 0
@@ -154,8 +150,10 @@ local function BuildExportChunks()
 
   local function FinishChunk()
     if table_getn(parts) == 0 then return end
+    -- Keep a row boundary between copied chunks. This is especially important
+    -- for TSV exports, which users may concatenate outside the game client.
     table_insert(chunks, {
-      text = table.concat(parts, "\n"),
+      text = table.concat(parts, "\n") .. "\n",
       visualLines = visualLines
     })
     parts = {}
@@ -173,10 +171,61 @@ local function BuildExportChunks()
     visualLines = visualLines + math_max(1, math_ceil(string_len(line or "") / APPROX_CHARS_PER_LINE))
   end
   FinishChunk()
+  return chunks
+end
 
-  if table_getn(chunks) == 0 then
-    table_insert(chunks, { text = "No diagnostic entries captured.", visualLines = 1 })
+local function EscapeTSV(value)
+  local text = tostring(value or "")
+  text = string_gsub(text, "\\", "\\\\")
+  text = string_gsub(text, "\r", "\\r")
+  text = string_gsub(text, "\n", "\\n")
+  return string_gsub(text, "\t", "\\t")
+end
+
+local function TSVRow(fields)
+  local escaped = {}
+  for index, value in ipairs(fields) do
+    escaped[index] = EscapeTSV(value)
   end
+  return table.concat(escaped, "\t")
+end
+
+local function BuildDiagnosticExportChunks()
+  local exportStarted = DBB2.api.DebugClock()
+  local entries = DBB2.api.DebugGetEntries()
+  local exportLines = {
+    "schema_version\trecord_type\tsequence\tsession_time_seconds\tlevel\tlevel_name\tcategory\taction\telapsed_ms\tmetadata_key\tmetadata_value\tdetails",
+    TSVRow({ DIAGNOSTIC_TSV_SCHEMA_VERSION, "metadata", "", "", "", "", "", "", "", "health", DBB2.api.DebugGetHealthSummary(), "" }),
+    TSVRow({ DIAGNOSTIC_TSV_SCHEMA_VERSION, "metadata", "", "", "", "", "", "", "", "runtime", DBB2.api.DebugGetRuntimeSummary(), "" }),
+    TSVRow({ DIAGNOSTIC_TSV_SCHEMA_VERSION, "metadata", "", "", "", "", "", "", "", "ui_state", DBB2.api.DebugGetUIStateSummary(), "" }),
+    TSVRow({ DIAGNOSTIC_TSV_SCHEMA_VERSION, "metadata", "", "", "", "", "", "", "", "counters", DBB2.api.DebugGetCounterSummary(), "" }),
+    TSVRow({ DIAGNOSTIC_TSV_SCHEMA_VERSION, "metadata", "", "", "", "", "", "", "", "performance", DBB2.api.DebugGetPerfSummary(), "" })
+  }
+
+  for _, entry in ipairs(entries) do
+    table_insert(exportLines, TSVRow({
+      DIAGNOSTIC_TSV_SCHEMA_VERSION,
+      "entry",
+      entry.sequence,
+      entry.sessionTime,
+      entry.level,
+      entry.levelName,
+      entry.category,
+      entry.action,
+      -- Lua 5.0 ipairs stops at a nil array slot. Keep this column explicit so
+      -- untimed entries still export their metadata and details columns.
+      entry.elapsedMS or "",
+      "",
+      "",
+      entry.details or ""
+    }))
+  end
+
+  local chunks = ChunkExportLines(exportLines)
+  if table_getn(chunks) == 0 then
+    table_insert(chunks, { text = "schema_version\trecord_type\n" .. DIAGNOSTIC_TSV_SCHEMA_VERSION .. "\tno_entries\n", visualLines = 2 })
+  end
+  DBB2.api.DebugPerf("diagnostic.export-construction", DBB2.api.DebugClock() - exportStarted, nil, true)
   return chunks
 end
 
@@ -188,9 +237,8 @@ local function ShowExportChunk(exportViewer)
   if exportViewer.chunkIndex > count then exportViewer.chunkIndex = count end
 
   local chunk = chunks[exportViewer.chunkIndex]
-  local heading = "DBB EXPORT CHUNK " .. exportViewer.chunkIndex .. "/" .. count .. "\n"
-  exportViewer.log:SetText(heading .. chunk.text)
-  exportViewer.log:SetHeight(math_max(350, (chunk.visualLines + 2) * 12 + 18))
+  exportViewer.log:SetText(chunk.text)
+  exportViewer.log:SetHeight(math_max(350, chunk.visualLines * 12 + 18))
   exportViewer.status:SetText("Chunk " .. exportViewer.chunkIndex .. " of " .. count .. "  ||  copy each chunk in order")
 
   if exportViewer.chunkIndex > 1 then exportViewer.previousButton:Enable() else exportViewer.previousButton:Disable() end
@@ -226,7 +274,7 @@ local function CreateExportViewer()
 
   exportViewer.title = exportViewer:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
   exportViewer.title:SetPoint("TOPLEFT", exportViewer, "TOPLEFT", 14, -13)
-  exportViewer.title:SetText("DBB Full Diagnostic Export")
+  exportViewer.title:SetText("DBB Diagnostic Export")
 
   exportViewer.close = CreateFrame("Button", nil, exportViewer, "UIPanelCloseButton")
   exportViewer.close:SetPoint("TOPRIGHT", exportViewer, "TOPRIGHT", -4, -4)
@@ -269,7 +317,7 @@ local function CreateExportViewer()
 
   exportViewer.help = exportViewer:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
   exportViewer.help:SetPoint("BOTTOMRIGHT", exportViewer, "BOTTOMRIGHT", -15, 18)
-  exportViewer.help:SetText("Select chunk, Ctrl+C, then Next")
+  exportViewer.help:SetText("Copy chunks in order; rows use stable TSV columns")
 
   exportViewer:SetScript("OnHide", function()
     this.log:ClearFocus()
@@ -280,12 +328,12 @@ local function CreateExportViewer()
   return exportViewer
 end
 
-local function OpenFullExport(viewer)
+local function OpenDiagnosticsExport()
   if not DBB2.debug.exportViewer then
     DBB2.debug.exportViewer = CreateExportViewer()
   end
   local exportViewer = DBB2.debug.exportViewer
-  exportViewer.chunks = BuildExportChunks()
+  exportViewer.chunks = BuildDiagnosticExportChunks()
   exportViewer.chunkIndex = 1
   ShowExportChunk(exportViewer)
   exportViewer:Show()
@@ -293,6 +341,8 @@ end
 
 local function CreateViewer()
   local viewer = CreateFrame("Frame", "DBB2DebugViewer", UIParent)
+  -- 880px closely fits the 824px log plus scrollbar and margins while still
+  -- leaving room for both control rows.
   viewer:SetWidth(880)
   viewer:SetHeight(540)
   viewer:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
@@ -378,15 +428,15 @@ local function CreateViewer()
   end)
   viewer.clearButton:SetPoint("LEFT", viewer.followButton, "RIGHT", 5, 0)
 
-  viewer.copyButton = CreateButton(viewer, "Export all", 78, function() OpenFullExport(viewer) end)
-  viewer.copyButton:SetPoint("LEFT", viewer.clearButton, "RIGHT", 5, 0)
+  viewer.exportButton = CreateButton(viewer, "Export Diagnostics", 118, OpenDiagnosticsExport)
+  viewer.exportButton:SetPoint("LEFT", viewer.clearButton, "RIGHT", 5, 0)
 
   viewer.searchLabel = viewer:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-  viewer.searchLabel:SetPoint("LEFT", viewer.copyButton, "RIGHT", 10, 0)
+  viewer.searchLabel:SetPoint("LEFT", viewer.exportButton, "RIGHT", 8, 0)
   viewer.searchLabel:SetText("Search")
 
   viewer.search = CreateFrame("EditBox", "DBB2DebugSearch", viewer, "InputBoxTemplate")
-  viewer.search:SetWidth(180)
+  viewer.search:SetWidth(105)
   viewer.search:SetHeight(20)
   viewer.search:SetPoint("LEFT", viewer.searchLabel, "RIGHT", 7, 0)
   viewer.search:SetAutoFocus(false)
@@ -399,19 +449,20 @@ local function CreateViewer()
 
   viewer.testLabel = viewer:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
   viewer.testLabel:SetPoint("TOPLEFT", viewer, "TOPLEFT", 14, -91)
-  viewer.testLabel:SetText("Analyze message")
+  viewer.testLabel:SetText("Analyze message(s)")
 
   viewer.testInput = CreateFrame("EditBox", "DBB2DebugTestInput", viewer, "InputBoxTemplate")
   viewer.testInput:SetWidth(635)
-  viewer.testInput:SetHeight(20)
+  viewer.testInput:SetHeight(48)
   viewer.testInput:SetPoint("LEFT", viewer.testLabel, "RIGHT", 9, 0)
   viewer.testInput:SetAutoFocus(false)
+  viewer.testInput:SetMultiLine(true)
   viewer.testInput:SetScript("OnEscapePressed", function() this:ClearFocus() end)
 
-  local function AnalyzeTestMessage()
-    local message = viewer.testInput:GetText() or ""
-    if message ~= "" then
-      DBB2.api.DebugAnalyzeMessage(message)
+  local function AnalyzeTestMessages()
+    local messages = viewer.testInput:GetText() or ""
+    if messages ~= "" then
+      DBB2.api.DebugAnalyzeBatch(messages)
       viewer.categoryFilterIndex = 1
       viewer.pageOffset = 0
       viewer.categoryButton:SetText("Category: all")
@@ -421,16 +472,16 @@ local function CreateViewer()
     end
   end
 
-  viewer.testButton = CreateButton(viewer, "Analyze", 70, AnalyzeTestMessage)
+  viewer.testButton = CreateButton(viewer, "Analyze batch", 90, AnalyzeTestMessages)
   viewer.testButton:SetPoint("LEFT", viewer.testInput, "RIGHT", 7, 0)
 
   viewer.testInput:SetScript("OnEnterPressed", function()
-    AnalyzeTestMessage()
+    AnalyzeTestMessages()
     this:ClearFocus()
   end)
 
   viewer.scroll = CreateFrame("ScrollFrame", "DBB2DebugScroll", viewer, "UIPanelScrollFrameTemplate")
-  viewer.scroll:SetPoint("TOPLEFT", viewer, "TOPLEFT", 14, -116)
+  viewer.scroll:SetPoint("TOPLEFT", viewer, "TOPLEFT", 14, -144)
   viewer.scroll:SetPoint("BOTTOMRIGHT", viewer, "BOTTOMRIGHT", -31, 34)
 
   viewer.log = CreateFrame("EditBox", "DBB2DebugLog", viewer.scroll)
@@ -512,6 +563,7 @@ function DBB2:ToggleDebugViewer(showOnly)
   local viewer = self.debug.viewer
   if showOnly or not viewer:IsShown() then
     DBB2.api.DebugStart()
+    DBB2.api.DebugAuditCategoryData()
     DBB2.api.DebugCaptureSnapshot("viewer-opened")
     viewer:Show()
   else
