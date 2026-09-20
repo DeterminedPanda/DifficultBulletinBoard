@@ -48,7 +48,8 @@ end
 --                    - {text, r, g, b}: colored text
 --                    - {text, "highlight"}: uses highlight color
 --                    - {text, "gray"}: uses gray color
-function DBB2.api.ShowTooltip(owner, anchor, lines)
+-- fontSize: [number|nil] fixed font size. When omitted, uses the UI font-size offset.
+function DBB2.api.ShowTooltip(owner, anchor, lines, fontSize)
   -- Guard against nil parameters
   if not lines or table_getn(lines) == 0 then return end
   
@@ -61,7 +62,7 @@ function DBB2.api.ShowTooltip(owner, anchor, lines)
   
   local padding = DBB2:ScaleSize(8)
   local spacing = DBB2:ScaleSize(2)
-  local fontSize = DBB2:GetFontSize(10)
+  fontSize = fontSize or DBB2:GetFontSize(10)
   local maxLineWidth = DBB2:ScaleSize(260)
   local hr, hg, hb = DBB2:GetHighlightColor()
   local lineCount = 0

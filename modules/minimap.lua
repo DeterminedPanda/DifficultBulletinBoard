@@ -127,7 +127,7 @@ DBB2:RegisterModule("minimap", function()
       "Drag to rotate around minimap",
       "Ctrl + Drag to move freely",
       "Ctrl + Right-click to reset position"
-    })
+    }, 10)
   end)
   
   DBB2.minimapButton:SetScript("OnLeave", function()
