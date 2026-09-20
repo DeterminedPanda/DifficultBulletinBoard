@@ -262,6 +262,11 @@ DBB2:RegisterModule("config", function()
     
     { type = "section", label = "Filtering & Cleanup" },
     { type = "description", text = "Reduce spam, control repeats, and manage how messages are handled.", fontSize = 9 },
+    { type = "toggle", key = "showUnsortedMessagesInLogs", label = "Show Unsorted Messages in Logs", default = false,
+      tooltip = {{"Show Unsorted Messages in Logs", "highlight"}, "Shows uncategorized messages in the Logs tab. They are not shown in Groups or Professions.", "Matches use the Group and Profession Filter Tags, even when those filters are disabled."},
+      onChange = function()
+        if DBB2.gui and DBB2.gui.UpdateMessages then DBB2.gui:UpdateMessages() end
+      end },
     { type = "slider", key = "spamFilterSeconds", label = "Duplicate Filter (seconds)", min = 0, max = 300, step = 10,
       tooltip = {{"Duplicate Filter", "highlight"}, "Ignore repeated messages within the selected time.", {"0 = disabled", "gray"}} },
     { type = "slider", key = "messageExpireMinutes", label = "Auto-Remove (minutes)", min = 0, max = 30, step = 1,

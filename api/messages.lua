@@ -34,6 +34,7 @@ function DBB2.api.RemoveExpiredMessages()
   local expireSeconds = expireMinutes * 60
   local currentTime = time()
   local removed = false
+  local removedCount = 0
   
   -- Remove from oldest to newest (start from beginning)
   for i = table_getn(DBB2.messages), 1, -1 do
@@ -43,6 +44,7 @@ function DBB2.api.RemoveExpiredMessages()
     if age > expireSeconds then
       table_remove(DBB2.messages, i)
       removed = true
+      removedCount = removedCount + 1
     end
   end
   
@@ -61,6 +63,13 @@ function DBB2.api.RemoveExpiredMessages()
           panel.UpdateCategories()
         end
       end
+    end
+  end
+
+  if removedCount > 0 then
+    if DBB2.debug.enabled then
+      DBB2.api.DebugCount("messages.expired", removedCount)
+      DBB2.api.DebugTrace(2, "message", "expired-cleanup", "removed=" .. removedCount .. " expiryMinutes=" .. expireMinutes)
     end
   end
 end
@@ -118,6 +127,30 @@ function DBB2.api.IsDuplicateMessage(message, sender)
     end
   end
   
+  return false
+end
+
+-- [ IsStoredUnsortedMessage ]
+-- Returns true when the same sender/message pair is already present as an
+-- unsorted entry. The chat filter uses this to apply the Hide from Chat mode
+-- directly instead of treating the entry as an ordinary duplicate.
+function DBB2.api.IsStoredUnsortedMessage(message, sender)
+  if not message then return false end
+
+  local lowerMsg = string_lower(DBB2.api.StripHyperlinks(message))
+  local lowerSender = string_lower(sender or "")
+
+  for i = table_getn(DBB2.messages), 1, -1 do
+    local msg = DBB2.messages[i]
+    if msg and msg.isUnsorted then
+      local storedMsg = string_lower(DBB2.api.StripHyperlinks(msg.message or ""))
+      local storedSender = string_lower(msg.sender or "")
+      if storedSender == lowerSender and storedMsg == lowerMsg then
+        return true
+      end
+    end
+  end
+
   return false
 end
 
@@ -184,6 +217,10 @@ function DBB2.api.RemovePreviousMessageFromSameSender(sender, newCategories, ign
         -- Remove the old message if categories overlap
         if hasOverlap then
           table_remove(DBB2.messages, i)
+          if DBB2.debug.enabled then
+            DBB2.api.DebugCount("messages.replaced", 1)
+            DBB2.api.DebugTrace(2, "message", "replaced-previous", "sender=" .. sender .. " oldText=\"" .. (msg.message or "") .. "\"")
+          end
           return true
         end
       end
@@ -195,7 +232,7 @@ end
 
 -- [ AddMessage ]
 -- Adds a new message to the message store
--- Only stores messages that match at least one category (regardless of enabled state)
+-- Stores category matches plus optional Logs-only unsorted messages.
 -- IMPORTANT: System messages (CHAT_MSG_SYSTEM) are ONLY stored if they match hardcore categories
 -- This prevents /who results, loot messages, etc. from appearing in Groups/Professions tabs
 -- For Groups and Professions: replaces previous message from same sender in same category
@@ -204,11 +241,35 @@ end
 -- 'channel'    [string]        the channel name
 -- 'type'       [string]        the message type (CHAT_MSG_GUILD, CHAT_MSG_CHANNEL, etc)
 function DBB2.api.AddMessage(message, sender, channel, msgType)
+  local debugging = DBB2.debug.enabled
+  local debugStart = nil
+  if debugging then debugStart = DBB2.api.DebugClock() end
+
   -- Guard against nil message
-  if not message then return end
+  if not message then
+    if debugging then DBB2.api.DebugFinishDecision(debugStart, "rejected-invalid", "reason=nil message") end
+    return
+  end
+
+  local context = nil
+  if debugging then
+    context = "sender=" .. (sender or "Unknown") .. " channel=" .. (channel or "") .. " type=" .. (msgType or "") .. " text=\"" .. message .. "\""
+  end
   
   -- Clean up expired messages first
   DBB2.api.RemoveExpiredMessages()
+
+  -- Blacklist handling is the first matching decision for every message from
+  -- an enabled source, including candidates for unsorted capture.
+  local isBlacklisted, blacklistReason, blacklistDetails = DBB2.api.IsMessageBlacklisted(message, sender)
+  if isBlacklisted then
+    if debugging then
+      local detailText = blacklistDetails
+      if type(detailText) == "table" then detailText = table.concat(detailText, ",") end
+      DBB2.api.DebugFinishDecision(debugStart, "rejected-blacklist", context .. " reason=" .. (blacklistReason or "unknown") .. " match=" .. tostring(detailText or ""))
+    end
+    return
+  end
   
   -- Categorize twice:
   -- 1) fullCategories respects filter tags and controls what is actually stored/shown
@@ -226,48 +287,66 @@ function DBB2.api.AddMessage(message, sender, channel, msgType)
   local matchesBaseCategory = (table_getn(baseCategories.groups) > 0) or
                               (table_getn(baseCategories.professions) > 0) or
                               (table_getn(baseCategories.hardcore) > 0)
-  
-  if not matchesBaseCategory then
-    return  -- Message doesn't match any category pattern, ignore it
+
+  local categoryDetail = nil
+  if debugging then
+    categoryDetail = " full(groups=" .. table.concat(fullCategories.groups, ",") ..
+                     ";professions=" .. table.concat(fullCategories.professions, ",") ..
+                     ";hardcore=" .. table.concat(fullCategories.hardcore, ",") .. ")" ..
+                     " base(groups=" .. table.concat(baseCategories.groups, ",") ..
+                     ";professions=" .. table.concat(baseCategories.professions, ",") ..
+                     ";hardcore=" .. table.concat(baseCategories.hardcore, ",") .. ")"
   end
   
   -- CRITICAL: System messages (like /who results) should ONLY be stored if they match
   -- hardcore categories. This prevents zone names in /who results from polluting
   -- the Groups/Professions tabs (e.g., "Zul'Gurub" in a /who result)
   if msgType == "CHAT_MSG_SYSTEM" then
-    local matchesHardcore = table_getn(categories.hardcore) > 0
+    local matchesHardcore = table_getn(baseCategories.hardcore) > 0
     if not matchesHardcore then
+      if debugging then DBB2.api.DebugFinishDecision(debugStart, "rejected-system", context .. " reason=system messages require a Hardcore category" .. categoryDetail) end
       return  -- System message doesn't match hardcore, ignore it
     end
   end
-  
-  -- Check blacklist (only for messages that match categories)
-  -- Uses DBB2.api.IsMessageBlacklisted from blacklist.lua
-  if DBB2.api.IsMessageBlacklisted(message, sender) then
-    return
+
+  -- A message matching any known category can never become unsorted, even if
+  -- the category is disabled or its optional Filter Tags gate rejects it.
+  local unsortedType = nil
+  if not matchesBaseCategory then
+    if not DBB2_Config.showUnsortedMessagesInLogs then
+      if debugging then DBB2.api.DebugFinishDecision(debugStart, "rejected-no-category", context .. " reason=no known category and unsorted logging disabled" .. categoryDetail) end
+      return
+    end
+
+    unsortedType = DBB2.api.MatchUnsortedFilterTags(message)
+    if not unsortedType then
+      if debugging then DBB2.api.DebugFinishDecision(debugStart, "rejected-no-category", context .. " reason=no known category or unsorted filter-tag match" .. categoryDetail) end
+      return
+    end
   end
   
   if DBB2.api.IsDuplicateMessage(message, sender) then
+    if debugging then DBB2.api.DebugFinishDecision(debugStart, "rejected-duplicate", context .. " spamWindow=" .. (DBB2_Config.spamFilterSeconds or 150) .. "s" .. categoryDetail) end
     return
   end
   
-  -- Clear stale messages from the same sender using base category overlap so an
-  -- updated line can replace an older GUI entry even if it no longer passes the
-  -- optional filter tag requirement.
-  DBB2.api.RemovePreviousMessageFromSameSender(sender, baseCategories, true)
-  
-  -- If the message no longer passes the active filter tag gate, stop after clearing
-  -- any stale older entry. We do not store/show the new line in the GUI.
-  if not matchesAnyCategory then
-    return
+  if not unsortedType then
+    -- Clear stale messages from the same sender using base category overlap so an
+    -- updated line can replace an older GUI entry even if it no longer passes the
+    -- optional filter tag requirement.
+    DBB2.api.RemovePreviousMessageFromSameSender(sender, baseCategories, true)
+
+    -- If the message no longer passes the active filter tag gate, stop after clearing
+    -- any stale older entry. We do not store/show the new line in the GUI.
+    if not matchesAnyCategory then
+      if debugging then DBB2.api.DebugFinishDecision(debugStart, "rejected-filter-tags", context .. " reason=base category matched but active filter tags did not; stale entry cleared if present" .. categoryDetail) end
+      return
+    end
+
+    -- Unsorted messages intentionally skip notifications. Categorized messages
+    -- retain the existing notification behavior.
+    DBB2.api.CheckAndNotify(message, sender, msgType)
   end
-  
-  -- Remove previous message from same sender in same category (Groups/Professions only)
-  -- This ensures only the most recent message per sender is shown
-  -- Check for notifications before storing (only for selected categories)
-  -- Uses DBB2.api.CheckAndNotify from notifications.lua
-  -- Pass msgType so system messages only trigger hardcore notifications
-  DBB2.api.CheckAndNotify(message, sender, msgType)
   
   -- Store message
   table_insert(DBB2.messages, {
@@ -275,12 +354,15 @@ function DBB2.api.AddMessage(message, sender, channel, msgType)
     sender = sender or "Unknown",
     channel = channel or "",
     time = time(),
-    type = msgType or ""
+    type = msgType or "",
+    isUnsorted = unsortedType ~= nil,
+    unsortedType = unsortedType
   })
   
   -- Keep only last MAX_MESSAGES messages
   if table_getn(DBB2.messages) > MAX_MESSAGES then
     table_remove(DBB2.messages, 1)
+    if debugging then DBB2.api.DebugCount("messages.capacityEvicted", 1) end
   end
   
   -- Update GUI if visible
@@ -299,6 +381,15 @@ function DBB2.api.AddMessage(message, sender, channel, msgType)
           panel.UpdateCategories()
         end
       end
+    end
+  end
+
+
+  if debugging then
+    if unsortedType then
+      DBB2.api.DebugFinishDecision(debugStart, "stored-unsorted", context .. " unsortedType=" .. unsortedType .. categoryDetail)
+    else
+      DBB2.api.DebugFinishDecision(debugStart, "stored-categorized", context .. categoryDetail)
     end
   end
 end

@@ -316,6 +316,78 @@ function DBB2.api.UpdateFilterTags(categoryType, newTags)
   return true
 end
 
+-- Strictly checks a message against a filter tag list. Unlike MatchFilterTags,
+-- an absent or empty list is not a pass-through match. This is shared by the
+-- normal optional category gate and Logs-only unsorted message detection.
+local function MatchFilterTagList(message, tags)
+  if not tags or not tags[1] then
+    return false
+  end
+
+  local lowerMsg = string_lower(message or "")
+  if lowerMsg == "" then return false end
+
+  local msgLen = string_len(lowerMsg)
+
+  for _, tag in ipairs(tags) do
+    local lowerTag = string_lower(tag)
+    local tagLen = string_len(lowerTag)
+
+    local isWildcard = string_find(lowerTag, "[%*%?%[%]%{%}\\]")
+
+    if isWildcard then
+      if DBB2.api.MatchWildcard(lowerMsg, lowerTag) then
+        return true
+      end
+    else
+      local startPos = 1
+      while true do
+        local foundPos = string_find(lowerMsg, lowerTag, startPos, true)
+        if not foundPos then break end
+
+        local charBefore = ""
+        if foundPos > 1 then
+          charBefore = string_sub(lowerMsg, foundPos - 1, foundPos - 1)
+        end
+
+        local afterPos = foundPos + tagLen
+        local charAfter = ""
+        if afterPos <= msgLen then
+          charAfter = string_sub(lowerMsg, afterPos, afterPos)
+        end
+
+        local validBefore = (foundPos == 1) or not string_find(charBefore, "[%w]")
+        local validAfter = (afterPos > msgLen) or not string_find(charAfter, "[%w]")
+
+        -- Also allow digits after (like LF1M, LF2M).
+        if not validAfter and string_find(charAfter, "%d") then
+          local digitEndPos = afterPos
+          while digitEndPos <= msgLen and string_find(string_sub(lowerMsg, digitEndPos, digitEndPos), "%d") do
+            digitEndPos = digitEndPos + 1
+          end
+          if digitEndPos <= msgLen then
+            local afterDigits = string_sub(lowerMsg, digitEndPos, digitEndPos)
+            if string_lower(afterDigits) == "m" then
+              digitEndPos = digitEndPos + 1
+            end
+          end
+          if digitEndPos > msgLen or not string_find(string_sub(lowerMsg, digitEndPos, digitEndPos), "[%w]") then
+            validAfter = true
+          end
+        end
+
+        if validBefore and validAfter then
+          return true
+        end
+
+        startPos = foundPos + 1
+      end
+    end
+  end
+
+  return false
+end
+
 -- [ MatchFilterTags ]
 -- Checks if a message matches any of the filter tags for a category type.
 -- Uses word boundary matching for plain tags and wildcard matching for patterns.
@@ -332,92 +404,30 @@ function DBB2.api.MatchFilterTags(message, categoryType)
   if not DBB2.api.IsFilterTagsEnabled(categoryType) then
     return true
   end
-  
+
   local filter = DBB2.api.GetFilterTags(categoryType)
-  if not filter or not filter.tags then
-    return true  -- No tags defined, pass through
-  end
-  
-  -- Quick check: any tags at all?
-  local hasAnyTags = false
-  for _ in ipairs(filter.tags) do
-    hasAnyTags = true
-    break
-  end
-  if not hasAnyTags then
+  if not filter or not filter.tags or not filter.tags[1] then
     return true  -- No tags, pass through
   end
-  
-  local lowerMsg = string_lower(message or "")
-  if lowerMsg == "" then return false end
-  
-  local msgLen = string_len(lowerMsg)
-  
-  for _, tag in ipairs(filter.tags) do
-    local lowerTag = string_lower(tag)
-    local tagLen = string_len(lowerTag)
-    
-    -- Check if tag contains wildcard special characters
-    local isWildcard = string_find(lowerTag, "[%*%?%[%]%{%}\\]")
-    
-    if isWildcard then
-      -- Use wildcard matching
-      if DBB2.api.MatchWildcard(lowerMsg, lowerTag) then
-        return true
-      end
-    else
-      -- Plain text matching with word boundaries
-      local startPos = 1
-      while true do
-        local foundPos = string_find(lowerMsg, lowerTag, startPos, true)
-        if not foundPos then
-          break
-        end
-        
-        -- Check word boundaries
-        local charBefore = ""
-        if foundPos > 1 then
-          charBefore = string_sub(lowerMsg, foundPos - 1, foundPos - 1)
-        end
-        
-        local afterPos = foundPos + tagLen
-        local charAfter = ""
-        if afterPos <= msgLen then
-          charAfter = string_sub(lowerMsg, afterPos, afterPos)
-        end
-        
-        local validBefore = (foundPos == 1) or not string_find(charBefore, "[%w]")
-        local validAfter = (afterPos > msgLen) or not string_find(charAfter, "[%w]")
-        
-        -- Also allow digits after (like LF1M, LF2M)
-        if not validAfter and string_find(charAfter, "%d") then
-          local digitEndPos = afterPos
-          while digitEndPos <= msgLen and string_find(string_sub(lowerMsg, digitEndPos, digitEndPos), "%d") do
-            digitEndPos = digitEndPos + 1
-          end
-          -- Check for 'M' after digits (for patterns like LF1M, LF2M)
-          if digitEndPos <= msgLen then
-            local afterDigits = string_sub(lowerMsg, digitEndPos, digitEndPos)
-            if string_lower(afterDigits) == "m" then
-              digitEndPos = digitEndPos + 1
-            end
-          end
-          -- Check boundary after digits/M
-          if digitEndPos > msgLen or not string_find(string_sub(lowerMsg, digitEndPos, digitEndPos), "[%w]") then
-            validAfter = true
-          end
-        end
-        
-        if validBefore and validAfter then
-          return true
-        end
-        
-        startPos = foundPos + 1
-      end
-    end
+
+  return MatchFilterTagList(message, filter.tags)
+end
+
+-- [ MatchUnsortedFilterTags ]
+-- Matches the configured Group and Profession Filter Tag lists regardless of
+-- their enabled state. Returns a marker suitable for Logs-only entries.
+function DBB2.api.MatchUnsortedFilterTags(message)
+  local groupFilter = DBB2.api.GetFilterTags("groups")
+  if groupFilter and MatchFilterTagList(message, groupFilter.tags) then
+    return "group"
   end
-  
-  return false
+
+  local professionFilter = DBB2.api.GetFilterTags("professions")
+  if professionFilter and MatchFilterTagList(message, professionFilter.tags) then
+    return "trade"
+  end
+
+  return nil
 end
 
 -- =====================================================
@@ -809,25 +819,28 @@ function DBB2.api.GetCategorizedMessages(categoryType)
   
   -- Categorize each message
   for _, msg in ipairs(DBB2.messages) do
-    local msgCategories = DBB2.api.CategorizeMessage(msg.message)
+    -- Unsorted entries remain Logs-only even if category tags are edited later.
+    if not msg.isUnsorted then
+      local msgCategories = DBB2.api.CategorizeMessage(msg.message)
     
-    if categoryType == "hardcore" then
-      -- Only show hardcore messages in hardcore tab
-      for _, catName in ipairs(msgCategories.hardcore) do
-        if categorized[catName] then
-          if not isDuplicateInCategory(categorized[catName], msg) then
-            table_insert(categorized[catName], msg)
-          end
-        end
-      end
-    else
-      -- Skip hardcore messages in other tabs
-      if not msgCategories.isHardcore then
-        local matchedCats = msgCategories[categoryType] or {}
-        for _, catName in ipairs(matchedCats) do
+      if categoryType == "hardcore" then
+        -- Only show hardcore messages in hardcore tab
+        for _, catName in ipairs(msgCategories.hardcore) do
           if categorized[catName] then
             if not isDuplicateInCategory(categorized[catName], msg) then
               table_insert(categorized[catName], msg)
+            end
+          end
+        end
+      else
+        -- Skip hardcore messages in other tabs
+        if not msgCategories.isHardcore then
+          local matchedCats = msgCategories[categoryType] or {}
+          for _, catName in ipairs(matchedCats) do
+            if categorized[catName] then
+              if not isDuplicateInCategory(categorized[catName], msg) then
+                table_insert(categorized[catName], msg)
+              end
             end
           end
         end

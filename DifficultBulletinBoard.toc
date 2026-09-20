@@ -16,6 +16,7 @@ env\tag_exclusions.lua
 
 -- API files
 api\utils.lua
+api\debug.lua
 api\hardcore.lua
 api\channels.lua
 api\wildcards.lua
@@ -31,6 +32,7 @@ api\config_schema.lua
 api\config_widgets.lua
 
 modules\version_check.lua
+modules\debug_viewer.lua
 modules\categories.lua
 modules\gui.lua
 modules\config.lua

@@ -363,6 +363,11 @@ function DBB2.api.SendNotification(categoryName, sender, message)
     -- Play sound immediately if no raid warn (chat only mode)
     PlaySoundFile("Interface\\AddOns\\DifficultBulletinBoard\\sound\\duck.wav")
   end
+
+  if DBB2.debug.enabled then
+    DBB2.api.DebugCount("notifications.sent", 1)
+    DBB2.api.DebugTrace(2, "notify", "sent", "category=" .. categoryName .. " sender=" .. sender .. " chat=" .. tostring(settings.chat) .. " screen=" .. tostring(settings.raidWarn) .. " sound=" .. tostring(playSound))
+  end
 end
 
 -- [ CheckAndNotify ]
@@ -373,7 +378,13 @@ end
 -- 'sender'     [string]        the message sender
 -- 'msgType'    [string]        optional message type (CHAT_MSG_SYSTEM, CHAT_MSG_CHANNEL, etc)
 function DBB2.api.CheckAndNotify(message, sender, msgType)
-  if not DBB2.notificationState then return end
+  local debugging = DBB2.debug.enabled
+  local debugStart = nil
+  if debugging then debugStart = DBB2.api.DebugClock() end
+  if not DBB2.notificationState then
+    if debugging then DBB2.api.DebugTrace(3, "notify", "skipped", "reason=notification state unavailable") end
+    return
+  end
   
   -- System messages should ONLY trigger hardcore notifications
   -- This prevents false positives like "Golbolar Quarry" in death messages
@@ -393,11 +404,17 @@ function DBB2.api.CheckAndNotify(message, sender, msgType)
           if cat.selected and DBB2.api.IsNotificationEnabled(categoryType, cat.name) then
             if DBB2.api.MatchMessageToCategory(message, cat, nil, categoryType) then
               DBB2.api.SendNotification(cat.name, sender, message)
+              if debugging then DBB2.api.DebugPerf("CheckAndNotify", DBB2.api.DebugClock() - debugStart) end
               return  -- Only notify once per message
             end
           end
         end
       end
     end
+  end
+  if debugging then
+    local elapsed = DBB2.api.DebugClock() - debugStart
+    DBB2.api.DebugTrace(2, "notify", "not-sent", "reason=no matched category with notification enabled sender=" .. (sender or "Unknown"), elapsed)
+    DBB2.api.DebugPerf("CheckAndNotify", elapsed)
   end
 end

@@ -170,6 +170,9 @@ end
 
 -- Event handler
 DBB2:SetScript("OnEvent", function()
+  if DBB2.debug and DBB2.debug.enabled then
+    DBB2.api.DebugCountSilent("event." .. (event or "unknown"), 1)
+  end
   if event == "ADDON_LOADED" and arg1 == "DifficultBulletinBoard" then
     -- Initialize config with defaults if needed
     DBB2_Config = DBB2_Config or {}
@@ -185,6 +188,7 @@ DBB2:SetScript("OnEvent", function()
       DBB2_Config.spamFilterSeconds = 150  -- Duplicate message filter time
       DBB2_Config.messageExpireMinutes = 15  -- Auto-remove messages older than X minutes (0 = disabled)
       DBB2_Config.hideFromChat = 0  -- Hide captured messages from chat (0=off, 1=selected, 2=all)
+      DBB2_Config.showUnsortedMessagesInLogs = false  -- Show Filter Tag matches with no known category in Logs only
       DBB2_Config.maxMessagesPerCategory = 5  -- Max messages shown per category (0 = unlimited)
       DBB2_Config.scrollSpeed = 55  -- Scroll speed (pixels per wheel tick)
       DBB2_Config.defaultTab = 0  -- Default tab (0=Logs, 1=Groups, 2=Professions, 3=Hardcore)
@@ -253,6 +257,11 @@ DBB2:SetScript("OnEvent", function()
       DBB2_Config.hideFromChat = 1
     elseif DBB2_Config.hideFromChat == false then
       DBB2_Config.hideFromChat = 0
+    end
+
+    -- Ensure optional Logs-only unsorted capture exists for existing configs.
+    if DBB2_Config.showUnsortedMessagesInLogs == nil then
+      DBB2_Config.showUnsortedMessagesInLogs = false
     end
     
     -- Ensure scrollSpeed exists for existing configs
@@ -342,7 +351,7 @@ DBB2:SetScript("OnEvent", function()
     
     -- Initialize channel monitoring config
     DBB2.api.InitChannelConfig()
-    
+
     DEFAULT_CHAT_FRAME:AddMessage("|cff33ffccDifficult|cffffffffBulletinBoard |cff555555v" .. (GetAddOnMetadata("DifficultBulletinBoard", "Version") or "?") .. "|r loaded. Click minimap button to open.")
   end
   
@@ -411,6 +420,9 @@ DBB2:SetScript("OnEvent", function()
     -- For Guild messages, check if Guild channel is monitored
     if event == "CHAT_MSG_GUILD" then
       if not DBB2.api.IsChannelMonitored("Guild") then
+        -- Disabled/unconfigured sources are intentionally a silent debug path.
+        -- Loud addon channels can otherwise evict useful diagnostic entries.
+        if DBB2.debug.enabled then DBB2.api.DebugCountSilent("source.ignoredUnmonitored", 1) end
         return  -- Guild channel not monitored, ignore
       end
     end
@@ -419,12 +431,14 @@ DBB2:SetScript("OnEvent", function()
     -- This automatically filters out addon channels like TTRP, XTENSIONXTOOLTIP, etc.
     if event == "CHAT_MSG_CHANNEL" then
       if not DBB2.api.IsChannelWhitelisted(channel) then
+        if DBB2.debug.enabled then DBB2.api.DebugCountSilent("source.ignoredUnwhitelisted", 1) end
         return  -- Not an LFG channel, ignore
       end
       
       -- Ignore World channel when hardcore is active
       local lowerChannel = string.lower(channel or "")
       if DBB2.api.IsHardcoreChatActive() and lowerChannel == "world" then
+        if DBB2.debug.enabled then DBB2.api.DebugCountSilent("source.ignoredWorldDuringHardcore", 1) end
         return
       end
     end
@@ -450,6 +464,7 @@ DBB2:SetScript("OnEvent", function()
     
     -- Check if this channel is monitored
     if not DBB2.api.IsChannelMonitored(channel) then
+      if DBB2.debug.enabled then DBB2.api.DebugCountSilent("source.ignoredUnmonitored", 1) end
       return
     end
     
@@ -463,6 +478,7 @@ DBB2:SetScript("OnEvent", function()
     
     -- Check if Hardcore channel is monitored
     if not DBB2.api.IsChannelMonitored("Hardcore") then
+      if DBB2.debug.enabled then DBB2.api.DebugCountSilent("source.ignoredUnmonitored", 1) end
       return  -- Hardcore channel not monitored, ignore
     end
     
@@ -485,6 +501,7 @@ DBB2:SetScript("OnEvent", function()
   end
   
   if event == "UPDATE_INSTANCE_INFO" then
+    if DBB2.debug.enabled then DBB2.api.DebugTrace(2, "event", "lockouts-update", "Server lockout data changed") end
     DBB2.api.UpdateLockouts()
   end
   
@@ -505,6 +522,7 @@ DBB2:SetScript("OnEvent", function()
     if DBB2_Config.clearNotificationsOnGroupJoin then
       -- Check if in a party or raid
       if GetNumPartyMembers() > 0 or GetNumRaidMembers() > 0 then
+        if DBB2.debug.enabled then DBB2.api.DebugTrace(2, "notify", "cleared-on-group-join", "Notification state and queue cleared by configuration") end
         DBB2.api.DisableAllNotifications()
       end
     end
@@ -590,6 +608,14 @@ end
 -- Slash command to toggle GUI
 SLASH_DBB1 = "/dbb"
 SlashCmdList["DBB"] = function(msg)
+  local _, _, command = string.find(msg or "", "^%s*(%S*)")
+  command = string.lower(command or "")
+
+  if command == "debug" then
+    DBB2:ToggleDebugViewer()
+    return
+  end
+
   if DBB2.gui then
     if DBB2.gui:IsShown() then
       DBB2.gui:Hide()

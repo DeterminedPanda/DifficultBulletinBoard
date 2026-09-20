@@ -227,37 +227,59 @@ function DBB2.api.ShouldHideFromChat(message, sender, matchMessage)
   
   -- If both hideFromChat and hideBlacklisted are disabled, nothing to filter
   if (mode == 0 or mode == false) and not hideBlacklisted then
-    return false
+    return false, "chat hiding and blacklist hiding disabled"
   end
   
   -- CRITICAL: Never filter the player's own messages
   -- This ensures the player always sees what they typed
   if DBB2.api.IsOwnMessage(sender) then
-    return false
+    return false, "player's own message"
   end
   
   -- CRITICAL: Only filter messages from sources enabled in the Channels tab
   if not IsEnabledChatSource(message) then
-    return false
+    return false, "source not monitored"
   end
   
   -- CRITICAL: Never filter system messages, even if they match category patterns
   -- This protects /who results, loot messages, skill ups, etc.
   if DBB2.api.IsSystemMessage(message) then
-    return false
+    return false, "protected system message"
   end
   
   -- Check blacklist (hide if blacklist.hideFromChat is enabled, independent of hideFromChat mode)
   if hideBlacklisted and DBB2.api.IsMessageBlacklisted then
     local blocked = DBB2.api.IsMessageBlacklisted(textToMatch, sender)
     if blocked then
-      return true
+      return true, "blacklist"
     end
   end
   
   -- If hideFromChat mode is disabled, don't check categories or duplicates
   if mode == 0 or mode == false then
-    return false
+    return false, "category hiding disabled"
+  end
+
+  -- Unsorted messages have no selected category, so Selected keeps them in
+  -- chat while All hides them like any other message captured by the addon.
+  -- Depending on frame/event ordering, the message may already be stored.
+  if DBB2.api.IsStoredUnsortedMessage and DBB2.api.IsStoredUnsortedMessage(textToMatch, sender) then
+    return mode == 2, mode == 2 and "stored unsorted; mode=all" or "stored unsorted; mode=selected"
+  end
+
+  -- Also recognize a first-time unsorted candidate directly. This covers both
+  -- possible event orders: chat rendering before storage and storage before
+  -- chat rendering.
+  if DBB2_Config.showUnsortedMessagesInLogs and DBB2.api.CategorizeMessage and DBB2.api.MatchUnsortedFilterTags then
+    local baseCategories = DBB2.api.CategorizeMessage(textToMatch, true, true)
+    local matchesKnownCategory =
+      (baseCategories.groups and baseCategories.groups[1] ~= nil) or
+      (baseCategories.professions and baseCategories.professions[1] ~= nil) or
+      (baseCategories.hardcore and baseCategories.hardcore[1] ~= nil)
+
+    if not matchesKnownCategory and DBB2.api.MatchUnsortedFilterTags(textToMatch) then
+      return mode == 2, mode == 2 and "unsorted candidate; mode=all" or "unsorted candidate; mode=selected"
+    end
   end
   
   local ignoreSelected = (mode == 2)  -- Mode 2 ignores selected state
@@ -291,19 +313,19 @@ function DBB2.api.ShouldHideFromChat(message, sender, matchMessage)
   -- If message matches a category, also hide duplicates
   -- This ensures duplicate messages are hidden even when the original was hidden
   if matchesCategory then
-    return true
+    return true, "category match"
   end
-  
+
   -- Also check for duplicates of messages that would match categories
   -- This catches the case where a duplicate comes in after the original was already stored
   -- Extract just the message content (after sender) for duplicate comparison
   if DBB2.api.IsDuplicateMessage then
     if DBB2.api.IsDuplicateMessage(textToMatch, sender) then
-      return true
+      return true, "duplicate"
     end
   end
   
-  return false
+  return false, "no hide rule matched"
 end
 
 -- =====================
@@ -373,9 +395,26 @@ function DBB2.api.SetupChatFilter()
             sender = extractedSender
             
             -- Wrap in pcall to prevent errors from breaking chat
-            local success, shouldHide = pcall(DBB2.api.ShouldHideFromChat, cleanMsg, sender, msgContent)
+            local debugging = DBB2.debug.enabled
+            local started = nil
+            if debugging then started = DBB2.api.DebugClock() end
+            local success, shouldHide, hideReason = pcall(DBB2.api.ShouldHideFromChat, cleanMsg, sender, msgContent)
+            local elapsed = nil
+            if debugging then
+              elapsed = DBB2.api.DebugClock() - started
+              DBB2.api.DebugPerf("ShouldHideFromChat", elapsed)
+            end
             if success and shouldHide then
+              if debugging then
+                DBB2.api.DebugCount("chat.hidden", 1)
+                DBB2.api.DebugTrace(2, "chat", "hidden", "reason=" .. (hideReason or "unknown") .. " sender=" .. (sender or "Unknown") .. " text=\"" .. (msgContent or "") .. "\"", elapsed)
+              end
               return  -- Don't show this message
+            elseif success and debugging then
+              DBB2.api.DebugTrace(1, "chat", "visible", "reason=" .. (hideReason or "unknown") .. " sender=" .. (sender or "Unknown") .. " text=\"" .. (msgContent or "") .. "\"", elapsed)
+            elseif not success and debugging then
+              DBB2.api.DebugCount("chat.filterErrors", 1)
+              DBB2.api.DebugTrace(4, "chat", "filter-error", tostring(shouldHide or "unknown error"), elapsed)
             end
           end
           

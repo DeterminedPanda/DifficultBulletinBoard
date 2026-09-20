@@ -431,6 +431,12 @@ DBB2:RegisterModule("gui", function()
           if DBB2.api.CategorizeMessage then
             categories = DBB2.api.CategorizeMessage(msg.message)
           end
+
+          -- The capture-time marker is authoritative. Do not dynamically turn
+          -- an unsorted entry into a category match after tags are edited.
+          if msg.isUnsorted then
+            categories = nil
+          end
           
           if categories and categories.isHardcore then
           else
@@ -439,9 +445,11 @@ DBB2:RegisterModule("gui", function()
             if categories then
               matchesCategory = (table_getn(categories.groups) > 0) or (table_getn(categories.professions) > 0)
             end
+
+            local showUnsorted = msg.isUnsorted and DBB2_Config.showUnsortedMessagesInLogs
             
-            -- Only show messages that match at least one category
-            if matchesCategory then
+            -- Show normal category matches plus enabled Logs-only unsorted entries.
+            if matchesCategory or showUnsorted then
               local row = DBB2.gui.messageRows[rowIndex]
               local timeStr, isOverHour = DBB2.api.FormatMessageTime(msg.time)
               
