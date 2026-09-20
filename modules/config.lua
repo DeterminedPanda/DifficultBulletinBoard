@@ -272,8 +272,8 @@ DBB2:RegisterModule("config", function()
     { type = "slider", key = "messageExpireMinutes", label = "Auto-Remove (minutes)", min = 0, max = 30, step = 1,
       tooltip = {{"Auto-Remove", "highlight"}, "Automatically remove old messages after a set time.", {"0 = disabled", "gray"}} },
     { type = "slider", key = "hideFromChat", label = "Hide from Chat", min = 0, max = 2, step = 1,
-      valueLabels = {[0] = "Disabled", [1] = "Selected", [2] = "All"},
-      tooltip = {{"Hide from Chat", "highlight"}, "Hide captured messages from your chat window."} },
+      valueLabels = {[0] = "Disabled", [1] = "Filtered", [2] = "All"},
+      tooltip = {{"Hide from Chat", "highlight"}, "Disabled: Show all messages.", "Filtered: Hide selected category messages that pass your Filter Tags.", "All: Hide every category match and unsorted candidate."} },
     { type = "toggle", key = "showLevelFilteredGroups", label = "Level Filter (Groups)",
       tooltip = {{"Level Filter", "highlight"}, "Only show categories within your level range."},
       onChange = function(enabled)

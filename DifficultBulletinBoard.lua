@@ -188,7 +188,7 @@ DBB2:SetScript("OnEvent", function()
       DBB2_Config.backgroundColor = {r = 0.08, g = 0.08, b = 0.10, a = 0.85}  -- Default background color (dark charcoal)
       DBB2_Config.spamFilterSeconds = 150  -- Duplicate message filter time
       DBB2_Config.messageExpireMinutes = 15  -- Auto-remove messages older than X minutes (0 = disabled)
-      DBB2_Config.hideFromChat = 0  -- Hide captured messages from chat (0=off, 1=selected, 2=all)
+      DBB2_Config.hideFromChat = 0  -- Hide captured messages from chat (0=disabled, 1=filtered, 2=all)
       DBB2_Config.showUnsortedMessagesInLogs = false  -- Show Filter Tag matches with no known category in Logs only
       DBB2_Config.maxMessagesPerCategory = 5  -- Max messages shown per category (0 = unlimited)
       DBB2_Config.scrollSpeed = 55  -- Scroll speed (pixels per wheel tick)

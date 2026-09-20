@@ -210,8 +210,8 @@ end
 
 -- [ ShouldHideFromChat ]
 -- Checks if a message should be hidden from normal chat
--- hideFromChat modes: 0 = disabled, 1 = enabled (selected only), 2 = enabled (all categories)
--- Mode 1: Hide messages matching selected categories only
+-- hideFromChat modes: 0 = disabled, 1 = filtered, 2 = all
+-- Mode 1: Hide selected category matches that pass the optional Filter Tags
 -- Mode 2: Hide messages matching any category (even disabled ones)
 -- Also hides blacklisted messages when blacklist.hideFromChat is enabled (independent of hideFromChat mode)
 -- Also hides duplicates when hideFromChat is enabled
@@ -260,7 +260,7 @@ function DBB2.api.ShouldHideFromChat(message, sender, matchMessage)
     return false, "category hiding disabled"
   end
 
-  -- Unsorted messages have no selected category, so Selected keeps them in
+  -- Unsorted messages have no selected category, so Filtered keeps them in
   -- chat while All hides them like any other message captured by the addon.
   -- Depending on frame/event ordering, the message may already be stored.
   if DBB2.api.IsStoredUnsortedMessage and DBB2.api.IsStoredUnsortedMessage(textToMatch, sender) then
@@ -282,14 +282,14 @@ function DBB2.api.ShouldHideFromChat(message, sender, matchMessage)
     end
   end
   
-  local ignoreSelected = (mode == 2)  -- Mode 2 ignores selected state
+  local ignoreSelected = (mode == 2)  -- All ignores selected state
+  local ignoreFilterTags = (mode == 2)  -- All favors maximum chat cleanup
   local matchesCategory = false
 
-  -- Hide-from-chat should be broader than the optional bulletin board filter tag
-  -- gate. The GUI/storage path can still require LF/LFG/LFM style tags, but chat
-  -- suppression should catch obvious run keywords on their own.
+  -- Filtered follows category selections and the optional Filter Tags. All is
+  -- deliberately broader and catches category keywords on their own.
   if DBB2.api.CategorizeMessage then
-    local categories = DBB2.api.CategorizeMessage(textToMatch, ignoreSelected, true)
+    local categories = DBB2.api.CategorizeMessage(textToMatch, ignoreSelected, ignoreFilterTags)
     matchesCategory =
       (categories.groups and categories.groups[1] ~= nil) or
       (categories.professions and categories.professions[1] ~= nil) or
@@ -300,7 +300,7 @@ function DBB2.api.ShouldHideFromChat(message, sender, matchMessage)
       local categories = DBB2.api.GetCategories(categoryType)
       if categories then
         for _, cat in ipairs(categories) do
-          if DBB2.api.MatchMessageToCategory(textToMatch, cat, ignoreSelected, categoryType, true) then
+          if DBB2.api.MatchMessageToCategory(textToMatch, cat, ignoreSelected, categoryType, ignoreFilterTags) then
             matchesCategory = true
             break
           end
