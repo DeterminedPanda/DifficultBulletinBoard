@@ -8,6 +8,7 @@ local debugState = DBB2.debug
 local table_insert = table.insert
 local table_remove = table.remove
 local table_getn = table.getn
+local table_sort = table.sort
 local string_format = string.format
 local string_gsub = string.gsub
 local string_lower = string.lower
@@ -934,7 +935,7 @@ function DBB2.api.DebugGetUIStateSummary()
     " levelFilter=" .. tostring(DBB2_Config.showLevelFilteredGroups or false)
 end
 
-function DBB2.api.DebugCaptureSnapshot(reason)
+function DBB2.api.DebugGetConfigurationSummary(reason)
   local monitored = {}
   if DBB2.api.GetMonitoredChannels then
     for channel, enabled in pairs(DBB2.api.GetMonitoredChannels()) do
@@ -979,7 +980,132 @@ function DBB2.api.DebugCaptureSnapshot(reason)
     " categoryVersions=[" .. categoryVersions .. "]" ..
     " categorySelection=[" .. table.concat(categoryCounts, ",") .. "] " ..
     DBB2.api.DebugGetUIStateSummary()
-  DBB2.api.DebugTrace(2, "system", "configuration-snapshot", detail)
+  return detail
+end
+
+function DBB2.api.DebugCaptureSnapshot(reason)
+  DBB2.api.DebugTrace(2, "system", "configuration-snapshot", DBB2.api.DebugGetConfigurationSummary(reason))
+end
+
+-- Produce deterministic, Lua-like values for the TSV configuration rows. The
+-- export must be detailed enough to reproduce matching without depending on
+-- the defaults in the installed addon version.
+local function QuoteConfigurationString(value)
+  local text = tostring(value or "")
+  text = string_gsub(text, "\\", "\\\\")
+  text = string_gsub(text, "\r", "\\r")
+  text = string_gsub(text, "\n", "\\n")
+  text = string_gsub(text, "\t", "\\t")
+  text = string_gsub(text, '"', '\\"')
+  return '"' .. text .. '"'
+end
+
+local function SortedConfigurationKeys(value)
+  local keys = {}
+  for key, _ in pairs(value or {}) do table_insert(keys, key) end
+  table_sort(keys, function(left, right)
+    local leftType = type(left)
+    local rightType = type(right)
+    if leftType ~= rightType then return leftType < rightType end
+    if leftType == "number" then return left < right end
+    return tostring(left) < tostring(right)
+  end)
+  return keys
+end
+
+local function SerializeConfigurationValue(value, seen, depth)
+  local valueType = type(value)
+  if valueType == "nil" then return "nil" end
+  if valueType == "string" then return QuoteConfigurationString(value) end
+  if valueType == "number" or valueType == "boolean" then return tostring(value) end
+  if valueType ~= "table" then return QuoteConfigurationString("<" .. valueType .. ">") end
+
+  seen = seen or {}
+  depth = depth or 0
+  if seen[value] then return QuoteConfigurationString("<cycle>") end
+  if depth >= 16 then return QuoteConfigurationString("<maximum-depth>") end
+  seen[value] = true
+
+  local parts = {}
+  for _, key in ipairs(SortedConfigurationKeys(value)) do
+    local serializedKey
+    if type(key) == "string" then
+      serializedKey = QuoteConfigurationString(key)
+    else
+      serializedKey = SerializeConfigurationValue(key, seen, depth + 1)
+    end
+    table_insert(parts, "[" .. serializedKey .. "]=" .. SerializeConfigurationValue(value[key], seen, depth + 1))
+  end
+
+  seen[value] = nil
+  return "{" .. table.concat(parts, ",") .. "}"
+end
+
+-- Returns fresh export-time configuration rows. Large matching structures are
+-- split into one row per logical item so no single EditBox line becomes
+-- needlessly huge, while unknown/future top-level settings are still included.
+function DBB2.api.DebugGetConfigurationExportRows()
+  local rows = {}
+  local function Add(key, value)
+    table_insert(rows, { key = key, value = value })
+  end
+  local function AddSerialized(key, value)
+    Add(key, SerializeConfigurationValue(value))
+  end
+
+  Add("configuration.export_summary", DBB2.api.DebugGetConfigurationSummary("export-generated"))
+
+  local speciallyHandled = {
+    categories = true,
+    filterTags = true,
+    blacklist = true,
+    monitoredChannels = true,
+    whitelistedChannels = true,
+    notificationState = true
+  }
+  for _, key in ipairs(SortedConfigurationKeys(DBB2_Config or {})) do
+    if not speciallyHandled[key] then
+      AddSerialized("configuration.saved." .. tostring(key), DBB2_Config[key])
+    end
+  end
+
+  local categories = DBB2_Config and DBB2_Config.categories or {}
+  for _, categoryType in ipairs(SortedConfigurationKeys(categories)) do
+    for index, category in ipairs(categories[categoryType] or {}) do
+      AddSerialized("configuration.category." .. tostring(categoryType) .. "." .. string_format("%03d", index), category)
+    end
+  end
+
+  local filters = DBB2_Config and DBB2_Config.filterTags or {}
+  for _, categoryType in ipairs(SortedConfigurationKeys(filters)) do
+    AddSerialized("configuration.filter." .. tostring(categoryType), filters[categoryType])
+  end
+
+  local blacklist = DBB2_Config and DBB2_Config.blacklist or {}
+  for _, key in ipairs(SortedConfigurationKeys(blacklist)) do
+    AddSerialized("configuration.blacklist." .. tostring(key), blacklist[key])
+  end
+
+  AddSerialized("configuration.channels.monitored", DBB2_Config and DBB2_Config.monitoredChannels or {})
+  AddSerialized("configuration.channels.whitelist", DBB2_Config and DBB2_Config.whitelistedChannels or {})
+  AddSerialized("configuration.notification.savedState", DBB2_Config and DBB2_Config.notificationState or nil)
+  AddSerialized("configuration.notification.activeState", DBB2.notificationState or {})
+
+  local joinedChannels = {}
+  if DBB2.api.GetJoinedChannels then joinedChannels = DBB2.api.GetJoinedChannels() or {} end
+  AddSerialized("configuration.runtime.joinedChannels", joinedChannels)
+  AddSerialized("configuration.runtime.activeClassicTheme", DBB2.activeClassicTheme == true)
+  AddSerialized("configuration.runtime.player", {
+    level = UnitLevel and UnitLevel("player") or 0,
+    faction = UnitFactionGroup and UnitFactionGroup("player") or "Unknown",
+    hardcore = DBB2.api.IsHardcoreCharacter and DBB2.api.IsHardcoreCharacter() or false
+  })
+
+  Add("configuration.export_manifest",
+    "format=deterministic-lua-literal rows=" .. tostring(table_getn(rows) + 1) ..
+    " sessionTime=" .. string_format("%.3f", GetTime() - debugState.startTime) ..
+    " serverTime=" .. tostring(time and time() or 0))
+  return rows
 end
 
 function DBB2.api.DebugAnalyzeMessage(message, sender, channel, msgType)

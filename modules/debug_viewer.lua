@@ -202,6 +202,20 @@ local function BuildDiagnosticExportChunks()
     TSVRow({ DIAGNOSTIC_TSV_SCHEMA_VERSION, "metadata", "", "", "", "", "", "", "", "performance", DBB2.api.DebugGetPerfSummary(), "" })
   }
 
+  -- Capture settings when Export is clicked, not only when the diagnostic
+  -- viewer was opened. These rows contain the exact rules needed to reproduce
+  -- matching decisions plus live state that is not stored in SavedVariables.
+  for _, configRow in ipairs(DBB2.api.DebugGetConfigurationExportRows()) do
+    table_insert(exportLines, TSVRow({
+      DIAGNOSTIC_TSV_SCHEMA_VERSION,
+      "metadata",
+      "", "", "", "", "", "", "",
+      configRow.key,
+      configRow.value,
+      ""
+    }))
+  end
+
   for _, entry in ipairs(entries) do
     table_insert(exportLines, TSVRow({
       DIAGNOSTIC_TSV_SCHEMA_VERSION,
@@ -376,10 +390,6 @@ local function CreateViewer()
   viewer.title:SetPoint("TOPLEFT", viewer, "TOPLEFT", 14, -12)
   viewer.title:SetText("DBB Diagnostic Console")
 
-  viewer.hint = viewer:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-  viewer.hint:SetPoint("LEFT", viewer.title, "RIGHT", 12, 0)
-  viewer.hint:SetText("session-only, bounded recorder")
-
   viewer.close = CreateFrame("Button", nil, viewer, "UIPanelCloseButton")
   viewer.close:SetPoint("TOPRIGHT", viewer, "TOPRIGHT", -4, -4)
 
@@ -528,7 +538,7 @@ local function CreateViewer()
 
   viewer.footer = viewer:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
   viewer.footer:SetPoint("BOTTOMRIGHT", viewer, "BOTTOMRIGHT", -14, 13)
-  viewer.footer:SetText("Export includes all 500 retained entries")
+  viewer.footer:SetText("Export includes current settings + all 500 retained entries")
 
   viewer:SetScript("OnUpdate", function()
     if this.pendingTailFrames and this.pendingTailFrames > 0 then

@@ -402,7 +402,12 @@ function DBB2.api.SetupChatFilter()
             local elapsed = nil
             if debugging then
               elapsed = DBB2.api.DebugClock() - started
-              DBB2.api.DebugPerf("ShouldHideFromChat", elapsed)
+              -- Unmonitored renders include combat-log traffic and other lines
+              -- that cannot affect DBB. Do not let them dirty/refill the
+              -- diagnostic console or skew filter timing statistics.
+              if not (success and not shouldHide and hideReason == "source not monitored") then
+                DBB2.api.DebugPerf("ShouldHideFromChat", elapsed)
+              end
             end
             if success and shouldHide then
               if debugging then
@@ -412,9 +417,16 @@ function DBB2.api.SetupChatFilter()
               end
               return  -- Don't show this message
             elseif success and debugging then
-              DBB2.api.DebugCount("chat.visibleRenders", 1)
-              DBB2.api.DebugChatLifecycle(msgContent, sender, false, hideReason, frameIndex)
-              DBB2.api.DebugCount("chat.visible", 1)
+              if hideReason == "source not monitored" then
+                -- Keep one aggregate signal without allocating a lifecycle or
+                -- one trace per combat/system render. Silent counting also
+                -- avoids waking the visible diagnostic console every line.
+                DBB2.api.DebugCountSilent("chat.ignoredUnmonitoredRenders", 1)
+              else
+                DBB2.api.DebugCount("chat.visibleRenders", 1)
+                DBB2.api.DebugChatLifecycle(msgContent, sender, false, hideReason, frameIndex)
+                DBB2.api.DebugCount("chat.visible", 1)
+              end
             elseif not success and debugging then
               DBB2.api.DebugCount("chat.filterErrors", 1)
               DBB2.api.DebugTrace(4, "chat", "filter-error", "frame=ChatFrame" .. frameIndex .. " error=" .. tostring(shouldHide or "unknown error"), elapsed)
@@ -426,9 +438,13 @@ function DBB2.api.SetupChatFilter()
             cleanMsg = string_gsub(cleanMsg, "|r", "")
             cleanMsg = string_gsub(cleanMsg, "|H[^|]*|h([^|]*)|h", "%1")
             local msgContent, sender = ExtractFormattedMessageContent(cleanMsg)
-            DBB2.api.DebugCount("chat.visibleRenders", 1)
-            DBB2.api.DebugChatLifecycle(msgContent, sender, false, "filter-disabled", frameIndex)
-            DBB2.api.DebugCount("chat.visible", 1)
+            if IsEnabledChatSource(cleanMsg) then
+              DBB2.api.DebugCount("chat.visibleRenders", 1)
+              DBB2.api.DebugChatLifecycle(msgContent, sender, false, "filter-disabled", frameIndex)
+              DBB2.api.DebugCount("chat.visible", 1)
+            else
+              DBB2.api.DebugCountSilent("chat.ignoredUnmonitoredRenders", 1)
+            end
           end
           
           -- Call original function
