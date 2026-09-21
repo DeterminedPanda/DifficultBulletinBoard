@@ -29,7 +29,7 @@ debugState.entryCount = debugState.entryCount or 0
 debugState.counters = debugState.counters or {}
 debugState.perf = debugState.perf or {}
 debugState.sequence = debugState.sequence or 0
-debugState.maxEntries = debugState.maxEntries or 500
+debugState.maxEntries = debugState.maxEntries or 1000
 debugState.enabled = false
 debugState.paused = false
 debugState.startTime = debugState.startTime or GetTime()
@@ -451,6 +451,33 @@ function DBB2.api.DebugGetEntries()
     ordered[i] = debugState.entries[position]
   end
   return ordered
+end
+
+-- Returns only records created after the supplied sequence number.  The
+-- diagnostic viewer uses this to update its active filtered view incrementally
+-- instead of rebuilding it from the complete recorder on every refresh.
+-- The second result is false when the requested starting point has already
+-- fallen out of the bounded recorder and the caller must rebuild its view.
+function DBB2.api.DebugGetEntriesSince(sequence)
+  local oldestSequence = debugState.sequence + 1
+  if debugState.entryCount > 0 then
+    local oldest = debugState.entries[debugState.entryStart]
+    oldestSequence = oldest and oldest.sequence or oldestSequence
+  end
+
+  if (sequence or 0) < oldestSequence - 1 then
+    return nil, false, oldestSequence
+  end
+
+  local entries = {}
+  for i = 1, debugState.entryCount do
+    local position = math.mod(debugState.entryStart + i - 2, debugState.maxEntries) + 1
+    local entry = debugState.entries[position]
+    if entry and entry.sequence > (sequence or 0) then
+      table_insert(entries, entry)
+    end
+  end
+  return entries, true, oldestSequence
 end
 
 function DBB2.api.DebugDecision(outcome, details, elapsedMS)
