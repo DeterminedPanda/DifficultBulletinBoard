@@ -12,6 +12,8 @@ local string_gsub = string.gsub
 local ipairs = ipairs
 local pcall = pcall
 local getglobal = getglobal
+local pairs = pairs
+local tostring = tostring
 
 -- [ ExtractFormattedMessageContent ]
 -- Strips the channel/sender wrappers from a rendered chat line so filtering uses
@@ -87,6 +89,51 @@ local function IsEnabledChatSource(message, sourceEvent, sourceChannel)
   
   -- Fallback when the line is not being added during a live chat event.
   return DBB2.api.IsFilterableChannel(message)
+end
+
+-- Resolves All Chat history scope exclusively from the checkboxes shown under
+-- Config > Channels > Available Channels. Whitelist membership and auto-join
+-- state do not opt an unchecked source into duplicate history.
+local function IsAllChatHistorySourceEnabled(message, sourceEvent, sourceChannel)
+  if not DBB2.api.IsChannelCheckboxEnabled then return false, nil end
+
+  local eventName = sourceEvent or event
+  local channelName = nil
+  if eventName == "CHAT_MSG_CHANNEL" then
+    channelName = sourceChannel or arg9
+  elseif eventName == "CHAT_MSG_GUILD" then
+    channelName = "Guild"
+  elseif eventName == "CHAT_MSG_SAY" then
+    channelName = "Say"
+  elseif eventName == "CHAT_MSG_YELL" then
+    channelName = "Yell"
+  elseif eventName == "CHAT_MSG_PARTY" then
+    channelName = "Party"
+  elseif eventName == "CHAT_MSG_WHISPER" then
+    channelName = "Whisper"
+  elseif eventName == "CHAT_MSG_HARDCORE" then
+    channelName = "Hardcore"
+  end
+
+  -- Fallback for a rendered line evaluated outside its live CHAT_MSG_* event.
+  if not channelName and message then
+    local _, _, namedChannel = string_find(message, "^%[%d+%.%s*([^%]]+)%]")
+    channelName = namedChannel
+    if not channelName then
+      local _, _, channelNum = string_find(message, "^%[(%d+)%]")
+      if channelNum then
+        local _, resolvedName = GetChannelName(tonumber(channelNum))
+        channelName = resolvedName
+      end
+    end
+    if not channelName and string_find(string_lower(message), "^%[h%]") then
+      channelName = "Hardcore"
+    end
+  end
+
+  if not channelName then return false, nil end
+  local enabled, checkboxName = DBB2.api.IsChannelCheckboxEnabled(channelName)
+  return enabled, checkboxName or channelName
 end
 
 -- =====================
@@ -212,25 +259,144 @@ function DBB2.api.IsOwnMessage(sender)
   return string_lower(sender) == string_lower(playerName)
 end
 
+-- All Chat duplicate history is deliberately separate from DBB2.messages.
+-- Ordinary conversation must never enter the bulletin-board store. History is
+-- session-only and records accepted copies, preserving the existing behavior
+-- where rejected repetitions do not extend the cooldown indefinitely.
+DBB2._allChatDuplicateHistory = DBB2._allChatDuplicateHistory or {}
+DBB2._allChatDuplicateDeliveries = DBB2._allChatDuplicateDeliveries or {}
+DBB2._allChatDuplicateLastCleanup = DBB2._allChatDuplicateLastCleanup or 0
+DBB2._allChatDuplicateHistoryCount = DBB2._allChatDuplicateHistoryCount or 0
+DBB2._allChatDuplicateHistoryPeak = DBB2._allChatDuplicateHistoryPeak or DBB2._allChatDuplicateHistoryCount
+
+local function NormalizeAllChatDuplicatePart(value)
+  local normalized = value or ""
+  if DBB2.api.StripHyperlinks then
+    normalized = DBB2.api.StripHyperlinks(normalized)
+  else
+    normalized = string_gsub(normalized, "|c%x%x%x%x%x%x%x%x", "")
+    normalized = string_gsub(normalized, "|r", "")
+    normalized = string_gsub(normalized, "|H[^|]*|h([^|]*)|h", "%1")
+  end
+  return string_lower(normalized)
+end
+
+local function CleanupAllChatDuplicateHistory(now, spamSeconds)
+  if now - DBB2._allChatDuplicateLastCleanup < 10 then return end
+  DBB2._allChatDuplicateLastCleanup = now
+
+  local removed = 0
+  for key, seenAt in pairs(DBB2._allChatDuplicateHistory) do
+    if now - seenAt > spamSeconds then
+      DBB2._allChatDuplicateHistory[key] = nil
+      DBB2._allChatDuplicateHistoryCount = math.max(0, DBB2._allChatDuplicateHistoryCount - 1)
+      removed = removed + 1
+    end
+  end
+  for key, delivery in pairs(DBB2._allChatDuplicateDeliveries) do
+    if not delivery or now - (delivery.time or 0) > 0.25 then
+      DBB2._allChatDuplicateDeliveries[key] = nil
+    end
+  end
+
+  if removed > 0 and DBB2.debug.enabled and not DBB2.debug.paused then
+    DBB2.api.DebugCount("duplicates.chatHistoryPruned", removed)
+  end
+end
+
+-- Returns whether this is a repeated All Chat delivery plus its age. WoW may
+-- render one delivery into several chat frames, so a very short per-frame cache
+-- shares the first decision without treating the message as its own duplicate.
+function DBB2.api.IsAllChatDuplicate(message, sender, frameIndex, readOnly)
+  if not message or not sender or sender == "" then return false, nil, "missing-sender" end
+
+  local duplicateMode = DBB2_Config.duplicateFilterMode
+  if duplicateMode ~= 2 then return false, nil, "mode-not-all-chat" end
+
+  local spamSeconds = DBB2_Config.spamFilterSeconds or 150
+  if spamSeconds <= 0 then return false, nil, "window-disabled" end
+
+  local now = GetTime()
+  local key = NormalizeAllChatDuplicatePart(sender) .. "\031" .. NormalizeAllChatDuplicatePart(message)
+
+  if not readOnly and frameIndex then
+    local delivery = DBB2._allChatDuplicateDeliveries[key]
+    if delivery and now - delivery.time <= 0.10 and not delivery.frames[frameIndex] then
+      delivery.frames[frameIndex] = true
+      return delivery.duplicate, delivery.age, "coalesced-render"
+    end
+  end
+
+  if not readOnly then CleanupAllChatDuplicateHistory(now, spamSeconds) end
+  local seenAt = DBB2._allChatDuplicateHistory[key]
+  local age = seenAt and (now - seenAt) or nil
+  local duplicate = age and age <= spamSeconds or false
+
+  if not readOnly then
+    if not duplicate then
+      if not seenAt then
+        DBB2._allChatDuplicateHistoryCount = DBB2._allChatDuplicateHistoryCount + 1
+        if DBB2._allChatDuplicateHistoryCount > DBB2._allChatDuplicateHistoryPeak then
+          DBB2._allChatDuplicateHistoryPeak = DBB2._allChatDuplicateHistoryCount
+        end
+      end
+      DBB2._allChatDuplicateHistory[key] = now
+    end
+    if frameIndex then
+      DBB2._allChatDuplicateDeliveries[key] = {
+        time = now,
+        frames = { [frameIndex] = true },
+        duplicate = duplicate,
+        age = age
+      }
+    end
+
+    if DBB2.debug.enabled and not DBB2.debug.paused then
+      if duplicate then
+        DBB2.api.DebugCount("duplicates.chatRejected", 1)
+      else
+        DBB2.api.DebugCount("duplicates.chatTracked", 1)
+      end
+    end
+  end
+
+  return duplicate, age, duplicate and "history-match" or "history-recorded"
+end
+
+function DBB2.api.ClearAllChatDuplicateHistory()
+  DBB2._allChatDuplicateHistory = {}
+  DBB2._allChatDuplicateDeliveries = {}
+  DBB2._allChatDuplicateLastCleanup = GetTime()
+  DBB2._allChatDuplicateHistoryCount = 0
+end
+
+function DBB2.api.GetAllChatDuplicateHistoryStats()
+  return DBB2._allChatDuplicateHistoryCount or 0, DBB2._allChatDuplicateHistoryPeak or 0
+end
+
 -- [ ShouldHideFromChat ]
 -- Checks if a message should be hidden from normal chat
 -- hideFromChat modes: 0 = disabled, 1 = filtered, 2 = all
 -- Mode 1: Hide selected category matches that pass the optional Filter Tags
 -- Mode 2: Hide messages matching any category (even disabled ones)
 -- Also hides blacklisted messages when blacklist.hideFromChat is enabled (independent of hideFromChat mode)
--- Also hides duplicates when hideFromChat is enabled
+-- All Chat duplicate mode independently hides repeated eligible player chat
 -- IMPORTANT: Never hides system messages (like /who results) even if they match category patterns
 -- IMPORTANT: Only filters messages from sources enabled in the Channels tab
 -- IMPORTANT: Never filters the player's own messages
 -- IMPORTANT: Filtered follows selected categories and Filter Tags; All ignores
 -- both restrictions so broad tags like "dm" or "mc" can still be suppressed.
-function DBB2.api.ShouldHideFromChat(message, sender, matchMessage, sourceEvent, sourceChannel)
+function DBB2.api.ShouldHideFromChat(message, sender, matchMessage, sourceEvent, sourceChannel, frameIndex, duplicateReadOnly)
   local mode = DBB2_Config.hideFromChat or 0
+  local duplicateMode = DBB2_Config.duplicateFilterMode
+  if duplicateMode == nil then duplicateMode = 1 end
   local hideBlacklisted = DBB2.api.IsBlacklistHideFromChatEnabled()
   local textToMatch = matchMessage or message or ""
+  local allChatHistoryDetail = nil
+  local allChatHistoryTracked = false
   
-  -- If both hideFromChat and hideBlacklisted are disabled, nothing to filter
-  if (mode == 0 or mode == false) and not hideBlacklisted then
+  -- All Chat duplicate filtering is independent from category chat hiding.
+  if (mode == 0 or mode == false) and duplicateMode ~= 2 and not hideBlacklisted then
     return false, "chat hiding and blacklist hiding disabled"
   end
   
@@ -258,17 +424,50 @@ function DBB2.api.ShouldHideFromChat(message, sender, matchMessage, sourceEvent,
       return true, "blacklist"
     end
   end
+
+  -- In All Chat mode, every eligible player line participates even when it is
+  -- unrelated to a bulletin-board category. This check follows safety/source
+  -- gates and blacklist handling but precedes the independent category mode.
+  if duplicateMode == 2 and DBB2.api.IsAllChatDuplicate then
+    local historySourceEnabled, historySource = IsAllChatHistorySourceEnabled(message, sourceEvent, sourceChannel)
+    if historySourceEnabled then
+      allChatHistoryTracked = true
+      local duplicate, duplicateAge, duplicateHistoryRule = DBB2.api.IsAllChatDuplicate(textToMatch, sender, frameIndex, duplicateReadOnly)
+      local duplicateAgeText = duplicateAge and (tostring(duplicateAge) .. "s") or "none"
+      allChatHistoryDetail =
+        "duplicateHistory=" .. tostring(duplicateHistoryRule or "unknown") ..
+        " sourceCheckbox=" .. tostring(historySource or "unknown") ..
+        " age=" .. duplicateAgeText ..
+        " window=" .. tostring(DBB2_Config.spamFilterSeconds or 150) .. "s"
+      if duplicate then
+        return true, "duplicate; mode=all-chat",
+          allChatHistoryDetail
+      end
+    else
+      allChatHistoryDetail =
+        "duplicateHistory=bypassed-unchecked-source" ..
+        " sourceCheckbox=" .. tostring(historySource or "none")
+      if not duplicateReadOnly and DBB2.debug.enabled and not DBB2.debug.paused then
+        DBB2.api.DebugCount("duplicates.chatBypassedUncheckedSourceRenders", 1)
+      end
+    end
+  end
   
-  -- If hideFromChat mode is disabled, don't check categories or duplicates
+  -- If category hiding is disabled, the independent All Chat decision above is
+  -- still applied; only category-based hiding stops here.
   if mode == 0 or mode == false then
-    return false, "category hiding disabled"
+    local reason = "category hiding disabled"
+    if duplicateMode == 2 then
+      reason = allChatHistoryTracked and "category hiding disabled; all-chat history recorded" or "category hiding disabled; all-chat source unchecked"
+    end
+    return false, reason, allChatHistoryDetail
   end
 
   -- Unsorted messages have no selected category, so Filtered keeps them in
   -- chat while All hides them like any other message captured by the addon.
   -- Depending on frame/event ordering, the message may already be stored.
   if DBB2.api.IsStoredUnsortedMessage and DBB2.api.IsStoredUnsortedMessage(textToMatch, sender) then
-    return mode == 2, mode == 2 and "stored unsorted; mode=all" or "stored unsorted; mode=filtered"
+    return mode == 2, mode == 2 and "stored unsorted; mode=all" or "stored unsorted; mode=filtered", allChatHistoryDetail
   end
 
   -- Also recognize a first-time unsorted candidate directly. This covers both
@@ -282,7 +481,7 @@ function DBB2.api.ShouldHideFromChat(message, sender, matchMessage, sourceEvent,
       (baseCategories.hardcore and baseCategories.hardcore[1] ~= nil)
 
     if not matchesKnownCategory and DBB2.api.MatchUnsortedFilterTags(textToMatch) then
-      return mode == 2, mode == 2 and "unsorted candidate; mode=all" or "unsorted candidate; mode=filtered"
+      return mode == 2, mode == 2 and "unsorted candidate; mode=all" or "unsorted candidate; mode=filtered", allChatHistoryDetail
     end
   end
   
@@ -332,29 +531,29 @@ function DBB2.api.ShouldHideFromChat(message, sender, matchMessage, sourceEvent,
   -- If message matches a category, also hide duplicates
   -- This ensures duplicate messages are hidden even when the original was hidden
   if matchesCategory then
-    return true, "category match"
+    return true, "category match", allChatHistoryDetail
   end
 
   -- A selected category word alone is intentionally insufficient in Filtered.
   -- Return before the broad duplicate fallback so a stored conversational false
   -- positive cannot become hidden merely because it was seen before.
   if mode == 1 and categoryMatchMissingFilter then
-    return false, "category match missing configured Filter Tag; mode=filtered"
+    return false, "category match missing configured Filter Tag; mode=filtered", allChatHistoryDetail
   end
 
   if mode == 1 then
-    return false, "no selected category with configured Filter Tag; mode=filtered"
+    return false, "no selected category with configured Filter Tag; mode=filtered", allChatHistoryDetail
   end
 
   -- All also suppresses a stored duplicate when no current category remains.
   -- Extract just the message content (after sender) for duplicate comparison
   if DBB2.api.IsDuplicateMessage then
     if DBB2.api.IsDuplicateMessage(textToMatch, sender) then
-      return true, "duplicate"
+      return true, "duplicate", allChatHistoryDetail
     end
   end
   
-  return false, "no hide rule matched"
+  return false, "no hide rule matched", allChatHistoryDetail
 end
 
 -- =====================
@@ -399,11 +598,13 @@ function DBB2.api.SetupChatFilter()
           end
           
           -- Check if this message should be filtered
-          -- Filter runs if hideFromChat is enabled OR hideBlacklistedFromChat is enabled
+          -- Filter runs for category hiding, blacklist hiding, or independent
+          -- All Chat duplicate suppression.
           local hideFromChatEnabled = DBB2_Config and DBB2_Config.hideFromChat and DBB2_Config.hideFromChat ~= 0
           local hideBlacklistedEnabled = DBB2_Config and DBB2_Config.blacklist and DBB2_Config.blacklist.hideFromChat
+          local hideDuplicateEnabled = DBB2_Config and DBB2_Config.duplicateFilterMode == 2
           
-          if msg and (hideFromChatEnabled or hideBlacklistedEnabled) then
+          if msg and (hideFromChatEnabled or hideBlacklistedEnabled or hideDuplicateEnabled) then
             -- Normalize the formatted chat line into the same plain message body
             -- used by CHAT_MSG_* events before applying blacklist/category checks.
             local cleanMsg = msg
@@ -427,7 +628,7 @@ function DBB2.api.SetupChatFilter()
             local debugging = DBB2.debug.enabled and not DBB2.debug.paused
             local started = nil
             if debugging then started = DBB2.api.DebugClock() end
-            local success, shouldHide, hideReason = pcall(DBB2.api.ShouldHideFromChat, cleanMsg, sender, msgContent)
+            local success, shouldHide, hideReason, hideDetails = pcall(DBB2.api.ShouldHideFromChat, cleanMsg, sender, msgContent, nil, nil, frameIndex, false)
             local elapsed = nil
             if debugging then
               elapsed = DBB2.api.DebugClock() - started
@@ -441,7 +642,7 @@ function DBB2.api.SetupChatFilter()
             if success and shouldHide then
               if debugging then
                 DBB2.api.DebugCount("chat.hiddenRenders", 1)
-                DBB2.api.DebugChatLifecycle(msgContent, sender, true, hideReason, frameIndex)
+                DBB2.api.DebugChatLifecycle(msgContent, sender, true, hideReason, frameIndex, hideDetails)
                 DBB2.api.DebugCount("chat.hidden", 1)
               end
               return  -- Don't show this message
@@ -451,9 +652,12 @@ function DBB2.api.SetupChatFilter()
                 -- one trace per combat/system render. Silent counting also
                 -- avoids waking the visible diagnostic console every line.
                 DBB2.api.DebugCountSilent("chat.ignoredUnmonitoredRenders", 1)
+                if hideDuplicateEnabled then
+                  DBB2.api.DebugCountSilent("duplicates.chatBypassedUncheckedSourceRenders", 1)
+                end
               else
                 DBB2.api.DebugCount("chat.visibleRenders", 1)
-                DBB2.api.DebugChatLifecycle(msgContent, sender, false, hideReason, frameIndex)
+                DBB2.api.DebugChatLifecycle(msgContent, sender, false, hideReason, frameIndex, hideDetails)
                 DBB2.api.DebugCount("chat.visible", 1)
               end
             elseif not success and debugging then

@@ -26,6 +26,7 @@ local math_floor = math.floor
 debugState.entries = debugState.entries or {}
 debugState.entryStart = debugState.entryStart or 1
 debugState.entryCount = debugState.entryCount or 0
+debugState.capacityReached = debugState.capacityReached or false
 debugState.counters = debugState.counters or {}
 debugState.perf = debugState.perf or {}
 debugState.sequence = debugState.sequence or 0
@@ -213,6 +214,22 @@ end
 
 local function CheckLifecycle(record)
   if not record then return end
+  -- Correlate the existing chat and storage decisions into one aggregate only.
+  -- This proves whether All Chat caught a line that the bulletin-board duplicate
+  -- store could not catch, without adding another per-message trace.
+  if not record.duplicateOutcomeCounted and record.chatRule == "duplicate; mode=all-chat" and record.terminal then
+    record.duplicateOutcomeCounted = true
+    if record.terminal == "rejected-duplicate" then
+      DBB2.api.DebugCount("duplicates.chatAndStorageRejected", 1)
+    else
+      DBB2.api.DebugCount("duplicates.chatOnlyStorageOutcome." .. tostring(record.terminal), 1)
+      if string_find(record.terminal, "^stored") then
+        DBB2.api.DebugCount("duplicates.chatOnlyStored", 1)
+      else
+        DBB2.api.DebugCount("duplicates.chatOnlyRejected", 1)
+      end
+    end
+  end
   -- Blacklisted messages are deliberately both hidden from chat and rejected
   -- from storage. A category-hidden duplicate is also intentional: the prior
   -- DBB entry remains the retained representation during the spam window.
@@ -263,11 +280,20 @@ function DBB2.api.DebugBeginMessage(message, sender, channel, msgType)
   debugState.currentDiagnosticID = record.id
   record.channel = channel
   record.msgType = msgType
-  DBB2.api.DebugTrace(2, "event", "received", LifecyclePrefix(record.id) .. "sender=" .. tostring(sender or "Unknown") .. " channel=" .. tostring(channel or "") .. " type=" .. tostring(msgType or "") .. " text=\"" .. tostring(message or "") .. "\"")
+  local detail = LifecyclePrefix(record.id) .. "channel=" .. tostring(channel or "") .. " type=" .. tostring(msgType or "")
+  if not record.chatText then
+    detail = detail .. " sender=" .. tostring(sender or "Unknown") .. " text=\"" .. tostring(message or "") .. "\""
+  elseif tostring(message or "") ~= tostring(record.chatText or "") then
+    -- Chat rendering may strip hyperlink payloads and colour codes. Preserve
+    -- the raw event text only when it contributes information not already on
+    -- the chat entry.
+    detail = detail .. " rawText=\"" .. tostring(message or "") .. "\""
+  end
+  DBB2.api.DebugTrace(2, "event", "received", detail)
   return record.id
 end
 
-function DBB2.api.DebugChatLifecycle(message, sender, hidden, reason, frameIndex)
+function DBB2.api.DebugChatLifecycle(message, sender, hidden, reason, frameIndex, details)
   if not debugState.enabled or debugState.paused then return nil end
   local record, senderMismatch, textMismatch = FindLifecycle(message, sender)
   if not record then record = NewLifecycle(message, sender) end
@@ -284,8 +310,17 @@ function DBB2.api.DebugChatLifecycle(message, sender, hidden, reason, frameIndex
   record.chatText = tostring(message or "")
   record.chatRule = reason or "unknown"
   if hidden then record.hidden = true else record.visible = true end
-  if hidden and reason ~= "blacklist" then record.expectHidden = true end
-  DBB2.api.DebugChatTrace(hidden and 2 or 1, hidden and "hidden" or "visible", LifecyclePrefix(record.id) .. "reason=" .. tostring(reason or "unknown") .. " sender=" .. tostring(sender or "Unknown") .. " text=\"" .. tostring(message or "") .. "\"", nil, frameIndex)
+  if hidden and reason ~= "blacklist" and reason ~= "duplicate; mode=all-chat" then record.expectHidden = true end
+  if details and details ~= "" then record.chatRuleDetails = details end
+  local messageContext = ""
+  -- The received event normally established these immutable fields already.
+  -- Include them only when chat rendering arrived first, so that standalone
+  -- chat-first lifecycles still retain enough evidence to identify the line.
+  if not record.eventSeen then
+    messageContext = " sender=" .. tostring(sender or "Unknown") .. " text=\"" .. tostring(message or "") .. "\""
+  end
+  DBB2.api.DebugChatTrace(hidden and 2 or 1, hidden and "hidden" or "visible", LifecyclePrefix(record.id) .. "reason=" .. tostring(reason or "unknown") .. (details and details ~= "" and " " .. details or "") .. messageContext, nil, frameIndex)
+  if debugState.capacityReached then return record.id end
   CheckLifecycle(record)
   return record.id
 end
@@ -295,6 +330,12 @@ function DBB2.api.DebugLifecycleStage(id, stage, details)
   local record = debugState.messageLifecycles[id]
   if record and stage == "category-matching" then record.categorySummary = SafeText(details, 400) end
   DBB2.api.DebugTrace(2, "message", stage, LifecyclePrefix(id) .. (details or ""))
+end
+
+function DBB2.api.DebugSetLifecycleCategorySummary(id, details)
+  if not debugState.enabled or debugState.paused or not id then return end
+  local record = debugState.messageLifecycles[id]
+  if record then record.categorySummary = SafeText(details, 400) end
 end
 
 function DBB2.api.DebugPipelineStage(id, stage, elapsedMS, details, storedMessages, renderedRows)
@@ -309,11 +350,14 @@ function DBB2.api.DebugUITransition(action, details)
   if not debugState.enabled or debugState.paused then return end
   if action == "level-filter-changed" or action == "category-tags-changed" or
      action == "category-selection-changed" or action == "filter-tags-changed" or
-     action == "filter-tags-enabled-changed" then
+     action == "filter-tags-enabled-changed" or action == "duplicate-filter-mode-changed" or
+     action == "duplicate-filter-window-changed" or action == "channel-monitoring-changed" then
     DBB2.api.DebugCount("configuration.changes", 1)
   end
-  local uiState = DBB2.api.DebugGetUIStateSummary and DBB2.api.DebugGetUIStateSummary() or "UI=unavailable"
-  DBB2.api.DebugTrace(2, "ui", action or "state-changed", (details or "") .. " " .. uiState)
+  -- Each transition already describes the changed field. The session's
+  -- configuration baseline supplies context, so repeating the complete UI
+  -- state on every click only obscures the chronological evidence.
+  DBB2.api.DebugTrace(2, "ui", action or "state-changed", details or "")
 end
 
 function DBB2.api.DebugLifecycleTerminal(id, outcome, details, suppressTrace)
@@ -324,10 +368,11 @@ function DBB2.api.DebugLifecycleTerminal(id, outcome, details, suppressTrace)
     DBB2.api.DebugTrace(3, "message", "WARN multiple-terminal-decisions", LifecyclePrefix(id) .. "first=" .. record.terminal .. " next=" .. tostring(outcome))
   elseif record then
     record.terminal = outcome
-    record.storageRule = details
+    record.storageRule = outcome
+    record.storageDetails = details
   end
   if not suppressTrace then DBB2.api.DebugLifecycleStage(id, outcome, details) end
-  CheckLifecycle(record)
+  if not debugState.capacityReached then CheckLifecycle(record) end
 end
 
 local function ReadAddonMemoryKB()
@@ -356,7 +401,7 @@ function DBB2.api.DebugClock()
 end
 
 function DBB2.api.DebugCount(name, amount, allowWhilePaused)
-  if not debugState.enabled or (debugState.paused and not allowWhilePaused) then return end
+  if not debugState.enabled or debugState.capacityReached or (debugState.paused and not allowWhilePaused) then return end
   debugState.counters[name] = (debugState.counters[name] or 0) + (amount or 1)
   debugState.dirty = true
 end
@@ -364,12 +409,12 @@ end
 -- Aggregate noisy background activity without forcing the visible report to
 -- rebuild. The count appears on the next meaningful refresh.
 function DBB2.api.DebugCountSilent(name, amount, allowWhilePaused)
-  if not debugState.enabled or (debugState.paused and not allowWhilePaused) then return end
+  if not debugState.enabled or debugState.capacityReached or (debugState.paused and not allowWhilePaused) then return end
   debugState.counters[name] = (debugState.counters[name] or 0) + (amount or 1)
 end
 
 function DBB2.api.DebugTrace(level, category, action, details, elapsedMS, allowWhilePaused)
-  if not debugState.enabled or (debugState.paused and not allowWhilePaused) then return end
+  if not debugState.enabled or debugState.capacityReached or (debugState.paused and not allowWhilePaused) then return end
   local traceStarted = ClockMS()
 
   level = level or 2
@@ -379,6 +424,12 @@ function DBB2.api.DebugTrace(level, category, action, details, elapsedMS, allowW
   local detailLimit = 700
   if category == "test" then detailLimit = 1800 end
   if category == "lua-error" then detailLimit = 2600 end
+  local normalizedDetails = SafeText(details)
+  local storedDetails = normalizedDetails
+  if string_len(normalizedDetails) > detailLimit then
+    local marker = " [truncated originalChars=" .. tostring(string_len(normalizedDetails)) .. "]"
+    storedDetails = string_sub(normalizedDetails, 1, detailLimit - string_len(marker)) .. marker
+  end
 
   local entry = {
     sequence = debugState.sequence,
@@ -387,18 +438,25 @@ function DBB2.api.DebugTrace(level, category, action, details, elapsedMS, allowW
     levelName = LEVEL_NAMES[level] or "INFO",
     category = SafeText(category, 18),
     action = SafeText(action, 28),
-    details = SafeText(details, detailLimit),
+    details = storedDetails,
     elapsedMS = elapsedMS
   }
 
-  if debugState.entryCount < debugState.maxEntries then
-    local position = math.mod(debugState.entryStart + debugState.entryCount - 1, debugState.maxEntries) + 1
-    debugState.entries[position] = entry
-    debugState.entryCount = debugState.entryCount + 1
-  else
-    debugState.entries[debugState.entryStart] = entry
-    debugState.entryStart = math.mod(debugState.entryStart, debugState.maxEntries) + 1
-    debugState.dropped = (debugState.dropped or 0) + 1
+  local position = math.mod(debugState.entryStart + debugState.entryCount - 1, debugState.maxEntries) + 1
+  debugState.entries[position] = entry
+  debugState.entryCount = debugState.entryCount + 1
+  if debugState.entryCount >= debugState.maxEntries then
+    -- Preserve the first complete diagnostic window. Once full, no trace,
+    -- counter, performance sample, or paused simulation may mutate it until
+    -- the user clears the recorder or starts a new diagnostic session.
+    debugState.capacityReached = true
+    debugState.paused = true
+    if DBB2.api.DebugGetTelemetryExportRows then
+      debugState.capacityTelemetryRows = DBB2.api.DebugGetTelemetryExportRows()
+    end
+    if DBB2.api.DebugGetConfigurationExportRows then
+      debugState.capacityConfigurationRows = DBB2.api.DebugGetConfigurationExportRows()
+    end
   end
   debugState.dirty = true
   DBB2.api.DebugPerf("diagnostic.trace-creation", ClockMS() - traceStarted, nil, true, allowWhilePaused)
@@ -414,7 +472,12 @@ function DBB2.api.DebugChatTrace(level, action, details, elapsedMS, frameIndex)
 
   local now = GetTime()
   local frameName = "ChatFrame" .. tostring(frameIndex or "?")
-  local key = tostring(level or 1) .. "\031" .. tostring(action or "event") .. "\031" .. tostring(details or "")
+  local normalizedDetails = string_gsub(tostring(details or ""), "duplicateHistory=[^ ]+", "duplicateHistory=*", 1)
+  -- Rendering and CHAT_MSG delivery may interleave between chat frames. Ignore
+  -- the provisional identity suffix for the coalescing key; the first render
+  -- still retains it until the correlated event supplies the canonical data.
+  normalizedDetails = string_gsub(normalizedDetails, " sender=[^ ]+ text=\".*\"$", "", 1)
+  local key = tostring(level or 1) .. "\031" .. tostring(action or "event") .. "\031" .. normalizedDetails
   local previous = debugState.lastChatTrace
 
   if previous and previous.key == key and now - previous.time <= 0.10 and previous.entry then
@@ -423,7 +486,16 @@ function DBB2.api.DebugChatTrace(level, action, details, elapsedMS, frameIndex)
       table_insert(previous.frameNames, frameName)
     end
     previous.renders = previous.renders + 1
-    previous.entry.details = SafeText(details .. " frames=" .. table.concat(previous.frameNames, ",") .. " renders=" .. previous.renders, 700)
+    local _, _, history = string_find(tostring(details or ""), "duplicateHistory=([^ ]+)")
+    if history and not previous.historyLookup[history] then
+      previous.historyLookup[history] = true
+      table_insert(previous.historyValues, history)
+    end
+    local combinedDetails = previous.baseDetails
+    if table_getn(previous.historyValues) > 1 then
+      combinedDetails = string_gsub(combinedDetails, "duplicateHistory=[^ ]+", "duplicateHistory=[" .. table.concat(previous.historyValues, ",") .. "]", 1)
+    end
+    previous.entry.details = SafeText(combinedDetails .. " frames=" .. table.concat(previous.frameNames, ",") .. " renders=" .. previous.renders, 700)
     previous.time = now
     DBB2.api.DebugCount("chat.renderCoalesced", 1)
     debugState.dirty = true
@@ -432,10 +504,15 @@ function DBB2.api.DebugChatTrace(level, action, details, elapsedMS, frameIndex)
   end
 
   local entry = DBB2.api.DebugTrace(level, "chat", action, details .. " frames=" .. frameName .. " renders=1", elapsedMS)
+  if debugState.capacityReached then return false end
+  local _, _, history = string_find(tostring(details or ""), "duplicateHistory=([^ ]+)")
   debugState.lastChatTrace = {
     key = key,
     time = now,
     entry = entry,
+    baseDetails = details,
+    historyValues = history and { history } or {},
+    historyLookup = history and { [history] = true } or {},
     frames = { [frameName] = true },
     frameNames = { frameName },
     renders = 1
@@ -485,7 +562,7 @@ function DBB2.api.DebugDecision(outcome, details, elapsedMS)
   DBB2.api.DebugTrace(2, "message", outcome or "unknown", details, elapsedMS)
 end
 
-function DBB2.api.DebugFinishDecision(startedMS, outcome, details, startingMessageCount)
+function DBB2.api.DebugFinishDecision(startedMS, outcome, details, startingMessageCount, diagnosticID)
   if not debugState.enabled or debugState.paused then return end
   local elapsed = ClockMS() - startedMS
   local retainedMessages = DBB2.messages and table_getn(DBB2.messages) or 0
@@ -493,13 +570,15 @@ function DBB2.api.DebugFinishDecision(startedMS, outcome, details, startingMessa
   if startingMessageCount ~= nil then
     messageContext = " retainedMessages=" .. startingMessageCount .. "->" .. retainedMessages
   end
-  DBB2.api.DebugDecision(outcome, details .. messageContext, elapsed)
+  DBB2.api.DebugDecision(outcome, LifecyclePrefix(diagnosticID or "unknown") .. (details or "") .. messageContext, elapsed)
   DBB2.api.DebugPerf("AddMessage", elapsed, retainedMessages)
-  DBB2.api.DebugPerf("AddMessage." .. (outcome or "unknown"), elapsed, retainedMessages)
+  -- Retain outcome-specific timing telemetry without emitting a second copy
+  -- of the same slow-call warning.
+  DBB2.api.DebugPerf("AddMessage." .. (outcome or "unknown"), elapsed, retainedMessages, true)
 end
 
 function DBB2.api.DebugPerf(name, elapsedMS, retainedMessages, suppressSlowWarning, allowWhilePaused)
-  if not debugState.enabled or (debugState.paused and not allowWhilePaused) or not elapsedMS then return end
+  if not debugState.enabled or debugState.capacityReached or (debugState.paused and not allowWhilePaused) or not elapsedMS then return end
   local item = debugState.perf[name]
   if not item then
     item = { count = 0, total = 0, max = 0, samples = {}, sampleStart = 1, sampleCount = 0 }
@@ -543,7 +622,7 @@ function DBB2.api.DebugGetSlowThreshold(name)
 end
 
 function DBB2.api.DebugReportAmbiguousCategories(message, sender, channel, categories, evidenceByType, allowWhilePaused)
-  if not debugState.enabled or (debugState.paused and not allowWhilePaused) or not categories then return false end
+  if not debugState.enabled or debugState.capacityReached or (debugState.paused and not allowWhilePaused) or not categories then return false end
 
   local ambiguousTypes = {}
   local allMatches = {}
@@ -661,9 +740,13 @@ function DBB2.api.DebugFormatEntry(entry)
 end
 
 function DBB2.api.DebugClear()
+  local wasFull = debugState.capacityReached
   debugState.entries = {}
   debugState.entryStart = 1
   debugState.entryCount = 0
+  debugState.capacityReached = false
+  debugState.capacityTelemetryRows = nil
+  debugState.capacityConfigurationRows = nil
   debugState.counters = {}
   debugState.perf = {}
   debugState.dropped = 0
@@ -680,7 +763,11 @@ function DBB2.api.DebugClear()
   debugState.luaMemoryStartKB = collectgarbage and (collectgarbage("count") or 0) or 0
   debugState.lastMemoryUpdate = 0
   debugState.dirty = true
-  DBB2.api.DebugTrace(2, "system", "log-cleared", "Diagnostic log and counters reset")
+  if wasFull then debugState.paused = false end
+  -- A cleared recorder is a new diagnostic window. Seed it with the one
+  -- context snapshot needed to interpret every later delta, even when the
+  -- user intentionally kept ordinary capture paused.
+  DBB2.api.DebugTrace(2, "system", "configuration-snapshot", DBB2.api.DebugGetConfigurationSummary("log-cleared"), nil, true)
 end
 
 function DBB2.api.DebugGetRuntimeSummary()
@@ -749,10 +836,9 @@ function DBB2.api.DebugGetLiveSummary()
   local uptime = GetTime() - debugState.startTime
   local minutes = math_floor(uptime / 60)
   local seconds = math_floor(uptime - (minutes * 60))
-  return string_format("%d/%d entries  ||  %d dropped  ||  %d messages  ||  %d errors  ||  %dm%02ds",
+  return string_format("%d/%d entries  ||  %d messages  ||  %d errors  ||  %dm%02ds",
     debugState.entryCount,
     debugState.maxEntries,
-    debugState.dropped or 0,
     DBB2.messages and table_getn(DBB2.messages) or 0,
     debugState.counters.errors or 0,
     minutes,
@@ -813,6 +899,27 @@ function DBB2.api.DebugGetCounterSummary()
   return table.concat(parts, "  ")
 end
 
+function DBB2.api.DebugGetDuplicateSummary()
+  local counters = debugState.counters or {}
+  local historyCurrent = 0
+  local historyPeak = 0
+  if DBB2.api.GetAllChatDuplicateHistoryStats then
+    historyCurrent, historyPeak = DBB2.api.GetAllChatDuplicateHistoryStats()
+  end
+  local chatOnlyRejected = counters["duplicates.chatOnlyRejected"] or 0
+  local chatOnlyStored = counters["duplicates.chatOnlyStored"] or 0
+  return "tracked=" .. tostring(counters["duplicates.chatTracked"] or 0) ..
+    " hidden=" .. tostring(counters["duplicates.chatRejected"] or 0) ..
+    " chatOnly=" .. tostring(chatOnlyRejected + chatOnlyStored) ..
+    " chatOnlyRejected=" .. tostring(chatOnlyRejected) ..
+    " chatOnlyStored=" .. tostring(chatOnlyStored) ..
+    " boardOverlap=" .. tostring(counters["duplicates.chatAndStorageRejected"] or 0) ..
+    " bypassedRenders=" .. tostring(counters["duplicates.chatBypassedUncheckedSourceRenders"] or 0) ..
+    " pruned=" .. tostring(counters["duplicates.chatHistoryPruned"] or 0) ..
+    " historyCurrent=" .. tostring(historyCurrent) ..
+    " historyPeakSession=" .. tostring(historyPeak)
+end
+
 function DBB2.api.DebugGetPerfSummary()
   local names = {}
   for name, _ in pairs(debugState.perf) do table_insert(names, name) end
@@ -848,6 +955,107 @@ function DBB2.api.DebugGetPerfSummary()
     table_insert(parts, string_format("%s n=%d avg=%.3fms recent%d=%.3fms p50=%.3fms p95=%.3fms p99=%.3fms max=%.3fms%s", name, item.count, average, recentCount, recentAverage, Percentile(0.50), Percentile(0.95), Percentile(0.99), item.max, messageRange))
   end
   return table.concat(parts, "  ||  ")
+end
+
+-- Export aggregate-only evidence as independent, machine-readable facts. These
+-- values intentionally stay out of the chronological console: counters and
+-- timing samples summarize observations that would be too noisy to trace one
+-- by one, but each primitive remains available to an exported investigation.
+function DBB2.api.DebugGetTelemetryExportRows()
+  if debugState.capacityReached and debugState.capacityTelemetryRows then
+    return debugState.capacityTelemetryRows
+  end
+  local rows = {}
+  local function Add(key, value)
+    if value == nil then value = "" end
+    table_insert(rows, { key = key, value = tostring(value) })
+  end
+
+  Add("recorder.state", debugState.capacityReached and "full" or (debugState.paused and "paused" or "capturing"))
+  Add("recorder.entry_count", debugState.entryCount)
+  Add("recorder.entry_limit", debugState.maxEntries)
+  Add("recorder.capacity_reached", debugState.capacityReached == true)
+  Add("recorder.session_time_seconds", string_format("%.3f", GetTime() - debugState.startTime))
+
+  Add("runtime.messages", DBB2.messages and table_getn(DBB2.messages) or 0)
+  Add("runtime.lifecycle_records", table_getn(debugState.messageLifecycleOrder or {}))
+  Add("runtime.notification_queue", DBB2.notificationQueue and table_getn(DBB2.notificationQueue) or 0)
+  Add("runtime.pending_messages", DBB2.pendingMessages and table_getn(DBB2.pendingMessages) or 0)
+  Add("runtime.fps", string_format("%.3f", GetFramerate and GetFramerate() or 0))
+  local latency = 0
+  if GetNetStats then
+    local _, _, homeLatency = GetNetStats()
+    latency = homeLatency or 0
+  end
+  Add("runtime.latency_ms", latency)
+  local luaNow = collectgarbage and (collectgarbage("count") or 0) or 0
+  Add("runtime.lua_start_kb", string_format("%.3f", debugState.luaMemoryStartKB or 0))
+  Add("runtime.lua_now_kb", string_format("%.3f", luaNow))
+  Add("runtime.lua_delta_kb", string_format("%.3f", luaNow - (debugState.luaMemoryStartKB or luaNow)))
+
+  local mainWindow = "unavailable"
+  local activeTab = "none"
+  local activeSearch = ""
+  if DBB2.gui then
+    mainWindow = DBB2.gui.IsShown and (DBB2.gui:IsShown() and "shown" or "hidden") or "created"
+    if DBB2.gui.tabs and DBB2.gui.tabs.activeTab then
+      activeTab = DBB2.gui.tabs.activeTab
+      if activeTab == "Logs" then
+        activeSearch = DBB2.gui.filterTerms and table.concat(DBB2.gui.filterTerms, ",") or ""
+      else
+        local panel = DBB2.gui.tabs.panels and DBB2.gui.tabs.panels[activeTab]
+        activeSearch = panel and panel.filterTerms and table.concat(panel.filterTerms, ",") or ""
+      end
+    end
+  end
+  Add("ui.main_window", mainWindow)
+  Add("ui.active_tab", activeTab)
+  Add("ui.active_search", activeSearch)
+  Add("ui.level_filter", DBB2_Config.showLevelFilteredGroups or false)
+
+  local historyCurrent = 0
+  local historyPeak = 0
+  if DBB2.api.GetAllChatDuplicateHistoryStats then
+    historyCurrent, historyPeak = DBB2.api.GetAllChatDuplicateHistoryStats()
+  end
+  Add("duplicates.history_current", historyCurrent)
+  Add("duplicates.history_peak_session", historyPeak)
+
+  local counterNames = {}
+  for name, _ in pairs(debugState.counters or {}) do table_insert(counterNames, name) end
+  table_sort(counterNames)
+  for _, name in ipairs(counterNames) do
+    Add("counter." .. name, debugState.counters[name])
+  end
+
+  local collisionNames = {}
+  for name, _ in pairs(debugState.categoryCollisions or {}) do table_insert(collisionNames, name) end
+  table_sort(collisionNames)
+  for _, name in ipairs(collisionNames) do
+    Add("category_collision." .. name, debugState.categoryCollisions[name])
+  end
+
+  local metricNames = {}
+  for name, _ in pairs(debugState.perf or {}) do table_insert(metricNames, name) end
+  table_sort(metricNames)
+  for _, name in ipairs(metricNames) do
+    local item = debugState.perf[name]
+    local prefix = "performance." .. name .. "."
+    Add(prefix .. "count", item.count or 0)
+    Add(prefix .. "total_ms", string_format("%.6f", item.total or 0))
+    Add(prefix .. "max_ms", string_format("%.6f", item.max or 0))
+    if item.minMessages ~= nil then Add(prefix .. "min_messages", item.minMessages) end
+    if item.maxMessages ~= nil then Add(prefix .. "max_messages", item.maxMessages) end
+    local sampleCount = item.sampleCount or 0
+    local sampleLimit = debugState.perfSampleLimit
+    local samples = {}
+    for i = 1, sampleCount do
+      local position = math.mod((item.sampleStart or 1) + i - 2, sampleLimit) + 1
+      samples[i] = string_format("%.6f", item.samples and item.samples[position] or 0)
+    end
+    Add(prefix .. "samples_ms", table.concat(samples, ","))
+  end
+  return rows
 end
 
 function DBB2.api.DebugGetUIStateSummary()
@@ -898,6 +1106,9 @@ function DBB2.api.DebugGetConfigurationSummary(reason)
   local categoryCounts = {}
   local hideFromChat = DBB2_Config.hideFromChat or 0
   local hideFromChatNames = { [0] = "Disabled", [1] = "Filtered", [2] = "All" }
+  local duplicateMode = DBB2_Config.duplicateFilterMode
+  if duplicateMode == nil then duplicateMode = 1 end
+  local duplicateModeNames = { [0] = "Off", [1] = "Matches", [2] = "All Chat" }
   for _, categoryType in ipairs({ "groups", "professions", "hardcore" }) do
     local categories = DBB2_Config.categories and DBB2_Config.categories[categoryType] or {}
     local selected = 0
@@ -910,6 +1121,7 @@ function DBB2.api.DebugGetConfigurationSummary(reason)
     " version=" .. (GetAddOnMetadata("DifficultBulletinBoard", "Version") or "?") ..
     " monitored=[" .. table.concat(monitored, ",") .. "]" ..
     " hideFromChat=" .. tostring(hideFromChat) .. "(" .. tostring(hideFromChatNames[hideFromChat] or "Unknown") .. ")" ..
+    " duplicateFilter=" .. tostring(duplicateMode) .. "(" .. tostring(duplicateModeNames[duplicateMode] or "Unknown") .. ")" ..
     " blacklist=" .. tostring(DBB2_Config.blacklist and DBB2_Config.blacklist.enabled or false) ..
     " blacklistHideFromChat=" .. tostring(DBB2_Config.blacklist and DBB2_Config.blacklist.hideFromChat or false) ..
     " spamWindow=" .. tostring(DBB2_Config.spamFilterSeconds or 0) ..
@@ -991,6 +1203,9 @@ end
 -- split into one row per logical item so no single EditBox line becomes
 -- needlessly huge, while unknown/future top-level settings are still included.
 function DBB2.api.DebugGetConfigurationExportRows()
+  if debugState.capacityReached and debugState.capacityConfigurationRows then
+    return debugState.capacityConfigurationRows
+  end
   local rows = {}
   local function Add(key, value)
     table_insert(rows, { key = key, value = value })
@@ -998,8 +1213,6 @@ function DBB2.api.DebugGetConfigurationExportRows()
   local function AddSerialized(key, value)
     Add(key, SerializeConfigurationValue(value))
   end
-
-  Add("configuration.export_summary", DBB2.api.DebugGetConfigurationSummary("export-generated"))
 
   local speciallyHandled = {
     categories = true,
@@ -1076,6 +1289,7 @@ end
 -- notifications, or changing duplicate history. Decisions use the same public
 -- matchers and current configuration as the live chat and storage paths.
 function DBB2.api.DebugAnalyzeMessage(message, sender, channel, msgType)
+  if debugState.capacityReached then return nil, "recorder-full", nil, "recorder full" end
   message = message or ""
   sender = sender or "DBBTestPlayer"
   local playerName = UnitName and UnitName("player") or nil
@@ -1092,6 +1306,7 @@ function DBB2.api.DebugAnalyzeMessage(message, sender, channel, msgType)
   local fullEvidence = DBB2.api.GetMessageCategoryEvidence(message, true, false)
   local baseEvidence = DBB2.api.GetMessageCategoryEvidence(message, true, true)
   local ambiguous = DBB2.api.DebugReportAmbiguousCategories(message, sender, channel, base, baseEvidence, true)
+  if debugState.capacityReached then return nil, "recorder-full", nil, "recorder full" end
   local unsorted = DBB2.api.MatchUnsortedFilterTags(message)
   local duplicate, duplicateAge = DBB2.api.IsDuplicateMessage(message, sender)
   local hasFull = full.groups[1] or full.professions[1] or full.hardcore[1]
@@ -1139,10 +1354,11 @@ function DBB2.api.DebugAnalyzeMessage(message, sender, channel, msgType)
   -- UI event happened to open or click the diagnostic console.
   local hidden = false
   local chatReason = "chat filter unavailable"
+  local chatDetails = nil
   if not sourceAccepted then
     chatReason = "source rejected: " .. sourceReason
   elseif DBB2.api.ShouldHideFromChat then
-    hidden, chatReason = DBB2.api.ShouldHideFromChat(message, sender, message, msgType, channel)
+    hidden, chatReason, chatDetails = DBB2.api.ShouldHideFromChat(message, sender, message, msgType, channel, nil, true)
   end
   local elapsed = ClockMS() - started
 
@@ -1154,6 +1370,7 @@ function DBB2.api.DebugAnalyzeMessage(message, sender, channel, msgType)
 
   local detail = "chat=" .. (hidden and "hidden" or "visible") ..
     " chatReason=\"" .. tostring(chatReason or "unknown") .. "\"" ..
+    " chatDetails=\"" .. tostring(chatDetails or "none") .. "\"" ..
     " storage=" .. outcome ..
     " sourceAccepted=" .. tostring(sourceAccepted) ..
     " sourceReason=\"" .. sourceReason .. "\"" ..
@@ -1184,11 +1401,10 @@ end
 -- Analyze a pasted corpus one line at a time. Blank lines and # comments are
 -- ignored; the cap protects the bounded recorder from an accidental huge paste.
 function DBB2.api.DebugAnalyzeBatch(text, sender, channel, msgType)
+  if debugState.capacityReached then return 0, 0 end
   local started = ClockMS()
   local processed = 0
   local skipped = 0
-  local outcomes = {}
-  local chatResults = { hidden = 0, visible = 0 }
   local maxLines = 60
   text = string_gsub(text or "", "\r", "")
 
@@ -1198,29 +1414,23 @@ function DBB2.api.DebugAnalyzeBatch(text, sender, channel, msgType)
   DBB2.api.DebugTrace(2, "test", "simulation-context", DBB2.api.DebugGetConfigurationSummary("simulation"), nil, true)
 
   for line in string_gfind(text, "[^\n]+") do
+    if debugState.capacityReached then break end
     line = string_gsub(line, "^%s*(.-)%s*$", "%1")
     if line == "" or string_sub(line, 1, 1) == "#" then
       skipped = skipped + 1
     elseif processed < maxLines then
-      local _, outcome, hidden = DBB2.api.DebugAnalyzeMessage(line, sender, channel, msgType)
-      outcomes[outcome or "unknown"] = (outcomes[outcome or "unknown"] or 0) + 1
-      if hidden then
-        chatResults.hidden = chatResults.hidden + 1
-      else
-        chatResults.visible = chatResults.visible + 1
-      end
+      DBB2.api.DebugAnalyzeMessage(line, sender, channel, msgType)
       processed = processed + 1
     else
       skipped = skipped + 1
     end
   end
 
-  local outcomeParts = {}
-  for outcome, count in pairs(outcomes) do table_insert(outcomeParts, outcome .. "=" .. count) end
-  table.sort(outcomeParts)
   local elapsed = ClockMS() - started
   DBB2.api.DebugCount("test.batchMessages", processed, true)
-  DBB2.api.DebugTrace(2, "test", "batch-analysis", "processed=" .. processed .. " skipped=" .. skipped .. " capped=" .. tostring(processed >= maxLines) .. " chat=[hidden=" .. chatResults.hidden .. ",visible=" .. chatResults.visible .. "] storage=[" .. table.concat(outcomeParts, ",") .. "]", elapsed, true)
+  -- Per-line analysis entries already contain every chat and storage outcome.
+  -- This boundary event retains only facts that do not exist on those lines.
+  DBB2.api.DebugTrace(2, "test", "batch-completed", "processed=" .. processed .. " skipped=" .. skipped .. " capped=" .. tostring(processed >= maxLines), elapsed, true)
   -- The batch metric is an aggregate of every simulated line and should not be
   -- compared with the ordinary per-operation slow-call threshold.
   DBB2.api.DebugPerf("test-batch-analysis", elapsed, nil, true, true)
@@ -1294,6 +1504,9 @@ function DBB2.api.DebugStart()
   debugState.entries = {}
   debugState.entryStart = 1
   debugState.entryCount = 0
+  debugState.capacityReached = false
+  debugState.capacityTelemetryRows = nil
+  debugState.capacityConfigurationRows = nil
   debugState.counters = {}
   debugState.perf = {}
   debugState.dropped = 0
@@ -1324,6 +1537,9 @@ function DBB2.api.DebugStop()
   debugState.entries = {}
   debugState.entryStart = 1
   debugState.entryCount = 0
+  debugState.capacityReached = false
+  debugState.capacityTelemetryRows = nil
+  debugState.capacityConfigurationRows = nil
   debugState.counters = {}
   debugState.perf = {}
   debugState.dropped = 0

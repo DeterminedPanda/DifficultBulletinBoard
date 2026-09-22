@@ -166,12 +166,6 @@ local function RefreshViewer(viewer, force)
   local refreshStarted = DBB2.api.DebugClock()
 
   local lines = {}
-  table_insert(lines, "DifficultBulletinBoard diagnostic session")
-  table_insert(lines, DBB2.api.DebugGetRuntimeSummary())
-  table_insert(lines, "UI: " .. DBB2.api.DebugGetUIStateSummary())
-  table_insert(lines, "Counters: " .. DBB2.api.DebugGetCounterSummary())
-  table_insert(lines, "Performance: " .. DBB2.api.DebugGetPerfSummary())
-  table_insert(lines, "--------------------------------------------------------------------------------")
 
   SyncMatchingEntries(viewer)
   local matchingEntries = viewer.matchingEntries
@@ -201,8 +195,17 @@ local function RefreshViewer(viewer, force)
     if viewer.pageOffset < totalPages - 1 then viewer.olderButton:Enable() else viewer.olderButton:Disable() end
     if viewer.pageOffset > 0 then viewer.newerButton:Enable() else viewer.newerButton:Disable() end
   end
-  viewer.status:SetText((DBB2.debug.paused and "PAUSED  ||  " or "CAPTURING  ||  ") .. DBB2.api.DebugGetLiveSummary())
-  viewer.pauseButton:SetText(DBB2.debug.paused and "Resume" or "Pause")
+  local recorderState = DBB2.debug.capacityReached and "FULL  ||  " or (DBB2.debug.paused and "PAUSED  ||  " or "CAPTURING  ||  ")
+  viewer.status:SetText(recorderState .. DBB2.api.DebugGetLiveSummary())
+  if DBB2.debug.capacityReached then
+    viewer.pauseButton:SetText("Full")
+    viewer.pauseButton:Disable()
+    if viewer.testButton then viewer.testButton:Disable() end
+  else
+    viewer.pauseButton:SetText(DBB2.debug.paused and "Resume" or "Pause")
+    viewer.pauseButton:Enable()
+    if viewer.testButton then viewer.testButton:Enable() end
+  end
   DBB2.debug.dirty = false
 
   if viewer.pageOffset == 0 and not DBB2.debug.paused then
@@ -237,43 +240,23 @@ local function BuildDiagnosticExportText()
   local exportStarted = DBB2.api.DebugClock()
   local entries = DBB2.api.DebugGetEntries()
   local exportLines = {
-    "schema_version\trecord_type\tsequence\tsession_time_seconds\tlevel\tlevel_name\tcategory\taction\telapsed_ms\tmetadata_key\tmetadata_value\tdetails",
-    TSVRow({ DIAGNOSTIC_TSV_SCHEMA_VERSION, "metadata", "", "", "", "", "", "", "", "health", DBB2.api.DebugGetHealthSummary(), "" }),
-    TSVRow({ DIAGNOSTIC_TSV_SCHEMA_VERSION, "metadata", "", "", "", "", "", "", "", "runtime", DBB2.api.DebugGetRuntimeSummary(), "" }),
-    TSVRow({ DIAGNOSTIC_TSV_SCHEMA_VERSION, "metadata", "", "", "", "", "", "", "", "ui_state", DBB2.api.DebugGetUIStateSummary(), "" }),
-    TSVRow({ DIAGNOSTIC_TSV_SCHEMA_VERSION, "metadata", "", "", "", "", "", "", "", "counters", DBB2.api.DebugGetCounterSummary(), "" }),
-    TSVRow({ DIAGNOSTIC_TSV_SCHEMA_VERSION, "metadata", "", "", "", "", "", "", "", "performance", DBB2.api.DebugGetPerfSummary(), "" })
+    "schema_version\trecord_type\tsequence\tsession_time_seconds\tlevel\tlevel_name\tcategory\taction\telapsed_ms\tmetadata_key\tmetadata_value\tdetails"
   }
-
-  -- Capture settings when Export is clicked, not only when the diagnostic
-  -- viewer was opened. These rows contain the exact rules needed to reproduce
-  -- matching decisions plus live state that is not stored in SavedVariables.
-  for _, configRow in ipairs(DBB2.api.DebugGetConfigurationExportRows()) do
+  local function AddMetadata(row)
     table_insert(exportLines, TSVRow({
       DIAGNOSTIC_TSV_SCHEMA_VERSION,
       "metadata",
       "", "", "", "", "", "", "",
-      configRow.key,
-      configRow.value,
+      row.key,
+      row.value,
       ""
     }))
   end
 
-  -- Keep the exact settings that produced the latest simulation even if the
-  -- user changes options before exporting the diagnostic log.
-  if DBB2.api.DebugGetSimulationConfigurationExportRows then
-    for _, configRow in ipairs(DBB2.api.DebugGetSimulationConfigurationExportRows()) do
-      table_insert(exportLines, TSVRow({
-        DIAGNOSTIC_TSV_SCHEMA_VERSION,
-        "metadata",
-        "", "", "", "", "", "", "",
-        configRow.key,
-        configRow.value,
-        ""
-      }))
-    end
-  end
-
+  -- The chronological log begins immediately after the schema header. Its
+  -- session-start configuration snapshot is the only prose configuration
+  -- record; exact export-time settings remain in the structured appendix.
+  local configurationRows = DBB2.api.DebugGetConfigurationExportRows()
   for _, entry in ipairs(entries) do
     table_insert(exportLines, TSVRow({
       DIAGNOSTIC_TSV_SCHEMA_VERSION,
@@ -291,6 +274,25 @@ local function BuildDiagnosticExportText()
       "",
       entry.details or ""
     }))
+  end
+
+  for _, telemetryRow in ipairs(DBB2.api.DebugGetTelemetryExportRows()) do
+    AddMetadata(telemetryRow)
+  end
+
+  -- Capture settings when Export is clicked, not only when the diagnostic
+  -- viewer was opened. These rows contain the exact rules needed to reproduce
+  -- matching decisions plus live state that is not stored in SavedVariables.
+  for _, configRow in ipairs(configurationRows) do
+    AddMetadata(configRow)
+  end
+
+  -- Keep the exact settings that produced the latest simulation even if the
+  -- user changes options before exporting the diagnostic log.
+  if DBB2.api.DebugGetSimulationConfigurationExportRows then
+    for _, configRow in ipairs(DBB2.api.DebugGetSimulationConfigurationExportRows()) do
+      AddMetadata(configRow)
+    end
   end
 
   DBB2.api.DebugPerf("diagnostic.export-construction", DBB2.api.DebugClock() - exportStarted, nil, true)
@@ -387,6 +389,7 @@ local function CreateViewer()
   viewer.categoryButton:SetPoint("LEFT", viewer.levelButton, "RIGHT", 5, 0)
 
   viewer.pauseButton = CreateButton(viewer, "Pause", 65, function()
+    if DBB2.debug.capacityReached then return end
     DBB2.debug.paused = not DBB2.debug.paused
     DBB2.debug.dirty = true
     RefreshViewer(viewer, true)
@@ -483,6 +486,7 @@ local function CreateViewer()
   end)
 
   local function AnalyzeTestMessages()
+    if DBB2.debug.capacityReached then return end
     local messages = viewer.testInput:GetText() or ""
     if messages ~= "" then
       DBB2.api.DebugAnalyzeBatch(messages)

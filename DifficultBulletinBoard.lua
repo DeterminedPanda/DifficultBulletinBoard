@@ -187,6 +187,7 @@ DBB2:SetScript("OnEvent", function()
       DBB2_Config.highlightColor = {r = 0.667, g = 0.655, b = 0.8, a = 1}  -- Default highlight color (#aaa7cc)
       DBB2_Config.backgroundColor = {r = 0.08, g = 0.08, b = 0.10, a = 0.85}  -- Default background color (dark charcoal)
       DBB2_Config.spamFilterSeconds = 150  -- Duplicate message filter time
+      DBB2_Config.duplicateFilterMode = 1  -- Duplicate scope (0=off, 1=matches, 2=all chat)
       DBB2_Config.messageExpireMinutes = 15  -- Auto-remove messages older than X minutes (0 = disabled)
       DBB2_Config.hideFromChat = 0  -- Hide captured messages from chat (0=disabled, 1=filtered, 2=all)
       DBB2_Config.showUnsortedMessagesInLogs = false  -- Show Filter Tag matches with no known category in Logs only
@@ -239,6 +240,18 @@ DBB2:SetScript("OnEvent", function()
     -- Ensure spamFilterSeconds exists for existing configs
     if DBB2_Config.spamFilterSeconds == nil then
       DBB2_Config.spamFilterSeconds = 150
+    end
+
+    -- Migrate the old seconds-only duplicate filter to the new scope control.
+    -- A zero-second window meant disabled; every enabled installation keeps the
+    -- exact previous behavior through Matches mode.
+    if DBB2_Config.duplicateFilterMode == nil then
+      if DBB2_Config.spamFilterSeconds <= 0 then
+        DBB2_Config.duplicateFilterMode = 0
+        DBB2_Config.spamFilterSeconds = 150
+      else
+        DBB2_Config.duplicateFilterMode = 1
+      end
     end
     
     -- Ensure maxMessagesPerCategory exists for existing configs

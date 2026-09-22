@@ -200,6 +200,39 @@ function DBB2.api.IsChannelMonitored(channelName)
   return DBB2_Config.monitoredChannels[channelName] or false
 end
 
+-- Resolves the checkbox that governs a rendered channel name. Exact checkbox
+-- names take priority; otherwise a static checkbox such as "Trade" can govern
+-- a client-provided suffix such as "Trade - City". This is the source-of-truth
+-- lookup used by All Chat duplicate history.
+function DBB2.api.IsChannelCheckboxEnabled(channelName)
+  if not channelName or channelName == "" then return false, nil end
+  DBB2.api.InitChannelConfig()
+
+  local lowerName = string_lower(channelName)
+  local prefixEnabled = false
+  local prefixName = nil
+  local prefixLength = 0
+
+  for configuredName, enabled in pairs(DBB2_Config.monitoredChannels) do
+    local lowerConfigured = string_lower(configuredName)
+    if lowerConfigured == lowerName then
+      return enabled == true, configuredName
+    end
+
+    local configuredLength = string_len(lowerConfigured)
+    if configuredLength > prefixLength and string_sub(lowerName, 1, configuredLength) == lowerConfigured then
+      local nextChar = string_sub(lowerName, configuredLength + 1, configuredLength + 1)
+      if nextChar == "" or nextChar == " " or nextChar == "-" then
+        prefixEnabled = enabled == true
+        prefixName = configuredName
+        prefixLength = configuredLength
+      end
+    end
+  end
+
+  return prefixEnabled, prefixName
+end
+
 -- Enables or disables monitoring for a specific channel
 function DBB2.api.SetChannelMonitored(channelName, enabled)
   if not channelName then return end
@@ -209,6 +242,12 @@ function DBB2.api.SetChannelMonitored(channelName, enabled)
     DBB2.api.AddWhitelistedChannel(channelName)
   else
     DBB2.api.RemoveWhitelistedChannel(channelName)
+  end
+  if DBB2.api.ClearAllChatDuplicateHistory then
+    DBB2.api.ClearAllChatDuplicateHistory()
+  end
+  if DBB2.api.DebugUITransition then
+    DBB2.api.DebugUITransition("channel-monitoring-changed", "channel=" .. channelName .. " enabled=" .. tostring(enabled == true) .. " duplicateHistory=cleared")
   end
 end
 

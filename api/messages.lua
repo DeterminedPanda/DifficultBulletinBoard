@@ -97,6 +97,12 @@ end
 --              duplicate state, matched entry age in seconds, matched entry time
 function DBB2.api.IsDuplicateMessage(message, sender)
   if not message then return false end
+
+  local duplicateMode = DBB2_Config.duplicateFilterMode
+  if duplicateMode == nil then duplicateMode = 1 end
+  if duplicateMode == 0 or duplicateMode == false then
+    return false  -- Duplicate filtering disabled
+  end
   
   local spamSeconds = DBB2_Config.spamFilterSeconds or 150
   if spamSeconds <= 0 then
@@ -220,8 +226,11 @@ function DBB2.api.RemovePreviousMessageFromSameSender(sender, newCategories, ign
           table_remove(DBB2.messages, i)
           if DBB2.debug.enabled then
             DBB2.api.DebugCount("messages.replaced", 1)
-            DBB2.api.DebugTrace(2, "message", "replaced-previous", "sender=" .. sender .. " oldText=\"" .. (msg.message or "") .. "\"")
-            DBB2.api.DebugLifecycleStage(diagnosticID, "replacement", "replacedMessage=true oldText=\"" .. (msg.message or "") .. "\"")
+            if diagnosticID then
+              DBB2.api.DebugLifecycleStage(diagnosticID, "replacement", "oldText=\"" .. (msg.message or "") .. "\"")
+            else
+              DBB2.api.DebugTrace(2, "message", "replaced-previous", "sender=" .. sender .. " oldText=\"" .. (msg.message or "") .. "\"")
+            end
           end
           return true
         end
@@ -256,7 +265,7 @@ function DBB2.api.AddMessage(message, sender, channel, msgType, diagnosticID)
       DBB2.api.DebugPipelineStage(diagnosticID, "diagnostic-overhead", diagnosticOverhead, "", table_getn(DBB2.messages))
       -- DebugFinishDecision emits the single, timed terminal trace below.
       DBB2.api.DebugLifecycleTerminal(diagnosticID, outcome, details, true)
-      DBB2.api.DebugFinishDecision(debugStart, outcome, details, debugStartingMessageCount)
+      DBB2.api.DebugFinishDecision(debugStart, outcome, details, debugStartingMessageCount, diagnosticID)
     end
   end
 
@@ -266,13 +275,6 @@ function DBB2.api.AddMessage(message, sender, channel, msgType, diagnosticID)
     return
   end
 
-  -- Keep debug-only detail fragments safe to concatenate when debugging is off.
-  -- Finish() is a no-op in that case, but Lua still evaluates its arguments.
-  local context = ""
-  if debugging then
-    context = "sender=" .. (sender or "Unknown") .. " channel=" .. (channel or "") .. " type=" .. (msgType or "") .. " text=\"" .. message .. "\""
-  end
-  
   -- Clean up expired messages first
   local stageStart = debugging and DBB2.api.DebugClock() or nil
   DBB2.api.RemoveExpiredMessages()
@@ -287,7 +289,7 @@ function DBB2.api.AddMessage(message, sender, channel, msgType, diagnosticID)
     if debugging then
       local detailText = blacklistDetails
       if type(detailText) == "table" then detailText = table.concat(detailText, ",") end
-      Finish("rejected-blacklist", context .. " reason=" .. (blacklistReason or "unknown") .. " match=" .. tostring(detailText or ""))
+      Finish("rejected-blacklist", "reason=" .. (blacklistReason or "unknown") .. " match=" .. tostring(detailText or ""))
     end
     return
   end
@@ -324,15 +326,26 @@ function DBB2.api.AddMessage(message, sender, channel, msgType, diagnosticID)
 
   local categoryDetail = ""
   if debugging then
-    categoryDetail = " full(groups=" .. table.concat(fullCategories.groups, ",") ..
-                     ";professions=" .. table.concat(fullCategories.professions, ",") ..
-                     ";hardcore=" .. table.concat(fullCategories.hardcore, ",") .. ")" ..
-                     " base(groups=" .. table.concat(baseCategories.groups, ",") ..
-                     ";professions=" .. table.concat(baseCategories.professions, ",") ..
-                     ";hardcore=" .. table.concat(baseCategories.hardcore, ",") .. ")" ..
-                     " fullEvidence=" .. DBB2.api.DebugFormatCategoryEvidence(fullEvidence) ..
-                     " baseEvidence=" .. DBB2.api.DebugFormatCategoryEvidence(baseEvidence)
-    DBB2.api.DebugLifecycleStage(diagnosticID, "category-matching", categoryDetail)
+    local fullCategorySummary = "groups=" .. table.concat(fullCategories.groups, ",") ..
+                                ";professions=" .. table.concat(fullCategories.professions, ",") ..
+                                ";hardcore=" .. table.concat(fullCategories.hardcore, ",")
+    local baseCategorySummary = "groups=" .. table.concat(baseCategories.groups, ",") ..
+                                ";professions=" .. table.concat(baseCategories.professions, ",") ..
+                                ";hardcore=" .. table.concat(baseCategories.hardcore, ",")
+    local fullEvidenceSummary = DBB2.api.DebugFormatCategoryEvidence(fullEvidence)
+    local baseEvidenceSummary = DBB2.api.DebugFormatCategoryEvidence(baseEvidence)
+    if fullCategorySummary == baseCategorySummary and fullEvidenceSummary == baseEvidenceSummary then
+      categoryDetail = "categories(" .. fullCategorySummary .. ")"
+      if fullEvidenceSummary ~= "-" then categoryDetail = categoryDetail .. " evidence=" .. fullEvidenceSummary end
+    else
+      categoryDetail = "full(" .. fullCategorySummary .. ") base(" .. baseCategorySummary .. ")" ..
+                       " fullEvidence=" .. fullEvidenceSummary .. " baseEvidence=" .. baseEvidenceSummary
+    end
+    DBB2.api.DebugSetLifecycleCategorySummary(diagnosticID, categoryDetail)
+    -- Empty scans add no evidence beyond the terminal rejection reason.
+    if matchesAnyCategory or matchesBaseCategory or fullEvidenceSummary ~= "-" or baseEvidenceSummary ~= "-" then
+      DBB2.api.DebugLifecycleStage(diagnosticID, "category-matching", categoryDetail)
+    end
   end
   
   -- CRITICAL: System messages (like /who results) should ONLY be stored if they match
@@ -341,7 +354,7 @@ function DBB2.api.AddMessage(message, sender, channel, msgType, diagnosticID)
   if msgType == "CHAT_MSG_SYSTEM" then
     local matchesHardcore = table_getn(baseCategories.hardcore) > 0
     if not matchesHardcore then
-      Finish("rejected-system", context .. " reason=system messages require a Hardcore category" .. categoryDetail)
+      Finish("rejected-system", "reason=system messages require a Hardcore category")
       return  -- System message doesn't match hardcore, ignore it
     end
   end
@@ -351,13 +364,13 @@ function DBB2.api.AddMessage(message, sender, channel, msgType, diagnosticID)
   local unsortedType = nil
   if not matchesBaseCategory then
     if not DBB2_Config.showUnsortedMessagesInLogs then
-      Finish("rejected-no-category", context .. " reason=no known category and unsorted logging disabled" .. categoryDetail)
+      Finish("rejected-no-category", "reason=no known category and unsorted logging disabled")
       return
     end
 
     unsortedType = DBB2.api.MatchUnsortedFilterTags(message)
     if not unsortedType then
-      Finish("rejected-no-category", context .. " reason=no known category or unsorted filter-tag match" .. categoryDetail)
+      Finish("rejected-no-category", "reason=no known category or unsorted filter-tag match")
       return
     end
   end
@@ -366,9 +379,11 @@ function DBB2.api.AddMessage(message, sender, channel, msgType, diagnosticID)
   local isDuplicate, duplicateAge = DBB2.api.IsDuplicateMessage(message, sender)
   if debugging then DBB2.api.DebugPipelineStage(diagnosticID, "duplicate-search", DBB2.api.DebugClock() - stageStart, "", table_getn(DBB2.messages)) end
   if isDuplicate then
-    Finish("rejected-duplicate", context .. " spamWindow=" .. (DBB2_Config.spamFilterSeconds or 150) .. "s" ..
+    if debugging then DBB2.api.DebugCount("duplicates.storageRejected", 1) end
+    Finish("rejected-duplicate", "spamWindow=" .. (DBB2_Config.spamFilterSeconds or 150) .. "s" ..
       " existingEntryAge=" .. tostring(duplicateAge or "unknown") .. "s" ..
-      " policy=hidden-chat-retains-existing-entry" .. categoryDetail)
+      " duplicateMode=" .. tostring(DBB2_Config.duplicateFilterMode or 1) ..
+      " policy=retain-existing-entry")
     return
   end
   
@@ -383,7 +398,7 @@ function DBB2.api.AddMessage(message, sender, channel, msgType, diagnosticID)
     -- If the message no longer passes the active filter tag gate, stop after clearing
     -- any stale older entry. We do not store/show the new line in the GUI.
     if not matchesAnyCategory then
-      Finish("rejected-filter-tags", context .. " reason=base category matched but active filter tags did not; stale entry cleared if present" .. categoryDetail)
+      Finish("rejected-filter-tags", "reason=base category matched but active filter tags did not; stale entry cleared if present")
       return
     end
 
@@ -439,9 +454,9 @@ function DBB2.api.AddMessage(message, sender, channel, msgType, diagnosticID)
   end
   if debugging then
     if unsortedType then
-      Finish("stored-unsorted", context .. " unsortedType=" .. unsortedType .. categoryDetail)
+      Finish("stored-unsorted", "unsortedType=" .. unsortedType)
     else
-      Finish("stored-categorized", context .. categoryDetail)
+      Finish("stored-categorized", "")
     end
   end
 end

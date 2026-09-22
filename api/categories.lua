@@ -912,6 +912,9 @@ function DBB2.api.GetCategorizedMessages(categoryType)
   
   -- Helper to check if message is duplicate within a category's message list
   local function isDuplicateInCategory(catMessages, msg)
+    local duplicateMode = DBB2_Config.duplicateFilterMode
+    if duplicateMode == nil then duplicateMode = 1 end
+    if duplicateMode == 0 or duplicateMode == false then return false end
     if spamSeconds <= 0 then return false end
     
     local lowerMsg = string_lower(DBB2.api.StripHyperlinks(msg.message or ""))

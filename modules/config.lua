@@ -86,6 +86,7 @@ DBB2:RegisterModule("config", function()
     DBB2_Config.backgroundColor = {r = 0.08, g = 0.08, b = 0.10, a = 0.85}
     DBB2_Config.highlightColor = {r = 0.667, g = 0.655, b = 0.8, a = 1}
     DBB2_Config.spamFilterSeconds = 150
+    DBB2_Config.duplicateFilterMode = 1
     DBB2_Config.messageExpireMinutes = 15
     DBB2_Config.hideFromChat = 0
     DBB2_Config.maxMessagesPerCategory = 5
@@ -267,8 +268,19 @@ DBB2:RegisterModule("config", function()
       onChange = function()
         if DBB2.gui and DBB2.gui.UpdateMessages then DBB2.gui:UpdateMessages() end
       end },
-    { type = "slider", key = "spamFilterSeconds", label = "Duplicate Filter (seconds)", min = 0, max = 300, step = 10,
-      tooltip = {{"Duplicate Filter", "highlight"}, "Ignore repeated messages within the selected time.", {"0 = disabled", "gray"}} },
+    { type = "slider", key = "duplicateFilterMode", label = "Duplicate Filter", min = 0, max = 2, step = 1,
+      valueLabels = {[0] = "Off", [1] = "Matches", [2] = "All Chat"},
+      tooltip = {{"Duplicate Filter", "highlight"}, "Off: Let repeated messages refresh normally.", "Matches: Filter repeats handled by the bulletin board.", "All Chat: Also hide identical same-sender repeats from sources checked under Available Channels."},
+      onChange = function(mode)
+        if DBB2.api.ClearAllChatDuplicateHistory then DBB2.api.ClearAllChatDuplicateHistory() end
+        DBB2.api.DebugUITransition("duplicate-filter-mode-changed", "mode=" .. tostring(mode) .. " spamWindow=" .. tostring(DBB2_Config.spamFilterSeconds or 150))
+      end },
+    { type = "slider", key = "spamFilterSeconds", label = "Duplicate Window (seconds)", min = 10, max = 300, step = 10,
+      tooltip = {{"Duplicate Window", "highlight"}, "Ignore repeated messages received within this many seconds."},
+      onChange = function(seconds)
+        if DBB2.api.ClearAllChatDuplicateHistory then DBB2.api.ClearAllChatDuplicateHistory() end
+        DBB2.api.DebugUITransition("duplicate-filter-window-changed", "seconds=" .. tostring(seconds) .. " mode=" .. tostring(DBB2_Config.duplicateFilterMode or 0))
+      end },
     { type = "slider", key = "messageExpireMinutes", label = "Auto-Remove (minutes)", min = 0, max = 30, step = 1,
       tooltip = {{"Auto-Remove", "highlight"}, "Automatically remove old messages after a set time.", {"0 = disabled", "gray"}} },
     { type = "slider", key = "hideFromChat", label = "Hide from Chat", min = 0, max = 2, step = 1,
