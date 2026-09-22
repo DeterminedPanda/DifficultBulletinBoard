@@ -61,7 +61,7 @@ DBB2.env.autoJoinChannels = {"World", "LookingForGroup"}
 -- Default blacklist keywords (used by InitBlacklist and reset functions)
 -- These patterns are used to filter out common spam/recruitment messages
 -- Supports wildcards: * matches any characters
-DBB2.env.defaultBlacklistKeywords = {"recruit*", "recrut*", "<*>", "\\[???\\]", "\\[??\\]"}
+DBB2.env.defaultBlacklistKeywords = {"recruit*", "recrut*", "<*>", "\\[???\\]", "\\[??\\]", "\\{???\\}", "\\{??\\}"}
 
 
 -- =====================

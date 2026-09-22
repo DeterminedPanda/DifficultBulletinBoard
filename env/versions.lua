@@ -20,7 +20,7 @@ DBB2.versions = {
   
   -- Blacklist keywords
   -- Increment when: Adding/removing default blacklist patterns
-  BLACKLIST = 5,
+  BLACKLIST = 6,
   
   -- Monitored channels
   -- Increment when: Changing default channel selections
