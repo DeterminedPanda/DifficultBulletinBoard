@@ -26,6 +26,8 @@ DBB2.env.patternDescriptions = {
   ["<*>"] = "<Guild Name>",
   ["\\[??\\]"] = "[pl], [it]",
   ["\\[???\\]"] = "[pol], [ita]",
+  ["\\{??\\}"] = "{pl}, {it}",
+  ["\\{???\\}"] = "{pol}, {ita}",
   ["recruit*"] = "recruit, recruiting",
   ["recrut*"] = "recrut, recrute"
 }
