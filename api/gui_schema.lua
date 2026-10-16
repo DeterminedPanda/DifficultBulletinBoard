@@ -131,6 +131,15 @@ end
 -- @param row (Frame) The message row frame
 -- @param availableWidth (number) Available pixel width
 function DBB2.schema.TruncateMessage(row, availableWidth)
+  -- PERF: the binary search below calls SetText + GetStringWidth ~8 times per
+  -- row. Rows are redrawn often with the same content, so skip the work when
+  -- this row already shows the same text at the same width.
+  if row._truncMsg == row._fullMessage and row._truncWidth == availableWidth then
+    row._isTruncated = row._truncResult
+    return
+  end
+  row._truncMsg = row._fullMessage
+  row._truncWidth = availableWidth
   row.message:SetWidth(availableWidth)
   row.messageBtn:SetWidth(availableWidth)
   row.message:SetText(row._fullMessage)
@@ -155,6 +164,7 @@ function DBB2.schema.TruncateMessage(row, availableWidth)
     row.message:SetText(truncated .. "\226\128\166")
     row._isTruncated = true
   end
+  row._truncResult = row._isTruncated
 end
 
 -- =====================
@@ -430,6 +440,22 @@ function DBB2.schema.CreateMessageRow(name, parent)
     
     self.time:SetText(timeStr or "")
     
+    -- PERF: re-anchoring is only needed when the display mode changes
+    if self._anchorMode == DBB2_Config.timeDisplayMode then
+      local availableWidth = S.CalcMessageWidth(self.time)
+      if availableWidth > 20 then
+        S.TruncateMessage(self, availableWidth)
+        self._needsWidthRecalc = false
+      else
+        self._truncMsg = nil
+        self.message:SetText(self._fullMessage)
+        self._needsWidthRecalc = true
+      end
+      return
+    end
+    self._anchorMode = DBB2_Config.timeDisplayMode
+    self._truncMsg = nil
+    
     -- Position timestamp based on display mode
     self.time:ClearAllPoints()
     self.messageBtn:ClearAllPoints()
@@ -459,6 +485,7 @@ function DBB2.schema.CreateMessageRow(name, parent)
       S.TruncateMessage(self, availableWidth)
       self._needsWidthRecalc = false
     else
+      self._truncMsg = nil
       self.message:SetText(self._fullMessage)
       self._needsWidthRecalc = true
     end
@@ -506,11 +533,15 @@ function DBB2.schema.CreateMessageRow(name, parent)
     
     local parent = this:GetParent()
     
-    -- Check if row is actually visible in scroll viewport
-    local isVisibleInViewport = IsRowVisibleInScrollFrame(parent)
-    local isOver = MouseIsOver(this) and isVisibleInViewport
+    -- PERF/BUG: MouseIsOver returns 1/nil while isHovered starts as false, so
+    -- the old "nil == false" comparison never matched and the "not hovered"
+    -- branch (SetText/SetTextColor) ran EVERY FRAME for EVERY visible row.
+    -- Coerce to booleans, and only walk the scroll-frame geometry when the
+    -- cursor is actually over the button.
+    local isOver = false
+    if MouseIsOver(this) and IsRowVisibleInScrollFrame(parent) then isOver = true end
     
-    if isOver == this.isHovered then return end
+    if isOver == (this.isHovered and true or false) then return end
     
     if isOver then
       this.isHovered = true
@@ -534,11 +565,15 @@ function DBB2.schema.CreateMessageRow(name, parent)
     
     local parent = this:GetParent()
     
-    -- Check if row is actually visible in scroll viewport
-    local isVisibleInViewport = IsRowVisibleInScrollFrame(parent)
-    local isOver = MouseIsOver(this) and isVisibleInViewport
+    -- PERF/BUG: MouseIsOver returns 1/nil while isHovered starts as false, so
+    -- the old "nil == false" comparison never matched and the "not hovered"
+    -- branch (SetText/SetTextColor) ran EVERY FRAME for EVERY visible row.
+    -- Coerce to booleans, and only walk the scroll-frame geometry when the
+    -- cursor is actually over the button.
+    local isOver = false
+    if MouseIsOver(this) and IsRowVisibleInScrollFrame(parent) then isOver = true end
     
-    if isOver == this.isHovered then return end
+    if isOver == (this.isHovered and true or false) then return end
     
     if isOver then
       this.isHovered = true

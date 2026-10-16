@@ -369,6 +369,7 @@ DBB2:RegisterModule("gui", function()
   -- Continuously update scroll child dimensions
   local lastChildHeight = 0
   local lastScrollWidth = 0
+  local lastScrollHeight = 0
   DBB2.gui.scroll:SetScript("OnUpdate", function()
     -- Check for deferred scroll update
     if this._needsScrollUpdate then
@@ -398,24 +399,26 @@ DBB2:RegisterModule("gui", function()
       DBB2.gui._resizePending = true
     end
     
-    -- Calculate content height based on visible rows
-    local visibleRows = 0
-    for i = 1, MAX_ROWS do
-      if DBB2.gui.messageRows[i]:IsShown() then
-        visibleRows = visibleRows + 1
-      end
-    end
+    -- Content height from the row count recorded by UpdateMessages
+    -- (PERF: previously 50 IsShown() calls + a full UpdateScrollState every frame)
+    local visibleRows = DBB2.gui._visibleRowCount or 0
     
     local contentHeight = visibleRows * S.ROW_HEIGHT
     local newChildHeight = contentHeight
     
+    local changed = false
     if newChildHeight ~= lastChildHeight then
       DBB2.gui.scrollchild:SetHeight(newChildHeight)
       DBB2.gui.scrollchild:SetWidth(scrollWidth)
       lastChildHeight = newChildHeight
+      changed = true
+    end
+    if scrollHeight ~= lastScrollHeight then
+      lastScrollHeight = scrollHeight
+      changed = true
     end
     
-    this.UpdateScrollState()
+    if changed then this.UpdateScrollState() end
   end)
   
   -- Function to update messages
@@ -515,6 +518,7 @@ DBB2:RegisterModule("gui", function()
         end
       end
     end
+    DBB2.gui._visibleRowCount = renderedRows
     return renderedRows
   end
   

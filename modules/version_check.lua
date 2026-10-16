@@ -90,18 +90,9 @@ local function InitVersionCheck()
   end)
   
   -- Schedule version broadcast and update check 10 seconds after login
-  local delayFrame = CreateFrame("Frame")
-  delayFrame.elapsed = 0
-  delayFrame.waiting = true
-  delayFrame:SetScript("OnUpdate", function()
-    if not this.waiting then return end
-    this.elapsed = this.elapsed + arg1
-    if this.elapsed >= 10 then
-      CheckForUpdateNotification()
-      BroadcastVersion()
-      this.waiting = false
-      this:Hide()
-    end
+  DBB2.After(10, function()
+    CheckForUpdateNotification()
+    BroadcastVersion()
   end)
 end
 

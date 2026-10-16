@@ -6,6 +6,9 @@
 --               api/categories_api.lua (CategorizeMessage)
 -- This file must be loaded AFTER blacklist.lua and notifications.lua
 
+-- Returns the second value of a multi-return call
+local function select2(_, b) return b end
+
 -- Localize frequently used globals for performance
 local string_lower = string.lower
 local string_gsub = string.gsub
@@ -17,6 +20,56 @@ local ipairs = ipairs
 
 -- Constants
 local MAX_MESSAGES = 100
+
+-- =====================
+-- GUI REFRESH COALESCING
+-- =====================
+-- PERF: Previously every accepted chat line (and every expiry sweep) rebuilt the
+-- visible tab synchronously: the Logs tab re-truncates up to 50 rows with
+-- SetText/GetStringWidth binary searches, and the Groups tab re-categorizes all
+-- stored messages. In a busy World channel that happened many times per second.
+-- Now we mark the GUI dirty and redraw at most once per REFRESH_DELAY seconds.
+local REFRESH_DELAY = 0.2
+local refreshScheduled = false
+
+local function RefreshVisibleGui()
+  refreshScheduled = false
+  if not (DBB2.gui and DBB2.gui:IsShown()) then return end
+  local debugging = DBB2.debug.enabled and not DBB2.debug.paused
+  local started = debugging and DBB2.api.DebugClock() or nil
+  local activeTab = DBB2.gui.tabs and DBB2.gui.tabs.activeTab
+  if activeTab == "Logs" or not activeTab then
+    if DBB2.gui.UpdateMessages then DBB2.gui:UpdateMessages() end
+  elseif activeTab == "Groups" or activeTab == "Professions" or activeTab == "Hardcore" then
+    local panel = DBB2.gui.tabs.panels[activeTab]
+    if panel and panel.UpdateCategories then panel.UpdateCategories() end
+  end
+  if debugging then DBB2.api.DebugPerf("gui.coalescedRefresh", DBB2.api.DebugClock() - started) end
+end
+
+-- [ RequestGuiRefresh ]
+-- Schedules one redraw of the active tab (no-op when the window is hidden;
+-- OnShow always performs a full refresh).
+function DBB2.api.RequestGuiRefresh()
+  if refreshScheduled then return end
+  if not (DBB2.gui and DBB2.gui:IsShown()) then return end
+  refreshScheduled = true
+  DBB2.After(REFRESH_DELAY, RefreshVisibleGui)
+end
+
+-- [ GetMessageKeys ]
+-- Returns the normalized (hyperlink-stripped, lowercased) message text and the
+-- lowercased sender for a stored message record, computing them once and
+-- caching them on the record. Used by every duplicate check.
+function DBB2.api.GetMessageKeys(msg)
+  local normMsg = msg._normMsg
+  if not normMsg then
+    normMsg = string_lower(DBB2.api.StripHyperlinks(msg.message or ""))
+    msg._normMsg = normMsg
+    msg._normSender = string_lower(msg.sender or "")
+  end
+  return normMsg, msg._normSender
+end
 
 -- =====================
 -- MESSAGE API
@@ -33,6 +86,14 @@ function DBB2.api.RemoveExpiredMessages()
   
   local expireSeconds = expireMinutes * 60
   local currentTime = time()
+
+  -- PERF: messages are appended in time order, so if the oldest one has not
+  -- expired nothing has. This runs on every incoming chat line.
+  local oldest = DBB2.messages[1]
+  if not oldest or (currentTime - (oldest.time or 0)) <= expireSeconds then
+    return
+  end
+
   local removed = false
   local removedCount = 0
   
@@ -48,22 +109,9 @@ function DBB2.api.RemoveExpiredMessages()
     end
   end
   
-  -- Update GUI if messages were removed and GUI is visible
-  if removed and DBB2.gui and DBB2.gui:IsShown() then
-    if DBB2.gui.UpdateMessages then
-      DBB2.gui:UpdateMessages()
-    end
-    
-    -- Update active categorized tab if showing
-    if DBB2.gui.tabs and DBB2.gui.tabs.activeTab then
-      local activeTab = DBB2.gui.tabs.activeTab
-      if activeTab == "Groups" or activeTab == "Professions" or activeTab == "Hardcore" then
-        local panel = DBB2.gui.tabs.panels[activeTab]
-        if panel and panel.UpdateCategories then
-          panel.UpdateCategories()
-        end
-      end
-    end
+  -- Update GUI if messages were removed and GUI is visible (coalesced)
+  if removed then
+    DBB2.api.RequestGuiRefresh()
   end
 
   if removedCount > 0 then
@@ -126,8 +174,7 @@ function DBB2.api.IsDuplicateMessage(message, sender)
     end
     
     -- Check if same sender and same message (strip hyperlinks for comparison)
-    local storedMsg = string_lower(DBB2.api.StripHyperlinks(msg.message or ""))
-    local storedSender = string_lower(msg.sender or "")
+    local storedMsg, storedSender = DBB2.api.GetMessageKeys(msg)
     
     if storedSender == lowerSender and storedMsg == lowerMsg then
       return true, timeDiff, msg.time
@@ -143,6 +190,7 @@ end
 -- directly instead of treating the entry as an ordinary duplicate.
 function DBB2.api.IsStoredUnsortedMessage(message, sender)
   if not message then return false end
+  if not DBB2_Config.showUnsortedMessagesInLogs and not DBB2._hasUnsorted then return false end
 
   local lowerMsg = string_lower(DBB2.api.StripHyperlinks(message))
   local lowerSender = string_lower(sender or "")
@@ -150,8 +198,7 @@ function DBB2.api.IsStoredUnsortedMessage(message, sender)
   for i = table_getn(DBB2.messages), 1, -1 do
     local msg = DBB2.messages[i]
     if msg and msg.isUnsorted then
-      local storedMsg = string_lower(DBB2.api.StripHyperlinks(msg.message or ""))
-      local storedSender = string_lower(msg.sender or "")
+      local storedMsg, storedSender = DBB2.api.GetMessageKeys(msg)
       if storedSender == lowerSender and storedMsg == lowerMsg then
         return true
       end
@@ -197,7 +244,7 @@ function DBB2.api.RemovePreviousMessageFromSameSender(sender, newCategories, ign
   -- Search for previous messages from same sender with overlapping categories
   for i = table_getn(DBB2.messages), 1, -1 do
     local msg = DBB2.messages[i]
-    if msg and string_lower(msg.sender or "") == lowerSender then
+    if msg and select2(DBB2.api.GetMessageKeys(msg)) == lowerSender then
       -- Check if this old message matches any of the same categories
       local oldCategories = DBB2.api.CategorizeMessage(msg.message, true, ignoreFilterTags)
       if oldCategories and not oldCategories.isHardcore then
@@ -419,6 +466,7 @@ function DBB2.api.AddMessage(message, sender, channel, msgType, diagnosticID)
     isUnsorted = unsortedType ~= nil,
     unsortedType = unsortedType
   })
+  if unsortedType then DBB2._hasUnsorted = true end
   
   -- Keep only last MAX_MESSAGES messages
   if table_getn(DBB2.messages) > MAX_MESSAGES then
@@ -426,32 +474,8 @@ function DBB2.api.AddMessage(message, sender, channel, msgType, diagnosticID)
     if debugging then DBB2.api.DebugCount("messages.capacityEvicted", 1) end
   end
   
-  local logsRenderedRows = 0
-  local categorizedRenderedRows = 0
-  -- Update GUI if visible
-  if DBB2.gui and DBB2.gui:IsShown() then
-    -- Update logs tab
-    if DBB2.gui.UpdateMessages then
-      stageStart = debugging and DBB2.api.DebugClock() or nil
-      local renderedRows = DBB2.gui:UpdateMessages()
-      logsRenderedRows = renderedRows or 0
-      if debugging then DBB2.api.DebugPipelineStage(diagnosticID, "logs-tab-redraw", DBB2.api.DebugClock() - stageStart, "", table_getn(DBB2.messages), renderedRows or 0) end
-    end
-    
-    -- Update active categorized tab if showing
-    if DBB2.gui.tabs and DBB2.gui.tabs.activeTab then
-      local activeTab = DBB2.gui.tabs.activeTab
-      if activeTab == "Groups" or activeTab == "Professions" or activeTab == "Hardcore" then
-        local panel = DBB2.gui.tabs.panels[activeTab]
-        if panel and panel.UpdateCategories then
-          stageStart = debugging and DBB2.api.DebugClock() or nil
-          local renderedRows = panel.UpdateCategories()
-          categorizedRenderedRows = renderedRows or 0
-          if debugging then DBB2.api.DebugPipelineStage(diagnosticID, "categorized-tab-redraw", DBB2.api.DebugClock() - stageStart, "tab=" .. activeTab, table_getn(DBB2.messages), renderedRows or 0) end
-        end
-      end
-    end
-  end
+  -- Update GUI if visible (coalesced; see RequestGuiRefresh)
+  DBB2.api.RequestGuiRefresh()
   if debugging then
     if unsortedType then
       Finish("stored-unsorted", "unsortedType=" .. unsortedType)
@@ -480,6 +504,7 @@ end
 -- return:      [boolean]       true (always succeeds)
 function DBB2.api.ClearMessages()
   DBB2.messages = {}
+  DBB2._hasUnsorted = nil
   
   -- Update GUI if visible
   if DBB2.gui and DBB2.gui:IsShown() and DBB2.gui.UpdateMessages then

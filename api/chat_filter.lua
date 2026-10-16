@@ -564,6 +564,37 @@ end
 -- Using a table since we can't add properties to functions in Lua 5.0
 DBB2._hookedChatFrames = DBB2._hookedChatFrames or {}
 
+-- PERF: Only these live chat events can ever be hidden. Every other CHAT_MSG_*
+-- event (combat log, spell, loot, system, emote, raid ...) used to run three
+-- gsubs, sender extraction and the whole ShouldHideFromChat pipeline before
+-- being rejected as "source not monitored". In a raid that is hundreds of
+-- combat-log lines per second, each allocating several strings.
+local FILTERABLE_EVENTS = {
+  CHAT_MSG_CHANNEL = true,
+  CHAT_MSG_GUILD = true,
+  CHAT_MSG_SAY = true,
+  CHAT_MSG_YELL = true,
+  CHAT_MSG_PARTY = true,
+  CHAT_MSG_WHISPER = true,
+  CHAT_MSG_HARDCORE = true,
+}
+local skipEventCache = {}
+local function IsSkippableEvent(eventName)
+  if not eventName then return false end
+  local skip = skipEventCache[eventName]
+  if skip == nil then
+    skip = (not FILTERABLE_EVENTS[eventName]) and string_find(eventName, "^CHAT_MSG_") ~= nil
+    skipEventCache[eventName] = skip
+  end
+  return skip
+end
+
+-- PERF: One chat delivery is rendered into every chat window that shows that
+-- channel. Reuse the decision for identical lines within the same frame
+-- instead of recomputing it per window (only when diagnostics are off, so the
+-- debug console still sees each render).
+local lastDecisionMsg, lastDecisionEvent, lastDecisionTime, lastDecisionHide = nil, nil, nil, nil
+
 -- [ SetupChatFilter ]
 -- Hooks into chat frames to filter captured messages
 -- Uses tracking table to prevent double-hooking on addon reload
@@ -604,6 +635,16 @@ function DBB2.api.SetupChatFilter()
           local hideBlacklistedEnabled = DBB2_Config and DBB2_Config.blacklist and DBB2_Config.blacklist.hideFromChat
           local hideDuplicateEnabled = DBB2_Config and DBB2_Config.duplicateFilterMode == 2
           
+          local debuggingNow = DBB2.debug.enabled and not DBB2.debug.paused
+          if msg and not debuggingNow and IsSkippableEvent(event) then
+            return origToCall(self, msg, r, g, b, id)
+          end
+
+          if msg and not debuggingNow and lastDecisionMsg == msg and lastDecisionEvent == event and lastDecisionTime == GetTime() then
+            if lastDecisionHide then return end
+            return origToCall(self, msg, r, g, b, id)
+          end
+
           if msg and (hideFromChatEnabled or hideBlacklistedEnabled or hideDuplicateEnabled) then
             -- Normalize the formatted chat line into the same plain message body
             -- used by CHAT_MSG_* events before applying blacklist/category checks.
@@ -629,6 +670,10 @@ function DBB2.api.SetupChatFilter()
             local started = nil
             if debugging then started = DBB2.api.DebugClock() end
             local success, shouldHide, hideReason, hideDetails = pcall(DBB2.api.ShouldHideFromChat, cleanMsg, sender, msgContent, nil, nil, frameIndex, false)
+            if not debugging then
+              lastDecisionMsg, lastDecisionEvent, lastDecisionTime = msg, event, GetTime()
+              lastDecisionHide = success and shouldHide and true or false
+            end
             local elapsed = nil
             if debugging then
               elapsed = DBB2.api.DebugClock() - started
