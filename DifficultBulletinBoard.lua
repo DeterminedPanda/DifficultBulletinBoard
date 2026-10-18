@@ -436,7 +436,9 @@ DBB2:SetScript("OnEvent", function()
     -- Rebuild channel config panel if it exists (updates states)
     if DBB2.gui and DBB2.gui.configTabs and DBB2.gui.configTabs.panels then
       local channelsPanel = DBB2.gui.configTabs.panels["Channels"]
-      if channelsPanel and channelsPanel.RebuildChannelCheckboxes then
+      if channelsPanel and channelsPanel.RequestChannelRebuild then
+        channelsPanel.RequestChannelRebuild()  -- [PerfFix] deferred + coalesced
+      elseif channelsPanel and channelsPanel.RebuildChannelCheckboxes then
         channelsPanel.RebuildChannelCheckboxes()
       end
     end
@@ -566,7 +568,9 @@ DBB2:SetScript("OnEvent", function()
     -- arg9 = channel name
     if DBB2.gui and DBB2.gui.configTabs and DBB2.gui.configTabs.panels then
       local channelsPanel = DBB2.gui.configTabs.panels["Channels"]
-      if channelsPanel and channelsPanel.RebuildChannelCheckboxes then
+      if channelsPanel and channelsPanel.RequestChannelRebuild then
+        channelsPanel.RequestChannelRebuild()  -- [PerfFix] deferred + coalesced
+      elseif channelsPanel and channelsPanel.RebuildChannelCheckboxes then
         channelsPanel.RebuildChannelCheckboxes()
       end
     end

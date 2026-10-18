@@ -1,0 +1,921 @@
+diff --git a/DifficultBulletinBoard.lua b/DifficultBulletinBoard.lua
+index 063eaad..786dd58 100644
+--- a/DifficultBulletinBoard.lua
++++ b/DifficultBulletinBoard.lua
+@@ -15,6 +15,37 @@ DBB2:RegisterEvent("CHAT_MSG_CHANNEL_NOTICE")  -- Channel join/leave notificatio
+ DBB2:RegisterEvent("PARTY_MEMBERS_CHANGED")  -- Party join/leave for notification clearing
+ DBB2:RegisterEvent("RAID_ROSTER_UPDATE")  -- Raid join/leave for notification clearing
+ 
++-- [ After ]
++-- Runs 'func' once after 'delay' seconds. Uses ClassicAPI's C_Timer when the
++-- DLL is loaded; otherwise falls back to a single shared OnUpdate frame that
++-- is hidden (and therefore costs nothing) whenever no timer is pending.
++local timerQueue = {}
++local timerFrame = CreateFrame("Frame")
++timerFrame:Hide()
++timerFrame:SetScript("OnUpdate", function()
++  local now = GetTime()
++  local i = 1
++  while timerQueue[i] do
++    local t = timerQueue[i]
++    if now >= t.at then
++      table.remove(timerQueue, i)
++      t.func()
++    else
++      i = i + 1
++    end
++  end
++  if not timerQueue[1] then this:Hide() end
++end)
++
++function DBB2.After(delay, func)
++  if C_Timer and C_Timer.After then
++    C_Timer.After(delay, func)
++    return
++  end
++  table.insert(timerQueue, { at = GetTime() + delay, func = func })
++  timerFrame:Show()
++end
++
+ -- Initialize saved variables
+ DBB2_Config = {}
+ 
+@@ -367,6 +398,9 @@ DBB2:SetScript("OnEvent", function()
+     DBB2.api.InitChannelConfig()
+ 
+     DEFAULT_CHAT_FRAME:AddMessage("|cff33ffccDifficult|cffffffffBulletinBoard |cff555555v" .. (GetAddOnMetadata("DifficultBulletinBoard", "Version") or "?") .. "|r loaded. Click minimap button to open.")
++    if not (C_Timer and C_Timer.After) then
++      DEFAULT_CHAT_FRAME:AddMessage("|cff33ffccDBB2|r: ClassicAPI not detected - running with built-in timer fallback.")
++    end
+   end
+   
+   if event == "PLAYER_ENTERING_WORLD" then
+@@ -411,17 +445,7 @@ DBB2:SetScript("OnEvent", function()
+     -- Use a small delay to ensure channel system is ready
+     if not DBB2._autoJoinScheduled then
+       DBB2._autoJoinScheduled = true
+-      -- Create a frame for the delayed call
+-      local delayFrame = CreateFrame("Frame")
+-      delayFrame.elapsed = 0
+-      delayFrame:SetScript("OnUpdate", function()
+-        this.elapsed = this.elapsed + arg1
+-        if this.elapsed >= 2 then  -- 2 second delay
+-          DBB2.api.AutoJoinRequiredChannels()
+-          this:SetScript("OnUpdate", nil)
+-          this:Hide()
+-        end
+-      end)
++      DBB2.After(2, DBB2.api.AutoJoinRequiredChannels)
+     end
+   end
+   
+diff --git a/api/categories.lua b/api/categories.lua
+index 38841b8..b09f893 100644
+--- a/api/categories.lua
++++ b/api/categories.lua
+@@ -29,6 +29,85 @@ local ipairs = ipairs
+ local pairs = pairs
+ local math_abs = math.abs
+ 
++-- =====================================================
++-- PERFORMANCE CACHES
++-- =====================================================
++-- CategorizeMessage is the hottest function in the addon: it is called for
++-- every incoming chat line (several times), by the chat-frame hook (once per
++-- chat window the line is rendered in) and for EVERY stored message on EVERY
++-- GUI redraw. Its result only depends on the message text, the two flags and
++-- the category/filter-tag configuration, so we memoize it.
++--
++-- The cache is invalidated (generation bump) by every API that mutates the
++-- category configuration, and additionally whenever the underlying config
++-- tables are replaced (e.g. ResetCategoriesToDefaults assigns new tables).
++local catCache = {}          -- [flagsKey][message] = result
++local catCacheSize = 0
++local CAT_CACHE_MAX = 600    -- ~100 stored messages + recent chat; cleared when exceeded
++local catCacheRefs = {}      -- identity of config tables the cache was built against
++
++local function ResetCategorizeCache()
++  catCache = {}
++  catCacheSize = 0
++end
++
++-- Public: call after any direct modification of DBB2_Config.categories / filterTags
++function DBB2.api.InvalidateCategoryCache()
++  ResetCategorizeCache()
++  -- Force tag precomputation to refresh as well
++  if DBB2_Config and DBB2_Config.categories then
++    for _, list in pairs(DBB2_Config.categories) do
++      if type(list) == "table" then
++        for _, cat in ipairs(list) do
++          cat._tagsLower = nil
++          cat._tagsLen = nil
++          cat._tagsWild = nil
++        end
++      end
++    end
++  end
++end
++
++-- Detects wholesale replacement of config tables (resets, profile loads).
++local function CheckCacheRefs()
++  local cats = DBB2_Config.categories
++  local ft = DBB2_Config.filterTags
++  local g, p, h = cats and cats.groups, cats and cats.professions, cats and cats.hardcore
++  local fg = ft and ft.groups
++  local fp = ft and ft.professions
++  if catCacheRefs.cats ~= cats or catCacheRefs.g ~= g or catCacheRefs.p ~= p or catCacheRefs.h ~= h
++     or catCacheRefs.fg ~= fg or catCacheRefs.fp ~= fp
++     or catCacheRefs.fgt ~= (fg and fg.tags) or catCacheRefs.fpt ~= (fp and fp.tags) then
++    catCacheRefs.cats, catCacheRefs.g, catCacheRefs.p, catCacheRefs.h = cats, g, p, h
++    catCacheRefs.fg, catCacheRefs.fp = fg, fp
++    catCacheRefs.fgt, catCacheRefs.fpt = fg and fg.tags, fp and fp.tags
++    ResetCategorizeCache()
++  end
++end
++
++-- One-entry memo for lowercasing: the same message is lowercased once per
++-- category (~55 categories) during a scan otherwise.
++local lastLowerIn, lastLowerOut = nil, nil
++local function LowerMsg(message)
++  if message ~= lastLowerIn then
++    lastLowerIn = message
++    lastLowerOut = string_lower(message)
++  end
++  return lastLowerOut
++end
++
++-- Precomputed info for filter tag strings (lowercase, length, wildcard flag).
++local filterTagInfo = {}
++local function GetFilterTagInfo(tag)
++  local info = filterTagInfo[tag]
++  if not info then
++    local lower = string_lower(tag)
++    info = { lower = lower, len = string_len(lower), wild = string_find(lower, "[%*%?%[%]%{%}\\]") and true or false }
++    filterTagInfo[tag] = info
++  end
++  return info
++end
++
+ -- =====================================================
+ -- CATEGORY COLLAPSE STATE API
+ -- =====================================================
+@@ -133,13 +212,10 @@ function DBB2.api.UpdateCategoryTags(categoryType, categoryName, newTags)
+   if cat then
+     cat.tags = newTags or {}
+     -- Pre-compute lowercase tags and their lengths for faster matching
+-    cat._tagsLower = {}
+-    cat._tagsLen = {}
+-    for i, tag in ipairs(cat.tags) do
+-      local lower = string_lower(tag)
+-      cat._tagsLower[i] = lower
+-      cat._tagsLen[i] = string_len(lower)
+-    end
++    cat._tagsLower = nil  -- recomputed lazily by EnsureTagsPrecomputed
++    cat._tagsLen = nil
++    cat._tagsWild = nil
++    ResetCategorizeCache()
+     DBB2.api.DebugUITransition("category-tags-changed", "type=" .. categoryType .. " category=" .. categoryName .. " tags=" .. table_concat(cat.tags, ","))
+     return true
+   end
+@@ -149,40 +225,33 @@ end
+ -- [ EnsureTagsPrecomputed ]
+ -- Ensures a category has pre-computed lowercase tags
+ -- Called internally before matching
++local function BuildTagCache(category)
++  local tagsLower, tagsLen, tagsWild = {}, {}, {}
++  local n = 0
++  for i, tag in ipairs(category.tags or {}) do
++    local lower = string_lower(tag)
++    tagsLower[i] = lower
++    tagsLen[i] = string_len(lower)
++    tagsWild[i] = string_find(lower, "[%*%?%[%]%{%}\\]") and true or false
++    n = i
++  end
++  category._tagsLower = tagsLower
++  category._tagsLen = tagsLen
++  category._tagsWild = tagsWild
++  category._tagsSrc = category.tags
++  category._tagsN = n
++end
++
+ local function EnsureTagsPrecomputed(category)
+-  -- Always recompute if _tagsLower doesn't exist
+-  if not category._tagsLower then
+-    category._tagsLower = {}
+-    category._tagsLen = {}
+-    for i, tag in ipairs(category.tags or {}) do
+-      local lower = string_lower(tag)
+-      category._tagsLower[i] = lower
+-      category._tagsLen[i] = string_len(lower)
+-    end
++  -- Rebuild if missing, if the tags table was replaced, or if its size changed.
++  if not category._tagsLower or not category._tagsWild or category._tagsSrc ~= category.tags then
++    BuildTagCache(category)
+     return
+   end
+-  
+-  -- Check if tags array length changed (recompute if so)
+-  local tagsCount = 0
+-  if category.tags then
+-    for _ in ipairs(category.tags) do
+-      tagsCount = tagsCount + 1
+-    end
+-  end
+-  
+-  local cachedCount = 0
+-  for _ in ipairs(category._tagsLower) do
+-    cachedCount = cachedCount + 1
+-  end
+-  
+-  if tagsCount ~= cachedCount then
+-    category._tagsLower = {}
+-    category._tagsLen = {}
+-    for i, tag in ipairs(category.tags or {}) do
+-      local lower = string_lower(tag)
+-      category._tagsLower[i] = lower
+-      category._tagsLen[i] = string_len(lower)
+-    end
++  local tags = category.tags
++  local n = category._tagsN
++  if (n > 0 and tags[n] == nil) or tags[n + 1] ~= nil then
++    BuildTagCache(category)
+   end
+ end
+ 
+@@ -198,6 +267,7 @@ function DBB2.api.SetCategorySelected(categoryType, categoryName, selected)
+   local cat = DBB2.api.GetCategoryByName(categoryType, categoryName)
+   if cat then
+     cat.selected = selected and true or false
++    ResetCategorizeCache()
+     DBB2.api.DebugUITransition("category-selection-changed", "type=" .. categoryType .. " category=" .. categoryName .. " selected=" .. tostring(cat.selected))
+     return true
+   end
+@@ -297,6 +367,7 @@ function DBB2.api.SetFilterTagsEnabled(categoryType, enabled)
+     DBB2_Config.filterTags[categoryType] = { enabled = false, tags = {} }
+   end
+   DBB2_Config.filterTags[categoryType].enabled = enabled and true or false
++  ResetCategorizeCache()
+   DBB2.api.DebugUITransition("filter-tags-enabled-changed", "type=" .. categoryType .. " enabled=" .. tostring(enabled and true or false))
+   return true
+ end
+@@ -317,6 +388,7 @@ function DBB2.api.UpdateFilterTags(categoryType, newTags)
+     DBB2_Config.filterTags[categoryType] = { enabled = false, tags = {} }
+   end
+   DBB2_Config.filterTags[categoryType].tags = newTags or {}
++  ResetCategorizeCache()
+   DBB2.api.DebugUITransition("filter-tags-changed", "type=" .. categoryType .. " tags=" .. table_concat(DBB2_Config.filterTags[categoryType].tags, ","))
+   return true
+ end
+@@ -329,16 +401,17 @@ local function MatchFilterTagList(message, tags, evidence)
+     return false
+   end
+ 
+-  local lowerMsg = string_lower(message or "")
++  local lowerMsg = LowerMsg(message or "")
+   if lowerMsg == "" then return false end
+ 
+   local msgLen = string_len(lowerMsg)
+ 
+   for _, tag in ipairs(tags) do
+-    local lowerTag = string_lower(tag)
+-    local tagLen = string_len(lowerTag)
++    local info = GetFilterTagInfo(tag)
++    local lowerTag = info.lower
++    local tagLen = info.len
+ 
+-    local isWildcard = string_find(lowerTag, "[%*%?%[%]%{%}\\]")
++    local isWildcard = info.wild
+ 
+     if isWildcard then
+       if DBB2.api.MatchWildcard(lowerMsg, lowerTag) then
+@@ -541,16 +614,11 @@ function DBB2.api.MatchMessageToCategory(message, category, ignoreSelected, cate
+   end
+   
+   -- Quick check: any tags at all?
+-  local hasAnyTags = false
+-  for _ in ipairs(category.tags) do
+-    hasAnyTags = true
+-    break
+-  end
+-  if not hasAnyTags then
++  if category.tags[1] == nil then
+     return false
+   end
+   
+-  local lowerMsg = string_lower(message or "")
++  local lowerMsg = LowerMsg(message or "")
+   if lowerMsg == "" then return false end
+   
+   -- Check filter tags first (if enabled for this category type)
+@@ -570,14 +638,15 @@ function DBB2.api.MatchMessageToCategory(message, category, ignoreSelected, cate
+   local msgLen = string_len(lowerMsg)
+   local tagsLower = category._tagsLower
+   local tagsLen = category._tagsLen
++  local tagsWild = category._tagsWild
+   local matched = false
+   
+   -- Use ipairs instead of table.getn for Lua 5.0 compatibility
+   for i, lowerTag in ipairs(tagsLower) do
+     local tagLen = tagsLen[i]
+ 
+-    -- Check if tag contains wildcard special characters
+-    local isWildcard = string_find(lowerTag, "[%*%?%[%]%{%}\\]")
++    -- Wildcard flag is precomputed per tag
++    local isWildcard = tagsWild[i]
+ 
+     if isWildcard then
+       -- Use wildcard matching for patterns
+@@ -837,7 +906,35 @@ end
+ --                                   hardcore = {string...},    -- Array of matched hardcore category names
+ --                                   isHardcore = boolean       -- true if any hardcore category matched
+ --                                 }
++-- NOTE: results are memoized and SHARED between callers. Treat the returned
++-- table as read-only (all callers in the addon only read it).
++local CategorizeMessageUncached
++
+ function DBB2.api.CategorizeMessage(message, ignoreSelected, ignoreFilterTags, matchEvidence)
++  if matchEvidence or not message or not DBB2_Config.categories then
++    return CategorizeMessageUncached(message, ignoreSelected, ignoreFilterTags, matchEvidence)
++  end
++  CheckCacheRefs()
++  local flags = (ignoreSelected and 2 or 0) + (ignoreFilterTags and 1 or 0)
++  local bucket = catCache[flags]
++  if not bucket then
++    bucket = {}
++    catCache[flags] = bucket
++  end
++  local result = bucket[message]
++  if result then return result end
++  result = CategorizeMessageUncached(message, ignoreSelected, ignoreFilterTags)
++  if catCacheSize >= CAT_CACHE_MAX then
++    ResetCategorizeCache()
++    bucket = {}
++    catCache[flags] = bucket
++  end
++  bucket[message] = result
++  catCacheSize = catCacheSize + 1
++  return result
++end
++
++CategorizeMessageUncached = function(message, ignoreSelected, ignoreFilterTags, matchEvidence)
+   -- Create fresh result table each call (safer than pooling)
+   local result = {
+     groups = {},
+@@ -917,15 +1014,13 @@ function DBB2.api.GetCategorizedMessages(categoryType)
+     if duplicateMode == 0 or duplicateMode == false then return false end
+     if spamSeconds <= 0 then return false end
+     
+-    local lowerMsg = string_lower(DBB2.api.StripHyperlinks(msg.message or ""))
+-    local lowerSender = string_lower(msg.sender or "")
++    local lowerMsg, lowerSender = DBB2.api.GetMessageKeys(msg)
+     local msgTime = msg.time or 0
+     
+     for _, existing in ipairs(catMessages) do
+       local timeDiff = math_abs(msgTime - (existing.time or 0))
+       if timeDiff <= spamSeconds then
+-        local existingMsg = string_lower(DBB2.api.StripHyperlinks(existing.message or ""))
+-        local existingSender = string_lower(existing.sender or "")
++        local existingMsg, existingSender = DBB2.api.GetMessageKeys(existing)
+         if existingSender == lowerSender and existingMsg == lowerMsg then
+           return true
+         end
+diff --git a/api/chat_filter.lua b/api/chat_filter.lua
+index 2afe5f4..cfb65bc 100644
+--- a/api/chat_filter.lua
++++ b/api/chat_filter.lua
+@@ -564,6 +564,37 @@ end
+ -- Using a table since we can't add properties to functions in Lua 5.0
+ DBB2._hookedChatFrames = DBB2._hookedChatFrames or {}
+ 
++-- PERF: Only these live chat events can ever be hidden. Every other CHAT_MSG_*
++-- event (combat log, spell, loot, system, emote, raid ...) used to run three
++-- gsubs, sender extraction and the whole ShouldHideFromChat pipeline before
++-- being rejected as "source not monitored". In a raid that is hundreds of
++-- combat-log lines per second, each allocating several strings.
++local FILTERABLE_EVENTS = {
++  CHAT_MSG_CHANNEL = true,
++  CHAT_MSG_GUILD = true,
++  CHAT_MSG_SAY = true,
++  CHAT_MSG_YELL = true,
++  CHAT_MSG_PARTY = true,
++  CHAT_MSG_WHISPER = true,
++  CHAT_MSG_HARDCORE = true,
++}
++local skipEventCache = {}
++local function IsSkippableEvent(eventName)
++  if not eventName then return false end
++  local skip = skipEventCache[eventName]
++  if skip == nil then
++    skip = (not FILTERABLE_EVENTS[eventName]) and string_find(eventName, "^CHAT_MSG_") ~= nil
++    skipEventCache[eventName] = skip
++  end
++  return skip
++end
++
++-- PERF: One chat delivery is rendered into every chat window that shows that
++-- channel. Reuse the decision for identical lines within the same frame
++-- instead of recomputing it per window (only when diagnostics are off, so the
++-- debug console still sees each render).
++local lastDecisionMsg, lastDecisionEvent, lastDecisionTime, lastDecisionHide = nil, nil, nil, nil
++
+ -- [ SetupChatFilter ]
+ -- Hooks into chat frames to filter captured messages
+ -- Uses tracking table to prevent double-hooking on addon reload
+@@ -604,6 +635,16 @@ function DBB2.api.SetupChatFilter()
+           local hideBlacklistedEnabled = DBB2_Config and DBB2_Config.blacklist and DBB2_Config.blacklist.hideFromChat
+           local hideDuplicateEnabled = DBB2_Config and DBB2_Config.duplicateFilterMode == 2
+           
++          local debuggingNow = DBB2.debug.enabled and not DBB2.debug.paused
++          if msg and not debuggingNow and IsSkippableEvent(event) then
++            return origToCall(self, msg, r, g, b, id)
++          end
++
++          if msg and not debuggingNow and lastDecisionMsg == msg and lastDecisionEvent == event and lastDecisionTime == GetTime() then
++            if lastDecisionHide then return end
++            return origToCall(self, msg, r, g, b, id)
++          end
++
+           if msg and (hideFromChatEnabled or hideBlacklistedEnabled or hideDuplicateEnabled) then
+             -- Normalize the formatted chat line into the same plain message body
+             -- used by CHAT_MSG_* events before applying blacklist/category checks.
+@@ -629,6 +670,10 @@ function DBB2.api.SetupChatFilter()
+             local started = nil
+             if debugging then started = DBB2.api.DebugClock() end
+             local success, shouldHide, hideReason, hideDetails = pcall(DBB2.api.ShouldHideFromChat, cleanMsg, sender, msgContent, nil, nil, frameIndex, false)
++            if not debugging then
++              lastDecisionMsg, lastDecisionEvent, lastDecisionTime = msg, event, GetTime()
++              lastDecisionHide = success and shouldHide and true or false
++            end
+             local elapsed = nil
+             if debugging then
+               elapsed = DBB2.api.DebugClock() - started
+diff --git a/api/gui_schema.lua b/api/gui_schema.lua
+index a03d3a7..1f15bf3 100644
+--- a/api/gui_schema.lua
++++ b/api/gui_schema.lua
+@@ -131,6 +131,15 @@ end
+ -- @param row (Frame) The message row frame
+ -- @param availableWidth (number) Available pixel width
+ function DBB2.schema.TruncateMessage(row, availableWidth)
++  -- PERF: the binary search below calls SetText + GetStringWidth ~8 times per
++  -- row. Rows are redrawn often with the same content, so skip the work when
++  -- this row already shows the same text at the same width.
++  if row._truncMsg == row._fullMessage and row._truncWidth == availableWidth then
++    row._isTruncated = row._truncResult
++    return
++  end
++  row._truncMsg = row._fullMessage
++  row._truncWidth = availableWidth
+   row.message:SetWidth(availableWidth)
+   row.messageBtn:SetWidth(availableWidth)
+   row.message:SetText(row._fullMessage)
+@@ -155,6 +164,7 @@ function DBB2.schema.TruncateMessage(row, availableWidth)
+     row.message:SetText(truncated .. "\226\128\166")
+     row._isTruncated = true
+   end
++  row._truncResult = row._isTruncated
+ end
+ 
+ -- =====================
+@@ -430,6 +440,22 @@ function DBB2.schema.CreateMessageRow(name, parent)
+     
+     self.time:SetText(timeStr or "")
+     
++    -- PERF: re-anchoring is only needed when the display mode changes
++    if self._anchorMode == DBB2_Config.timeDisplayMode then
++      local availableWidth = S.CalcMessageWidth(self.time)
++      if availableWidth > 20 then
++        S.TruncateMessage(self, availableWidth)
++        self._needsWidthRecalc = false
++      else
++        self._truncMsg = nil
++        self.message:SetText(self._fullMessage)
++        self._needsWidthRecalc = true
++      end
++      return
++    end
++    self._anchorMode = DBB2_Config.timeDisplayMode
++    self._truncMsg = nil
++    
+     -- Position timestamp based on display mode
+     self.time:ClearAllPoints()
+     self.messageBtn:ClearAllPoints()
+@@ -459,6 +485,7 @@ function DBB2.schema.CreateMessageRow(name, parent)
+       S.TruncateMessage(self, availableWidth)
+       self._needsWidthRecalc = false
+     else
++      self._truncMsg = nil
+       self.message:SetText(self._fullMessage)
+       self._needsWidthRecalc = true
+     end
+@@ -506,11 +533,15 @@ function DBB2.schema.CreateMessageRow(name, parent)
+     
+     local parent = this:GetParent()
+     
+-    -- Check if row is actually visible in scroll viewport
+-    local isVisibleInViewport = IsRowVisibleInScrollFrame(parent)
+-    local isOver = MouseIsOver(this) and isVisibleInViewport
++    -- PERF/BUG: MouseIsOver returns 1/nil while isHovered starts as false, so
++    -- the old "nil == false" comparison never matched and the "not hovered"
++    -- branch (SetText/SetTextColor) ran EVERY FRAME for EVERY visible row.
++    -- Coerce to booleans, and only walk the scroll-frame geometry when the
++    -- cursor is actually over the button.
++    local isOver = false
++    if MouseIsOver(this) and IsRowVisibleInScrollFrame(parent) then isOver = true end
+     
+-    if isOver == this.isHovered then return end
++    if isOver == (this.isHovered and true or false) then return end
+     
+     if isOver then
+       this.isHovered = true
+@@ -534,11 +565,15 @@ function DBB2.schema.CreateMessageRow(name, parent)
+     
+     local parent = this:GetParent()
+     
+-    -- Check if row is actually visible in scroll viewport
+-    local isVisibleInViewport = IsRowVisibleInScrollFrame(parent)
+-    local isOver = MouseIsOver(this) and isVisibleInViewport
++    -- PERF/BUG: MouseIsOver returns 1/nil while isHovered starts as false, so
++    -- the old "nil == false" comparison never matched and the "not hovered"
++    -- branch (SetText/SetTextColor) ran EVERY FRAME for EVERY visible row.
++    -- Coerce to booleans, and only walk the scroll-frame geometry when the
++    -- cursor is actually over the button.
++    local isOver = false
++    if MouseIsOver(this) and IsRowVisibleInScrollFrame(parent) then isOver = true end
+     
+-    if isOver == this.isHovered then return end
++    if isOver == (this.isHovered and true or false) then return end
+     
+     if isOver then
+       this.isHovered = true
+diff --git a/api/messages.lua b/api/messages.lua
+index a4446af..5e3f5a6 100644
+--- a/api/messages.lua
++++ b/api/messages.lua
+@@ -6,6 +6,9 @@
+ --               api/categories_api.lua (CategorizeMessage)
+ -- This file must be loaded AFTER blacklist.lua and notifications.lua
+ 
++-- Returns the second value of a multi-return call
++local function select2(_, b) return b end
++
+ -- Localize frequently used globals for performance
+ local string_lower = string.lower
+ local string_gsub = string.gsub
+@@ -18,6 +21,56 @@ local ipairs = ipairs
+ -- Constants
+ local MAX_MESSAGES = 100
+ 
++-- =====================
++-- GUI REFRESH COALESCING
++-- =====================
++-- PERF: Previously every accepted chat line (and every expiry sweep) rebuilt the
++-- visible tab synchronously: the Logs tab re-truncates up to 50 rows with
++-- SetText/GetStringWidth binary searches, and the Groups tab re-categorizes all
++-- stored messages. In a busy World channel that happened many times per second.
++-- Now we mark the GUI dirty and redraw at most once per REFRESH_DELAY seconds.
++local REFRESH_DELAY = 0.2
++local refreshScheduled = false
++
++local function RefreshVisibleGui()
++  refreshScheduled = false
++  if not (DBB2.gui and DBB2.gui:IsShown()) then return end
++  local debugging = DBB2.debug.enabled and not DBB2.debug.paused
++  local started = debugging and DBB2.api.DebugClock() or nil
++  local activeTab = DBB2.gui.tabs and DBB2.gui.tabs.activeTab
++  if activeTab == "Logs" or not activeTab then
++    if DBB2.gui.UpdateMessages then DBB2.gui:UpdateMessages() end
++  elseif activeTab == "Groups" or activeTab == "Professions" or activeTab == "Hardcore" then
++    local panel = DBB2.gui.tabs.panels[activeTab]
++    if panel and panel.UpdateCategories then panel.UpdateCategories() end
++  end
++  if debugging then DBB2.api.DebugPerf("gui.coalescedRefresh", DBB2.api.DebugClock() - started) end
++end
++
++-- [ RequestGuiRefresh ]
++-- Schedules one redraw of the active tab (no-op when the window is hidden;
++-- OnShow always performs a full refresh).
++function DBB2.api.RequestGuiRefresh()
++  if refreshScheduled then return end
++  if not (DBB2.gui and DBB2.gui:IsShown()) then return end
++  refreshScheduled = true
++  DBB2.After(REFRESH_DELAY, RefreshVisibleGui)
++end
++
++-- [ GetMessageKeys ]
++-- Returns the normalized (hyperlink-stripped, lowercased) message text and the
++-- lowercased sender for a stored message record, computing them once and
++-- caching them on the record. Used by every duplicate check.
++function DBB2.api.GetMessageKeys(msg)
++  local normMsg = msg._normMsg
++  if not normMsg then
++    normMsg = string_lower(DBB2.api.StripHyperlinks(msg.message or ""))
++    msg._normMsg = normMsg
++    msg._normSender = string_lower(msg.sender or "")
++  end
++  return normMsg, msg._normSender
++end
++
+ -- =====================
+ -- MESSAGE API
+ -- =====================
+@@ -33,6 +86,14 @@ function DBB2.api.RemoveExpiredMessages()
+   
+   local expireSeconds = expireMinutes * 60
+   local currentTime = time()
++
++  -- PERF: messages are appended in time order, so if the oldest one has not
++  -- expired nothing has. This runs on every incoming chat line.
++  local oldest = DBB2.messages[1]
++  if not oldest or (currentTime - (oldest.time or 0)) <= expireSeconds then
++    return
++  end
++
+   local removed = false
+   local removedCount = 0
+   
+@@ -48,22 +109,9 @@ function DBB2.api.RemoveExpiredMessages()
+     end
+   end
+   
+-  -- Update GUI if messages were removed and GUI is visible
+-  if removed and DBB2.gui and DBB2.gui:IsShown() then
+-    if DBB2.gui.UpdateMessages then
+-      DBB2.gui:UpdateMessages()
+-    end
+-    
+-    -- Update active categorized tab if showing
+-    if DBB2.gui.tabs and DBB2.gui.tabs.activeTab then
+-      local activeTab = DBB2.gui.tabs.activeTab
+-      if activeTab == "Groups" or activeTab == "Professions" or activeTab == "Hardcore" then
+-        local panel = DBB2.gui.tabs.panels[activeTab]
+-        if panel and panel.UpdateCategories then
+-          panel.UpdateCategories()
+-        end
+-      end
+-    end
++  -- Update GUI if messages were removed and GUI is visible (coalesced)
++  if removed then
++    DBB2.api.RequestGuiRefresh()
+   end
+ 
+   if removedCount > 0 then
+@@ -126,8 +174,7 @@ function DBB2.api.IsDuplicateMessage(message, sender)
+     end
+     
+     -- Check if same sender and same message (strip hyperlinks for comparison)
+-    local storedMsg = string_lower(DBB2.api.StripHyperlinks(msg.message or ""))
+-    local storedSender = string_lower(msg.sender or "")
++    local storedMsg, storedSender = DBB2.api.GetMessageKeys(msg)
+     
+     if storedSender == lowerSender and storedMsg == lowerMsg then
+       return true, timeDiff, msg.time
+@@ -143,6 +190,7 @@ end
+ -- directly instead of treating the entry as an ordinary duplicate.
+ function DBB2.api.IsStoredUnsortedMessage(message, sender)
+   if not message then return false end
++  if not DBB2_Config.showUnsortedMessagesInLogs and not DBB2._hasUnsorted then return false end
+ 
+   local lowerMsg = string_lower(DBB2.api.StripHyperlinks(message))
+   local lowerSender = string_lower(sender or "")
+@@ -150,8 +198,7 @@ function DBB2.api.IsStoredUnsortedMessage(message, sender)
+   for i = table_getn(DBB2.messages), 1, -1 do
+     local msg = DBB2.messages[i]
+     if msg and msg.isUnsorted then
+-      local storedMsg = string_lower(DBB2.api.StripHyperlinks(msg.message or ""))
+-      local storedSender = string_lower(msg.sender or "")
++      local storedMsg, storedSender = DBB2.api.GetMessageKeys(msg)
+       if storedSender == lowerSender and storedMsg == lowerMsg then
+         return true
+       end
+@@ -197,7 +244,7 @@ function DBB2.api.RemovePreviousMessageFromSameSender(sender, newCategories, ign
+   -- Search for previous messages from same sender with overlapping categories
+   for i = table_getn(DBB2.messages), 1, -1 do
+     local msg = DBB2.messages[i]
+-    if msg and string_lower(msg.sender or "") == lowerSender then
++    if msg and select2(DBB2.api.GetMessageKeys(msg)) == lowerSender then
+       -- Check if this old message matches any of the same categories
+       local oldCategories = DBB2.api.CategorizeMessage(msg.message, true, ignoreFilterTags)
+       if oldCategories and not oldCategories.isHardcore then
+@@ -419,6 +466,7 @@ function DBB2.api.AddMessage(message, sender, channel, msgType, diagnosticID)
+     isUnsorted = unsortedType ~= nil,
+     unsortedType = unsortedType
+   })
++  if unsortedType then DBB2._hasUnsorted = true end
+   
+   -- Keep only last MAX_MESSAGES messages
+   if table_getn(DBB2.messages) > MAX_MESSAGES then
+@@ -426,32 +474,8 @@ function DBB2.api.AddMessage(message, sender, channel, msgType, diagnosticID)
+     if debugging then DBB2.api.DebugCount("messages.capacityEvicted", 1) end
+   end
+   
+-  local logsRenderedRows = 0
+-  local categorizedRenderedRows = 0
+-  -- Update GUI if visible
+-  if DBB2.gui and DBB2.gui:IsShown() then
+-    -- Update logs tab
+-    if DBB2.gui.UpdateMessages then
+-      stageStart = debugging and DBB2.api.DebugClock() or nil
+-      local renderedRows = DBB2.gui:UpdateMessages()
+-      logsRenderedRows = renderedRows or 0
+-      if debugging then DBB2.api.DebugPipelineStage(diagnosticID, "logs-tab-redraw", DBB2.api.DebugClock() - stageStart, "", table_getn(DBB2.messages), renderedRows or 0) end
+-    end
+-    
+-    -- Update active categorized tab if showing
+-    if DBB2.gui.tabs and DBB2.gui.tabs.activeTab then
+-      local activeTab = DBB2.gui.tabs.activeTab
+-      if activeTab == "Groups" or activeTab == "Professions" or activeTab == "Hardcore" then
+-        local panel = DBB2.gui.tabs.panels[activeTab]
+-        if panel and panel.UpdateCategories then
+-          stageStart = debugging and DBB2.api.DebugClock() or nil
+-          local renderedRows = panel.UpdateCategories()
+-          categorizedRenderedRows = renderedRows or 0
+-          if debugging then DBB2.api.DebugPipelineStage(diagnosticID, "categorized-tab-redraw", DBB2.api.DebugClock() - stageStart, "tab=" .. activeTab, table_getn(DBB2.messages), renderedRows or 0) end
+-        end
+-      end
+-    end
+-  end
++  -- Update GUI if visible (coalesced; see RequestGuiRefresh)
++  DBB2.api.RequestGuiRefresh()
+   if debugging then
+     if unsortedType then
+       Finish("stored-unsorted", "unsortedType=" .. unsortedType)
+@@ -480,6 +504,7 @@ end
+ -- return:      [boolean]       true (always succeeds)
+ function DBB2.api.ClearMessages()
+   DBB2.messages = {}
++  DBB2._hasUnsorted = nil
+   
+   -- Update GUI if visible
+   if DBB2.gui and DBB2.gui:IsShown() and DBB2.gui.UpdateMessages then
+diff --git a/api/wildcards.lua b/api/wildcards.lua
+index db9c690..8bac3e0 100644
+--- a/api/wildcards.lua
++++ b/api/wildcards.lua
+@@ -170,6 +170,43 @@ local function ConvertWildcardToLua(wildcard)
+   return result
+ end
+ 
++-- PERF: Converting a wildcard to a Lua pattern walks the string one character
++-- at a time and allocates a new string per character. Patterns come from a
++-- small, rarely-edited set (category tags, filter tags, blacklist keywords), so
++-- compile each one once and reuse it. Keyed separately for case-sensitive use.
++local compiledPatterns = {}       -- lowercased wildcard -> pattern (ignoreCase)
++local compiledPatternsExact = {}  -- original wildcard  -> pattern
++local compiledCount = 0
++
++local function GetCompiledPattern(wildcard, ignoreCase)
++  local cache = ignoreCase and compiledPatterns or compiledPatternsExact
++  local pattern = cache[wildcard]
++  if pattern == nil then
++    if compiledCount > 2000 then
++      -- Safety valve for pathological configs; never expected in practice.
++      compiledPatterns = {}
++      compiledPatternsExact = {}
++      compiledCount = 0
++      cache = ignoreCase and compiledPatterns or compiledPatternsExact
++    end
++    pattern = ConvertWildcardToLua(ignoreCase and string_lower(wildcard) or wildcard)
++    cache[wildcard] = pattern
++    compiledCount = compiledCount + 1
++  end
++  return pattern
++end
++
++-- PERF: The same chat line is lowercased once per wildcard tag/keyword. Keep a
++-- one-entry memo so repeated calls for the same text reuse the result.
++local lastLowerIn, lastLowerOut = nil, nil
++local function LowerCached(text)
++  if text ~= lastLowerIn then
++    lastLowerIn = text
++    lastLowerOut = string_lower(text)
++  end
++  return lastLowerOut
++end
++
+ -- [ IsWildcardPattern ]
+ -- Checks if a string contains wildcard special characters
+ -- 'pattern'    [string]        the pattern to check
+@@ -197,15 +234,15 @@ function DBB2.api.wildcards.Match(text, wildcard, ignoreCase)
+   if ignoreCase == nil then ignoreCase = true end
+   
+   local searchText = text
+-  local searchWildcard = wildcard
++  local pattern
+   
+   if ignoreCase then
+-    searchText = string_lower(text)
+-    searchWildcard = string_lower(wildcard)
++    searchText = LowerCached(text)
++    pattern = GetCompiledPattern(wildcard, true)
++  else
++    pattern = GetCompiledPattern(wildcard, false)
+   end
+   
+-  local pattern = ConvertWildcardToLua(searchWildcard)
+-  
+   if type(pattern) == "table" then
+     -- Has alternations - try each pattern
+     for _, p in ipairs(pattern) do
+@@ -235,15 +272,15 @@ function DBB2.api.wildcards.Find(text, wildcard, ignoreCase)
+   if ignoreCase == nil then ignoreCase = true end
+   
+   local searchText = text
+-  local searchWildcard = wildcard
++  local pattern
+   
+   if ignoreCase then
+-    searchText = string_lower(text)
+-    searchWildcard = string_lower(wildcard)
++    searchText = LowerCached(text)
++    pattern = GetCompiledPattern(wildcard, true)
++  else
++    pattern = GetCompiledPattern(wildcard, false)
+   end
+   
+-  local pattern = ConvertWildcardToLua(searchWildcard)
+-  
+   if type(pattern) == "table" then
+     -- Has alternations - try each pattern
+     for _, p in ipairs(pattern) do
+diff --git a/modules/gui.lua b/modules/gui.lua
+index 64e9bcc..3590c64 100644
+--- a/modules/gui.lua
++++ b/modules/gui.lua
+@@ -369,6 +369,7 @@ DBB2:RegisterModule("gui", function()
+   -- Continuously update scroll child dimensions
+   local lastChildHeight = 0
+   local lastScrollWidth = 0
++  local lastScrollHeight = 0
+   DBB2.gui.scroll:SetScript("OnUpdate", function()
+     -- Check for deferred scroll update
+     if this._needsScrollUpdate then
+@@ -398,24 +399,26 @@ DBB2:RegisterModule("gui", function()
+       DBB2.gui._resizePending = true
+     end
+     
+-    -- Calculate content height based on visible rows
+-    local visibleRows = 0
+-    for i = 1, MAX_ROWS do
+-      if DBB2.gui.messageRows[i]:IsShown() then
+-        visibleRows = visibleRows + 1
+-      end
+-    end
++    -- Content height from the row count recorded by UpdateMessages
++    -- (PERF: previously 50 IsShown() calls + a full UpdateScrollState every frame)
++    local visibleRows = DBB2.gui._visibleRowCount or 0
+     
+     local contentHeight = visibleRows * S.ROW_HEIGHT
+     local newChildHeight = contentHeight
+     
++    local changed = false
+     if newChildHeight ~= lastChildHeight then
+       DBB2.gui.scrollchild:SetHeight(newChildHeight)
+       DBB2.gui.scrollchild:SetWidth(scrollWidth)
+       lastChildHeight = newChildHeight
++      changed = true
++    end
++    if scrollHeight ~= lastScrollHeight then
++      lastScrollHeight = scrollHeight
++      changed = true
+     end
+     
+-    this.UpdateScrollState()
++    if changed then this.UpdateScrollState() end
+   end)
+   
+   -- Function to update messages
+@@ -515,6 +518,7 @@ DBB2:RegisterModule("gui", function()
+         end
+       end
+     end
++    DBB2.gui._visibleRowCount = renderedRows
+     return renderedRows
+   end
+   
+diff --git a/modules/version_check.lua b/modules/version_check.lua
+index d77d6f7..82902e8 100644
+--- a/modules/version_check.lua
++++ b/modules/version_check.lua
+@@ -90,18 +90,9 @@ local function InitVersionCheck()
+   end)
+   
+   -- Schedule version broadcast and update check 10 seconds after login
+-  local delayFrame = CreateFrame("Frame")
+-  delayFrame.elapsed = 0
+-  delayFrame.waiting = true
+-  delayFrame:SetScript("OnUpdate", function()
+-    if not this.waiting then return end
+-    this.elapsed = this.elapsed + arg1
+-    if this.elapsed >= 10 then
+-      CheckForUpdateNotification()
+-      BroadcastVersion()
+-      this.waiting = false
+-      this:Hide()
+-    end
++  DBB2.After(10, function()
++    CheckForUpdateNotification()
++    BroadcastVersion()
+   end)
+ end
+ 
