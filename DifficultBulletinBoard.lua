@@ -16,9 +16,8 @@ DBB2:RegisterEvent("PARTY_MEMBERS_CHANGED")  -- Party join/leave for notificatio
 DBB2:RegisterEvent("RAID_ROSTER_UPDATE")  -- Raid join/leave for notification clearing
 
 -- [ After ]
--- Runs 'func' once after 'delay' seconds. Uses ClassicAPI's C_Timer when the
--- DLL is loaded; otherwise falls back to a single shared OnUpdate frame that
--- is hidden (and therefore costs nothing) whenever no timer is pending.
+-- Runs 'func' once after 'delay' seconds using a single shared OnUpdate frame
+-- that is hidden (and therefore costs nothing) whenever no timer is pending.
 local timerQueue = {}
 local timerFrame = CreateFrame("Frame")
 timerFrame:Hide()
@@ -38,10 +37,6 @@ timerFrame:SetScript("OnUpdate", function()
 end)
 
 function DBB2.After(delay, func)
-  if C_Timer and C_Timer.After then
-    C_Timer.After(delay, func)
-    return
-  end
   table.insert(timerQueue, { at = GetTime() + delay, func = func })
   timerFrame:Show()
 end
@@ -398,9 +393,6 @@ DBB2:SetScript("OnEvent", function()
     DBB2.api.InitChannelConfig()
 
     DEFAULT_CHAT_FRAME:AddMessage("|cff33ffccDifficult|cffffffffBulletinBoard |cff555555v" .. (GetAddOnMetadata("DifficultBulletinBoard", "Version") or "?") .. "|r loaded. Click minimap button to open.")
-    if not (C_Timer and C_Timer.After) then
-      DEFAULT_CHAT_FRAME:AddMessage("|cff33ffccDBB2|r: ClassicAPI not detected - running with built-in timer fallback.")
-    end
   end
   
   if event == "PLAYER_ENTERING_WORLD" then

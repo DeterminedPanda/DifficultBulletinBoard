@@ -593,7 +593,12 @@ end
 -- channel. Reuse the decision for identical lines within the same frame
 -- instead of recomputing it per window (only when diagnostics are off, so the
 -- debug console still sees each render).
+-- Each chat window may consume the cached decision once. A second render of
+-- the same line in a window that already used it is a separate delivery, so
+-- it is re-evaluated. Otherwise All Chat duplicate suppression would be
+-- bypassed for repeats delivered within the same frame.
 local lastDecisionMsg, lastDecisionEvent, lastDecisionTime, lastDecisionHide = nil, nil, nil, nil
+local lastDecisionFrames = {}
 
 -- [ SetupChatFilter ]
 -- Hooks into chat frames to filter captured messages
@@ -640,7 +645,8 @@ function DBB2.api.SetupChatFilter()
             return origToCall(self, msg, r, g, b, id)
           end
 
-          if msg and not debuggingNow and lastDecisionMsg == msg and lastDecisionEvent == event and lastDecisionTime == GetTime() then
+          if msg and not debuggingNow and lastDecisionMsg == msg and lastDecisionEvent == event and lastDecisionTime == GetTime() and not lastDecisionFrames[frameIndex] then
+            lastDecisionFrames[frameIndex] = true
             if lastDecisionHide then return end
             return origToCall(self, msg, r, g, b, id)
           end
@@ -673,6 +679,8 @@ function DBB2.api.SetupChatFilter()
             if not debugging then
               lastDecisionMsg, lastDecisionEvent, lastDecisionTime = msg, event, GetTime()
               lastDecisionHide = success and shouldHide and true or false
+              for k in pairs(lastDecisionFrames) do lastDecisionFrames[k] = nil end
+              lastDecisionFrames[frameIndex] = true
             end
             local elapsed = nil
             if debugging then
