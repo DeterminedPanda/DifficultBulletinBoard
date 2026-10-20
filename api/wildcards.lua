@@ -170,6 +170,43 @@ local function ConvertWildcardToLua(wildcard)
   return result
 end
 
+-- PERF: Converting a wildcard to a Lua pattern walks the string one character
+-- at a time and allocates a new string per character. Patterns come from a
+-- small, rarely-edited set (category tags, filter tags, blacklist keywords), so
+-- compile each one once and reuse it. Keyed separately for case-sensitive use.
+local compiledPatterns = {}       -- lowercased wildcard -> pattern (ignoreCase)
+local compiledPatternsExact = {}  -- original wildcard  -> pattern
+local compiledCount = 0
+
+local function GetCompiledPattern(wildcard, ignoreCase)
+  local cache = ignoreCase and compiledPatterns or compiledPatternsExact
+  local pattern = cache[wildcard]
+  if pattern == nil then
+    if compiledCount > 2000 then
+      -- Safety valve for pathological configs; never expected in practice.
+      compiledPatterns = {}
+      compiledPatternsExact = {}
+      compiledCount = 0
+      cache = ignoreCase and compiledPatterns or compiledPatternsExact
+    end
+    pattern = ConvertWildcardToLua(ignoreCase and string_lower(wildcard) or wildcard)
+    cache[wildcard] = pattern
+    compiledCount = compiledCount + 1
+  end
+  return pattern
+end
+
+-- PERF: The same chat line is lowercased once per wildcard tag/keyword. Keep a
+-- one-entry memo so repeated calls for the same text reuse the result.
+local lastLowerIn, lastLowerOut = nil, nil
+local function LowerCached(text)
+  if text ~= lastLowerIn then
+    lastLowerIn = text
+    lastLowerOut = string_lower(text)
+  end
+  return lastLowerOut
+end
+
 -- [ IsWildcardPattern ]
 -- Checks if a string contains wildcard special characters
 -- 'pattern'    [string]        the pattern to check
@@ -197,14 +234,14 @@ function DBB2.api.wildcards.Match(text, wildcard, ignoreCase)
   if ignoreCase == nil then ignoreCase = true end
   
   local searchText = text
-  local searchWildcard = wildcard
+  local pattern
   
   if ignoreCase then
-    searchText = string_lower(text)
-    searchWildcard = string_lower(wildcard)
+    searchText = LowerCached(text)
+    pattern = GetCompiledPattern(wildcard, true)
+  else
+    pattern = GetCompiledPattern(wildcard, false)
   end
-  
-  local pattern = ConvertWildcardToLua(searchWildcard)
   
   if type(pattern) == "table" then
     -- Has alternations - try each pattern
@@ -235,14 +272,14 @@ function DBB2.api.wildcards.Find(text, wildcard, ignoreCase)
   if ignoreCase == nil then ignoreCase = true end
   
   local searchText = text
-  local searchWildcard = wildcard
+  local pattern
   
   if ignoreCase then
-    searchText = string_lower(text)
-    searchWildcard = string_lower(wildcard)
+    searchText = LowerCached(text)
+    pattern = GetCompiledPattern(wildcard, true)
+  else
+    pattern = GetCompiledPattern(wildcard, false)
   end
-  
-  local pattern = ConvertWildcardToLua(searchWildcard)
   
   if type(pattern) == "table" then
     -- Has alternations - try each pattern

@@ -57,12 +57,49 @@ function RenderChannelList(parent, panel, item, x, y)
   
   local totalHeight = checkSize  -- Minimum height
   
-  local function Rebuild()
-    -- Hide existing checkboxes
-    for _, check in ipairs(panel.channelCheckboxes) do
+  -- [PerfFix] Checkbox pool. WoW 1.12 never frees frames, so the old code
+  -- (CreateCheckBox on every rebuild) leaked ~20 frames per channel notice and
+  -- got slower all session. Checkboxes are now created once and reused.
+  local checkPool = {}
+
+  local function HideAllPooled()
+    for _, check in ipairs(checkPool) do
       check:Hide()
     end
+  end
+
+  local function AcquireCheck(index, channelName)
+    local check = checkPool[index]
+    if not check then
+      check = DBB2.schema.CreateCheckBox(nil, container, channelName, FONT_SIZE)
+      check:SetWidth(checkSize)
+      check:SetHeight(checkSize)
+      check:SetScript("OnEnter", function()
+        local r, g, b = DBB2:GetHighlightColor()
+        this.backdrop:SetBackdropBorderColor(r, g, b, 1)
+        local desc = channelDescriptions[this._channelName] or "Monitor this channel."
+        DBB2.api.ShowTooltip(this, "RIGHT", {{this._channelName, "highlight"}, desc})
+      end)
+      check:SetScript("OnLeave", function()
+        this.backdrop:SetBackdropBorderColor(0.3, 0.3, 0.3, 1)
+        DBB2.api.HideTooltip()
+      end)
+      checkPool[index] = check
+    elseif check.label then
+      check.label:SetText(channelName)
+    end
+    check:ClearAllPoints()
+    check:Enable()
+    check.OnChecked = nil
+    check:Show()
+    return check
+  end
+
+  local function Rebuild()
+    -- Hide existing checkboxes (they stay in the pool for reuse)
+    HideAllPooled()
     panel.channelCheckboxes = {}
+    panel._channelListDirty = nil
     
     local isHardcoreChar = DBB2.api.DetectHardcoreCharacter()
     local channelList = DBB2.api.RefreshJoinedChannels()
@@ -88,6 +125,7 @@ function RenderChannelList(parent, panel, item, x, y)
     
     local currentY = 0
     totalHeight = 0
+    local used = 0
     
     for i, channelName in ipairs(channelList) do
       if channelName == "-" then
@@ -95,10 +133,9 @@ function RenderChannelList(parent, panel, item, x, y)
         currentY = currentY - sectionGap
         totalHeight = totalHeight + sectionGap
       else
-        local check = DBB2.schema.CreateCheckBox(nil, container, channelName, FONT_SIZE)
+        used = used + 1
+        local check = AcquireCheck(used, channelName)
         check:SetPoint("TOPLEFT", container, "TOPLEFT", 0, currentY)
-        check:SetWidth(checkSize)
-        check:SetHeight(checkSize)
         check._channelName = channelName
         
         if channelName == "Hardcore" and not isHardcoreChar then
@@ -110,17 +147,6 @@ function RenderChannelList(parent, panel, item, x, y)
             DBB2.api.SetChannelMonitored(check._channelName, checked)
           end
         end
-        
-        check:SetScript("OnEnter", function()
-          local r, g, b = DBB2:GetHighlightColor()
-          this.backdrop:SetBackdropBorderColor(r, g, b, 1)
-          local desc = channelDescriptions[this._channelName] or "Monitor this channel."
-          DBB2.api.ShowTooltip(this, "RIGHT", {{this._channelName, "highlight"}, desc})
-        end)
-        check:SetScript("OnLeave", function()
-          this.backdrop:SetBackdropBorderColor(0.3, 0.3, 0.3, 1)
-          DBB2.api.HideTooltip()
-        end)
         
         table_insert(panel.channelCheckboxes, check)
         currentY = currentY - checkSize - rowSpacing
@@ -139,6 +165,32 @@ function RenderChannelList(parent, panel, item, x, y)
   -- Initial build
   Rebuild()
   panel.RebuildChannelCheckboxes = Rebuild
+
+  -- [PerfFix] Deferred, coalesced rebuild for event-driven refreshes
+  -- (CHAT_MSG_CHANNEL_NOTICE can fire hundreds of times in one burst).
+  -- Visible: one rebuild ~0.3 s after the burst. Hidden: only refresh the
+  -- channel config (cheap, no frames) and rebuild next time it is shown.
+  local rebuildPending = false
+  local function RunRequestedRebuild()
+    rebuildPending = false
+    if container:IsVisible() then
+      Rebuild()
+    else
+      DBB2.api.RefreshJoinedChannels()
+      panel._channelListDirty = true
+    end
+  end
+  panel.RequestChannelRebuild = function()
+    if rebuildPending then return end
+    rebuildPending = true
+    DBB2.After(0.3, RunRequestedRebuild)
+  end
+
+  local prevOnShow = container:GetScript("OnShow")
+  container:SetScript("OnShow", function()
+    if prevOnShow then prevOnShow() end
+    if panel._channelListDirty then Rebuild() end
+  end)
   
   return {
     container = container,

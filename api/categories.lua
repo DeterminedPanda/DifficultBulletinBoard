@@ -30,6 +30,85 @@ local pairs = pairs
 local math_abs = math.abs
 
 -- =====================================================
+-- PERFORMANCE CACHES
+-- =====================================================
+-- CategorizeMessage is the hottest function in the addon: it is called for
+-- every incoming chat line (several times), by the chat-frame hook (once per
+-- chat window the line is rendered in) and for EVERY stored message on EVERY
+-- GUI redraw. Its result only depends on the message text, the two flags and
+-- the category/filter-tag configuration, so we memoize it.
+--
+-- The cache is invalidated (generation bump) by every API that mutates the
+-- category configuration, and additionally whenever the underlying config
+-- tables are replaced (e.g. ResetCategoriesToDefaults assigns new tables).
+local catCache = {}          -- [flagsKey][message] = result
+local catCacheSize = 0
+local CAT_CACHE_MAX = 600    -- ~100 stored messages + recent chat; cleared when exceeded
+local catCacheRefs = {}      -- identity of config tables the cache was built against
+
+local function ResetCategorizeCache()
+  catCache = {}
+  catCacheSize = 0
+end
+
+-- Public: call after any direct modification of DBB2_Config.categories / filterTags
+function DBB2.api.InvalidateCategoryCache()
+  ResetCategorizeCache()
+  -- Force tag precomputation to refresh as well
+  if DBB2_Config and DBB2_Config.categories then
+    for _, list in pairs(DBB2_Config.categories) do
+      if type(list) == "table" then
+        for _, cat in ipairs(list) do
+          cat._tagsLower = nil
+          cat._tagsLen = nil
+          cat._tagsWild = nil
+        end
+      end
+    end
+  end
+end
+
+-- Detects wholesale replacement of config tables (resets, profile loads).
+local function CheckCacheRefs()
+  local cats = DBB2_Config.categories
+  local ft = DBB2_Config.filterTags
+  local g, p, h = cats and cats.groups, cats and cats.professions, cats and cats.hardcore
+  local fg = ft and ft.groups
+  local fp = ft and ft.professions
+  if catCacheRefs.cats ~= cats or catCacheRefs.g ~= g or catCacheRefs.p ~= p or catCacheRefs.h ~= h
+     or catCacheRefs.fg ~= fg or catCacheRefs.fp ~= fp
+     or catCacheRefs.fgt ~= (fg and fg.tags) or catCacheRefs.fpt ~= (fp and fp.tags) then
+    catCacheRefs.cats, catCacheRefs.g, catCacheRefs.p, catCacheRefs.h = cats, g, p, h
+    catCacheRefs.fg, catCacheRefs.fp = fg, fp
+    catCacheRefs.fgt, catCacheRefs.fpt = fg and fg.tags, fp and fp.tags
+    ResetCategorizeCache()
+  end
+end
+
+-- One-entry memo for lowercasing: the same message is lowercased once per
+-- category (~55 categories) during a scan otherwise.
+local lastLowerIn, lastLowerOut = nil, nil
+local function LowerMsg(message)
+  if message ~= lastLowerIn then
+    lastLowerIn = message
+    lastLowerOut = string_lower(message)
+  end
+  return lastLowerOut
+end
+
+-- Precomputed info for filter tag strings (lowercase, length, wildcard flag).
+local filterTagInfo = {}
+local function GetFilterTagInfo(tag)
+  local info = filterTagInfo[tag]
+  if not info then
+    local lower = string_lower(tag)
+    info = { lower = lower, len = string_len(lower), wild = string_find(lower, "[%*%?%[%]%{%}\\]") and true or false }
+    filterTagInfo[tag] = info
+  end
+  return info
+end
+
+-- =====================================================
 -- CATEGORY COLLAPSE STATE API
 -- =====================================================
 -- Functions for managing the collapsed/expanded state of categories in the UI.
@@ -133,13 +212,10 @@ function DBB2.api.UpdateCategoryTags(categoryType, categoryName, newTags)
   if cat then
     cat.tags = newTags or {}
     -- Pre-compute lowercase tags and their lengths for faster matching
-    cat._tagsLower = {}
-    cat._tagsLen = {}
-    for i, tag in ipairs(cat.tags) do
-      local lower = string_lower(tag)
-      cat._tagsLower[i] = lower
-      cat._tagsLen[i] = string_len(lower)
-    end
+    cat._tagsLower = nil  -- recomputed lazily by EnsureTagsPrecomputed
+    cat._tagsLen = nil
+    cat._tagsWild = nil
+    ResetCategorizeCache()
     DBB2.api.DebugUITransition("category-tags-changed", "type=" .. categoryType .. " category=" .. categoryName .. " tags=" .. table_concat(cat.tags, ","))
     return true
   end
@@ -149,40 +225,33 @@ end
 -- [ EnsureTagsPrecomputed ]
 -- Ensures a category has pre-computed lowercase tags
 -- Called internally before matching
+local function BuildTagCache(category)
+  local tagsLower, tagsLen, tagsWild = {}, {}, {}
+  local n = 0
+  for i, tag in ipairs(category.tags or {}) do
+    local lower = string_lower(tag)
+    tagsLower[i] = lower
+    tagsLen[i] = string_len(lower)
+    tagsWild[i] = string_find(lower, "[%*%?%[%]%{%}\\]") and true or false
+    n = i
+  end
+  category._tagsLower = tagsLower
+  category._tagsLen = tagsLen
+  category._tagsWild = tagsWild
+  category._tagsSrc = category.tags
+  category._tagsN = n
+end
+
 local function EnsureTagsPrecomputed(category)
-  -- Always recompute if _tagsLower doesn't exist
-  if not category._tagsLower then
-    category._tagsLower = {}
-    category._tagsLen = {}
-    for i, tag in ipairs(category.tags or {}) do
-      local lower = string_lower(tag)
-      category._tagsLower[i] = lower
-      category._tagsLen[i] = string_len(lower)
-    end
+  -- Rebuild if missing, if the tags table was replaced, or if its size changed.
+  if not category._tagsLower or not category._tagsWild or category._tagsSrc ~= category.tags then
+    BuildTagCache(category)
     return
   end
-  
-  -- Check if tags array length changed (recompute if so)
-  local tagsCount = 0
-  if category.tags then
-    for _ in ipairs(category.tags) do
-      tagsCount = tagsCount + 1
-    end
-  end
-  
-  local cachedCount = 0
-  for _ in ipairs(category._tagsLower) do
-    cachedCount = cachedCount + 1
-  end
-  
-  if tagsCount ~= cachedCount then
-    category._tagsLower = {}
-    category._tagsLen = {}
-    for i, tag in ipairs(category.tags or {}) do
-      local lower = string_lower(tag)
-      category._tagsLower[i] = lower
-      category._tagsLen[i] = string_len(lower)
-    end
+  local tags = category.tags
+  local n = category._tagsN
+  if (n > 0 and tags[n] == nil) or tags[n + 1] ~= nil then
+    BuildTagCache(category)
   end
 end
 
@@ -198,6 +267,7 @@ function DBB2.api.SetCategorySelected(categoryType, categoryName, selected)
   local cat = DBB2.api.GetCategoryByName(categoryType, categoryName)
   if cat then
     cat.selected = selected and true or false
+    ResetCategorizeCache()
     DBB2.api.DebugUITransition("category-selection-changed", "type=" .. categoryType .. " category=" .. categoryName .. " selected=" .. tostring(cat.selected))
     return true
   end
@@ -297,6 +367,7 @@ function DBB2.api.SetFilterTagsEnabled(categoryType, enabled)
     DBB2_Config.filterTags[categoryType] = { enabled = false, tags = {} }
   end
   DBB2_Config.filterTags[categoryType].enabled = enabled and true or false
+  ResetCategorizeCache()
   DBB2.api.DebugUITransition("filter-tags-enabled-changed", "type=" .. categoryType .. " enabled=" .. tostring(enabled and true or false))
   return true
 end
@@ -317,6 +388,7 @@ function DBB2.api.UpdateFilterTags(categoryType, newTags)
     DBB2_Config.filterTags[categoryType] = { enabled = false, tags = {} }
   end
   DBB2_Config.filterTags[categoryType].tags = newTags or {}
+  ResetCategorizeCache()
   DBB2.api.DebugUITransition("filter-tags-changed", "type=" .. categoryType .. " tags=" .. table_concat(DBB2_Config.filterTags[categoryType].tags, ","))
   return true
 end
@@ -329,16 +401,17 @@ local function MatchFilterTagList(message, tags, evidence)
     return false
   end
 
-  local lowerMsg = string_lower(message or "")
+  local lowerMsg = LowerMsg(message or "")
   if lowerMsg == "" then return false end
 
   local msgLen = string_len(lowerMsg)
 
   for _, tag in ipairs(tags) do
-    local lowerTag = string_lower(tag)
-    local tagLen = string_len(lowerTag)
+    local info = GetFilterTagInfo(tag)
+    local lowerTag = info.lower
+    local tagLen = info.len
 
-    local isWildcard = string_find(lowerTag, "[%*%?%[%]%{%}\\]")
+    local isWildcard = info.wild
 
     if isWildcard then
       if DBB2.api.MatchWildcard(lowerMsg, lowerTag) then
@@ -541,16 +614,11 @@ function DBB2.api.MatchMessageToCategory(message, category, ignoreSelected, cate
   end
   
   -- Quick check: any tags at all?
-  local hasAnyTags = false
-  for _ in ipairs(category.tags) do
-    hasAnyTags = true
-    break
-  end
-  if not hasAnyTags then
+  if category.tags[1] == nil then
     return false
   end
   
-  local lowerMsg = string_lower(message or "")
+  local lowerMsg = LowerMsg(message or "")
   if lowerMsg == "" then return false end
   
   -- Check filter tags first (if enabled for this category type)
@@ -570,14 +638,15 @@ function DBB2.api.MatchMessageToCategory(message, category, ignoreSelected, cate
   local msgLen = string_len(lowerMsg)
   local tagsLower = category._tagsLower
   local tagsLen = category._tagsLen
+  local tagsWild = category._tagsWild
   local matched = false
   
   -- Use ipairs instead of table.getn for Lua 5.0 compatibility
   for i, lowerTag in ipairs(tagsLower) do
     local tagLen = tagsLen[i]
 
-    -- Check if tag contains wildcard special characters
-    local isWildcard = string_find(lowerTag, "[%*%?%[%]%{%}\\]")
+    -- Wildcard flag is precomputed per tag
+    local isWildcard = tagsWild[i]
 
     if isWildcard then
       -- Use wildcard matching for patterns
@@ -837,7 +906,35 @@ end
 --                                   hardcore = {string...},    -- Array of matched hardcore category names
 --                                   isHardcore = boolean       -- true if any hardcore category matched
 --                                 }
+-- NOTE: results are memoized and SHARED between callers. Treat the returned
+-- table as read-only (all callers in the addon only read it).
+local CategorizeMessageUncached
+
 function DBB2.api.CategorizeMessage(message, ignoreSelected, ignoreFilterTags, matchEvidence)
+  if matchEvidence or not message or not DBB2_Config.categories then
+    return CategorizeMessageUncached(message, ignoreSelected, ignoreFilterTags, matchEvidence)
+  end
+  CheckCacheRefs()
+  local flags = (ignoreSelected and 2 or 0) + (ignoreFilterTags and 1 or 0)
+  local bucket = catCache[flags]
+  if not bucket then
+    bucket = {}
+    catCache[flags] = bucket
+  end
+  local result = bucket[message]
+  if result then return result end
+  result = CategorizeMessageUncached(message, ignoreSelected, ignoreFilterTags)
+  if catCacheSize >= CAT_CACHE_MAX then
+    ResetCategorizeCache()
+    bucket = {}
+    catCache[flags] = bucket
+  end
+  bucket[message] = result
+  catCacheSize = catCacheSize + 1
+  return result
+end
+
+CategorizeMessageUncached = function(message, ignoreSelected, ignoreFilterTags, matchEvidence)
   -- Create fresh result table each call (safer than pooling)
   local result = {
     groups = {},
@@ -917,15 +1014,13 @@ function DBB2.api.GetCategorizedMessages(categoryType)
     if duplicateMode == 0 or duplicateMode == false then return false end
     if spamSeconds <= 0 then return false end
     
-    local lowerMsg = string_lower(DBB2.api.StripHyperlinks(msg.message or ""))
-    local lowerSender = string_lower(msg.sender or "")
+    local lowerMsg, lowerSender = DBB2.api.GetMessageKeys(msg)
     local msgTime = msg.time or 0
     
     for _, existing in ipairs(catMessages) do
       local timeDiff = math_abs(msgTime - (existing.time or 0))
       if timeDiff <= spamSeconds then
-        local existingMsg = string_lower(DBB2.api.StripHyperlinks(existing.message or ""))
-        local existingSender = string_lower(existing.sender or "")
+        local existingMsg, existingSender = DBB2.api.GetMessageKeys(existing)
         if existingSender == lowerSender and existingMsg == lowerMsg then
           return true
         end

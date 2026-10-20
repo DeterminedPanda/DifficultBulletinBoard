@@ -15,6 +15,32 @@ DBB2:RegisterEvent("CHAT_MSG_CHANNEL_NOTICE")  -- Channel join/leave notificatio
 DBB2:RegisterEvent("PARTY_MEMBERS_CHANGED")  -- Party join/leave for notification clearing
 DBB2:RegisterEvent("RAID_ROSTER_UPDATE")  -- Raid join/leave for notification clearing
 
+-- [ After ]
+-- Runs 'func' once after 'delay' seconds using a single shared OnUpdate frame
+-- that is hidden (and therefore costs nothing) whenever no timer is pending.
+local timerQueue = {}
+local timerFrame = CreateFrame("Frame")
+timerFrame:Hide()
+timerFrame:SetScript("OnUpdate", function()
+  local now = GetTime()
+  local i = 1
+  while timerQueue[i] do
+    local t = timerQueue[i]
+    if now >= t.at then
+      table.remove(timerQueue, i)
+      t.func()
+    else
+      i = i + 1
+    end
+  end
+  if not timerQueue[1] then this:Hide() end
+end)
+
+function DBB2.After(delay, func)
+  table.insert(timerQueue, { at = GetTime() + delay, func = func })
+  timerFrame:Show()
+end
+
 -- Initialize saved variables
 DBB2_Config = {}
 
@@ -402,7 +428,9 @@ DBB2:SetScript("OnEvent", function()
     -- Rebuild channel config panel if it exists (updates states)
     if DBB2.gui and DBB2.gui.configTabs and DBB2.gui.configTabs.panels then
       local channelsPanel = DBB2.gui.configTabs.panels["Channels"]
-      if channelsPanel and channelsPanel.RebuildChannelCheckboxes then
+      if channelsPanel and channelsPanel.RequestChannelRebuild then
+        channelsPanel.RequestChannelRebuild()  -- [PerfFix] deferred + coalesced
+      elseif channelsPanel and channelsPanel.RebuildChannelCheckboxes then
         channelsPanel.RebuildChannelCheckboxes()
       end
     end
@@ -411,17 +439,7 @@ DBB2:SetScript("OnEvent", function()
     -- Use a small delay to ensure channel system is ready
     if not DBB2._autoJoinScheduled then
       DBB2._autoJoinScheduled = true
-      -- Create a frame for the delayed call
-      local delayFrame = CreateFrame("Frame")
-      delayFrame.elapsed = 0
-      delayFrame:SetScript("OnUpdate", function()
-        this.elapsed = this.elapsed + arg1
-        if this.elapsed >= 2 then  -- 2 second delay
-          DBB2.api.AutoJoinRequiredChannels()
-          this:SetScript("OnUpdate", nil)
-          this:Hide()
-        end
-      end)
+      DBB2.After(2, DBB2.api.AutoJoinRequiredChannels)
     end
   end
   
@@ -542,7 +560,9 @@ DBB2:SetScript("OnEvent", function()
     -- arg9 = channel name
     if DBB2.gui and DBB2.gui.configTabs and DBB2.gui.configTabs.panels then
       local channelsPanel = DBB2.gui.configTabs.panels["Channels"]
-      if channelsPanel and channelsPanel.RebuildChannelCheckboxes then
+      if channelsPanel and channelsPanel.RequestChannelRebuild then
+        channelsPanel.RequestChannelRebuild()  -- [PerfFix] deferred + coalesced
+      elseif channelsPanel and channelsPanel.RebuildChannelCheckboxes then
         channelsPanel.RebuildChannelCheckboxes()
       end
     end
