@@ -47,6 +47,7 @@ end
 
 -- Adds a channel to the whitelist (returns true if added, false if exists)
 function DBB2.api.AddWhitelistedChannel(channelName)
+  if DBB2.api.InvalidateChatDecisionCache then DBB2.api.InvalidateChatDecisionCache() end
   if not channelName or channelName == "" then return false end
   local lowerName = string_lower(channelName)
   local whitelist = DBB2.api.GetWhitelistedChannels()
@@ -61,6 +62,7 @@ end
 
 -- Removes a channel from the whitelist (returns true if removed, false if not found)
 function DBB2.api.RemoveWhitelistedChannel(channelName)
+  if DBB2.api.InvalidateChatDecisionCache then DBB2.api.InvalidateChatDecisionCache() end
   if not channelName then return false end
   local lowerName = string_lower(channelName)
   local whitelist = DBB2.api.GetWhitelistedChannels()
@@ -76,6 +78,7 @@ end
 
 -- Resets the whitelist to defaults
 function DBB2.api.ResetWhitelistedChannels()
+  if DBB2.api.InvalidateChatDecisionCache then DBB2.api.InvalidateChatDecisionCache() end
   DBB2_Config.whitelistedChannels = {}
   for i, ch in ipairs(DBB2.env.defaultWhitelistedChannels) do
     DBB2_Config.whitelistedChannels[i] = ch
@@ -141,6 +144,7 @@ end
 -- Resets channel monitoring to defaults based on character type
 -- Returns true if hardcore defaults applied, false if normal
 function DBB2.api.ResetChannelDefaults()
+  if DBB2.api.InvalidateChatDecisionCache then DBB2.api.InvalidateChatDecisionCache() end
   local isHardcore = DBB2.api.IsHardcoreCharacter()
   
   DBB2_Config.monitoredChannels = {}
