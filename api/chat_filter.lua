@@ -15,6 +15,13 @@ local getglobal = getglobal
 local pairs = pairs
 local tostring = tostring
 
+local chatDecisionCache
+
+-- Rule edits and history resets must also discard same-frame render decisions.
+function DBB2.api.InvalidateChatDecisionCache()
+  chatDecisionCache = nil
+end
+
 -- [ ExtractFormattedMessageContent ]
 -- Strips the channel/sender wrappers from a rendered chat line so filtering uses
 -- the same plain message body that AddMessage receives from chat events.
@@ -323,7 +330,7 @@ function DBB2.api.IsAllChatDuplicate(message, sender, frameIndex, readOnly)
     local delivery = DBB2._allChatDuplicateDeliveries[key]
     if delivery and now - delivery.time <= 0.10 and not delivery.frames[frameIndex] then
       delivery.frames[frameIndex] = true
-      return delivery.duplicate, delivery.age, "coalesced-render"
+      return delivery.duplicate, delivery.age, "coalesced-render", delivery
     end
   end
 
@@ -344,6 +351,7 @@ function DBB2.api.IsAllChatDuplicate(message, sender, frameIndex, readOnly)
     end
     if frameIndex then
       DBB2._allChatDuplicateDeliveries[key] = {
+        key = key,
         time = now,
         frames = { [frameIndex] = true },
         duplicate = duplicate,
@@ -360,10 +368,12 @@ function DBB2.api.IsAllChatDuplicate(message, sender, frameIndex, readOnly)
     end
   end
 
-  return duplicate, age, duplicate and "history-match" or "history-recorded"
+  return duplicate, age, duplicate and "history-match" or "history-recorded",
+    not readOnly and frameIndex and DBB2._allChatDuplicateDeliveries[key] or nil
 end
 
 function DBB2.api.ClearAllChatDuplicateHistory()
+  DBB2.api.InvalidateChatDecisionCache()
   DBB2._allChatDuplicateHistory = {}
   DBB2._allChatDuplicateDeliveries = {}
   DBB2._allChatDuplicateLastCleanup = GetTime()
@@ -386,7 +396,9 @@ end
 -- IMPORTANT: Never filters the player's own messages
 -- IMPORTANT: Filtered follows selected categories and Filter Tags; All ignores
 -- both restrictions so broad tags like "dm" or "mc" can still be suppressed.
-function DBB2.api.ShouldHideFromChat(message, sender, matchMessage, sourceEvent, sourceChannel, frameIndex, duplicateReadOnly)
+-- Optional renderDecision receives the duplicate delivery used by this check;
+-- the chat hook shares its consumed-window set instead of keeping a second one.
+function DBB2.api.ShouldHideFromChat(message, sender, matchMessage, sourceEvent, sourceChannel, frameIndex, duplicateReadOnly, renderDecision)
   local mode = DBB2_Config.hideFromChat or 0
   local duplicateMode = DBB2_Config.duplicateFilterMode
   if duplicateMode == nil then duplicateMode = 1 end
@@ -432,7 +444,8 @@ function DBB2.api.ShouldHideFromChat(message, sender, matchMessage, sourceEvent,
     local historySourceEnabled, historySource = IsAllChatHistorySourceEnabled(message, sourceEvent, sourceChannel)
     if historySourceEnabled then
       allChatHistoryTracked = true
-      local duplicate, duplicateAge, duplicateHistoryRule = DBB2.api.IsAllChatDuplicate(textToMatch, sender, frameIndex, duplicateReadOnly)
+      local duplicate, duplicateAge, duplicateHistoryRule, delivery = DBB2.api.IsAllChatDuplicate(textToMatch, sender, frameIndex, duplicateReadOnly)
+      if renderDecision then renderDecision.delivery = delivery end
       local duplicateAgeText = duplicateAge and (tostring(duplicateAge) .. "s") or "none"
       allChatHistoryDetail =
         "duplicateHistory=" .. tostring(duplicateHistoryRule or "unknown") ..
@@ -593,12 +606,32 @@ end
 -- channel. Reuse the decision for identical lines within the same frame
 -- instead of recomputing it per window (only when diagnostics are off, so the
 -- debug console still sees each render).
--- Each chat window may consume the cached decision once. A second render of
--- the same line in a window that already used it is a separate delivery, so
--- it is re-evaluated. Otherwise All Chat duplicate suppression would be
--- bypassed for repeats delivered within the same frame.
-local lastDecisionMsg, lastDecisionEvent, lastDecisionTime, lastDecisionHide = nil, nil, nil, nil
-local lastDecisionFrames = {}
+-- All Chat decisions share the duplicate tracker's actual delivery record.
+-- Consuming a cached render therefore updates the same window set used to
+-- distinguish a repeated delivery from another window displaying the first.
+local function CanReuseChatDecision(decision, msg, frameIndex)
+  if not decision or decision.message ~= msg or decision.event ~= event
+     or decision.channel ~= arg9 or decision.time ~= GetTime()
+     or decision.config ~= DBB2_Config
+     or decision.mode ~= DBB2_Config.hideFromChat
+     or decision.duplicateMode ~= DBB2_Config.duplicateFilterMode
+     or decision.window ~= DBB2_Config.spamFilterSeconds
+     or decision.unsorted ~= DBB2_Config.showUnsortedMessagesInLogs
+     or decision.blacklist ~= DBB2_Config.blacklist
+     or decision.blacklistEnabled ~= (DBB2_Config.blacklist and DBB2_Config.blacklist.enabled)
+     or decision.blacklistHide ~= (DBB2_Config.blacklist and DBB2_Config.blacklist.hideFromChat)
+     or decision.blacklistPlayers ~= (DBB2_Config.blacklist and DBB2_Config.blacklist.players)
+     or decision.blacklistKeywords ~= (DBB2_Config.blacklist and DBB2_Config.blacklist.keywords)
+     or decision.categories ~= DBB2_Config.categories
+     or decision.filterTags ~= DBB2_Config.filterTags then
+    return false
+  end
+  local delivery = decision.delivery
+  if delivery and DBB2._allChatDuplicateDeliveries[delivery.key] ~= delivery then
+    return false
+  end
+  return not decision.frames[frameIndex]
+end
 
 -- [ SetupChatFilter ]
 -- Hooks into chat frames to filter captured messages
@@ -641,13 +674,14 @@ function DBB2.api.SetupChatFilter()
           local hideDuplicateEnabled = DBB2_Config and DBB2_Config.duplicateFilterMode == 2
           
           local debuggingNow = DBB2.debug.enabled and not DBB2.debug.paused
+          if debuggingNow then DBB2.api.InvalidateChatDecisionCache() end
           if msg and not debuggingNow and IsSkippableEvent(event) then
             return origToCall(self, msg, r, g, b, id)
           end
 
-          if msg and not debuggingNow and lastDecisionMsg == msg and lastDecisionEvent == event and lastDecisionTime == GetTime() and not lastDecisionFrames[frameIndex] then
-            lastDecisionFrames[frameIndex] = true
-            if lastDecisionHide then return end
+          if msg and not debuggingNow and CanReuseChatDecision(chatDecisionCache, msg, frameIndex) then
+            chatDecisionCache.frames[frameIndex] = true
+            if chatDecisionCache.hide then return end
             return origToCall(self, msg, r, g, b, id)
           end
 
@@ -675,12 +709,23 @@ function DBB2.api.SetupChatFilter()
             local debugging = DBB2.debug.enabled and not DBB2.debug.paused
             local started = nil
             if debugging then started = DBB2.api.DebugClock() end
-            local success, shouldHide, hideReason, hideDetails = pcall(DBB2.api.ShouldHideFromChat, cleanMsg, sender, msgContent, nil, nil, frameIndex, false)
-            if not debugging then
-              lastDecisionMsg, lastDecisionEvent, lastDecisionTime = msg, event, GetTime()
-              lastDecisionHide = success and shouldHide and true or false
-              for k in pairs(lastDecisionFrames) do lastDecisionFrames[k] = nil end
-              lastDecisionFrames[frameIndex] = true
+            local decision = not debugging and {} or nil
+            local success, shouldHide, hideReason, hideDetails = pcall(DBB2.api.ShouldHideFromChat, cleanMsg, sender, msgContent, nil, nil, frameIndex, false, decision)
+            chatDecisionCache = nil
+            if decision and success then
+              decision.message, decision.event, decision.channel, decision.time = msg, event, arg9, GetTime()
+              decision.hide = shouldHide and true or false
+              decision.frames = decision.delivery and decision.delivery.frames or { [frameIndex] = true }
+              decision.config = DBB2_Config
+              decision.mode, decision.duplicateMode = DBB2_Config.hideFromChat, DBB2_Config.duplicateFilterMode
+              decision.window, decision.unsorted = DBB2_Config.spamFilterSeconds, DBB2_Config.showUnsortedMessagesInLogs
+              decision.blacklist = DBB2_Config.blacklist
+              decision.blacklistEnabled = DBB2_Config.blacklist and DBB2_Config.blacklist.enabled
+              decision.blacklistHide = DBB2_Config.blacklist and DBB2_Config.blacklist.hideFromChat
+              decision.blacklistPlayers = DBB2_Config.blacklist and DBB2_Config.blacklist.players
+              decision.blacklistKeywords = DBB2_Config.blacklist and DBB2_Config.blacklist.keywords
+              decision.categories, decision.filterTags = DBB2_Config.categories, DBB2_Config.filterTags
+              chatDecisionCache = decision
             end
             local elapsed = nil
             if debugging then
@@ -745,6 +790,7 @@ end
 -- Removes our chat hooks and restores original functions
 -- Call this if you need to cleanly disable the filter
 function DBB2.api.RemoveChatFilter()
+  DBB2.api.InvalidateChatDecisionCache()
   if not DBB2.originalAddMessage then return end
   
   for i = 1, NUM_CHAT_WINDOWS do

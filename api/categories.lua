@@ -47,6 +47,7 @@ local CAT_CACHE_MAX = 600    -- ~100 stored messages + recent chat; cleared when
 local catCacheRefs = {}      -- identity of config tables the cache was built against
 
 local function ResetCategorizeCache()
+  if DBB2.api.InvalidateChatDecisionCache then DBB2.api.InvalidateChatDecisionCache() end
   catCache = {}
   catCacheSize = 0
 end

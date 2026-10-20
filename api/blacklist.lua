@@ -51,6 +51,7 @@ end
 -- [ SetBlacklistEnabled ]
 -- Enables or disables blacklist filtering
 function DBB2.api.SetBlacklistEnabled(enabled)
+  if DBB2.api.InvalidateChatDecisionCache then DBB2.api.InvalidateChatDecisionCache() end
   DBB2.api.InitBlacklist()
   DBB2_Config.blacklist.enabled = enabled
 end
@@ -65,6 +66,7 @@ end
 -- [ SetBlacklistHideFromChat ]
 -- Enables or disables hiding blacklisted messages from chat
 function DBB2.api.SetBlacklistHideFromChat(enabled)
+  if DBB2.api.InvalidateChatDecisionCache then DBB2.api.InvalidateChatDecisionCache() end
   DBB2.api.InitBlacklist()
   DBB2_Config.blacklist.hideFromChat = enabled
 end
@@ -72,6 +74,7 @@ end
 -- [ AddPlayerToBlacklist ]
 -- Adds a player name to the blacklist
 function DBB2.api.AddPlayerToBlacklist(playerName)
+  if DBB2.api.InvalidateChatDecisionCache then DBB2.api.InvalidateChatDecisionCache() end
   DBB2.api.InitBlacklist()
   if not playerName or playerName == "" then return false end
   
@@ -90,6 +93,7 @@ end
 -- [ RemovePlayerFromBlacklist ]
 -- Removes a player name from the blacklist
 function DBB2.api.RemovePlayerFromBlacklist(playerName)
+  if DBB2.api.InvalidateChatDecisionCache then DBB2.api.InvalidateChatDecisionCache() end
   DBB2.api.InitBlacklist()
   local lowerName = string_lower(playerName or "")
   
@@ -127,6 +131,7 @@ end
 -- [ AddKeywordToBlacklist ]
 -- Adds a keyword to the blacklist
 function DBB2.api.AddKeywordToBlacklist(keyword)
+  if DBB2.api.InvalidateChatDecisionCache then DBB2.api.InvalidateChatDecisionCache() end
   DBB2.api.InitBlacklist()
   if not keyword or keyword == "" then return false end
   
@@ -145,6 +150,7 @@ end
 -- [ RemoveKeywordFromBlacklist ]
 -- Removes a keyword from the blacklist
 function DBB2.api.RemoveKeywordFromBlacklist(keyword)
+  if DBB2.api.InvalidateChatDecisionCache then DBB2.api.InvalidateChatDecisionCache() end
   DBB2.api.InitBlacklist()
   local lowerKeyword = string_lower(keyword or "")
   
